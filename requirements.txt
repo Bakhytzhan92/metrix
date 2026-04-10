@@ -1,5 +1,8 @@
 django==5.0.6
-psycopg2-binary==2.9.9
+# psycopg2-binary wheels break on Python 3.13 (Railpack); Django 5 uses psycopg v3
+psycopg[binary]==3.2.6
 dj-database-url==2.3.0
 python-dotenv==1.0.1
 openpyxl
+gunicorn==22.0.0
+whitenoise==6.7.0
