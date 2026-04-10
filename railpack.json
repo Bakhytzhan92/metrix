@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "steps": {
+    "build": {
+      "commands": [
+        "...",
+        "cd backend && python manage.py collectstatic --noinput"
+      ]
+    }
+  },
+  "deploy": {
+    "startCommand": "cd backend && gunicorn gectaro_saas.wsgi:application --bind 0.0.0.0:$PORT"
+  }
+}
