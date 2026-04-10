@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Снабжение — Metrix{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+  <h1 class="text-2xl font-semibold text-slate-900">Снабжение</h1>
+</div>
+
+{# Статистика закупок (заглушка) #}
+<div class="mb-6 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
+  <details class="cursor-pointer">
+    <summary class="text-sm font-medium text-slate-700">Статистика закупок</summary>
+    <p class="mt-2 text-sm text-slate-500">Здесь будет сводка по закупкам (план/факт, по проектам).</p>
+  </details>
+</div>
+
+{# Вкладки #}
+<div class="border-b border-slate-200 mb-4">
+  <nav class="-mb-px flex gap-4 text-sm">
+    <a href="?tab=requests{% if request.GET.without_order %}&without_order=1{% endif %}{% if request.GET.date_from %}&date_from={{ request.GET.date_from }}{% endif %}{% if request.GET.date_to %}&date_to={{ request.GET.date_to }}{% endif %}{% if request.GET.project %}&project={{ request.GET.project }}{% endif %}{% if request.GET.resource_type %}&resource_type={{ request.GET.resource_type }}{% endif %}" class="px-2 pb-2 border-b-2 {% if active_tab == 'requests' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Заявки</a>
+    <a href="?tab=orders" class="px-2 pb-2 border-b-2 {% if active_tab == 'orders' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Заказы</a>
+  </nav>
+</div>
+
+{% if active_tab == "requests" %}
+  <div class="mb-4 flex flex-wrap items-center gap-3">
+    <a href="{% url 'supply_request_create' %}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">➕ Заявка</a>
+    <form method="get" class="flex flex-wrap items-center gap-2 text-sm">
+      <input type="hidden" name="tab" value="requests" />
+      <label class="text-slate-600">Период</label>
+      <input type="date" name="date_from" value="{{ filter_date_from }}" class="rounded-md border-slate-300" />
+      <input type="date" name="date_to" value="{{ filter_date_to }}" class="rounded-md border-slate-300" />
+      <label class="text-slate-600">Проект</label>
+      <select name="project" class="rounded-md border-slate-300">
+        <option value="">Все</option>
+        {% for p in projects %}
+          <option value="{{ p.pk }}" {% if filter_project_id == p.pk %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+      <label class="text-slate-600">Тип ресурса</label>
+      <select name="resource_type" class="rounded-md border-slate-300">
+        <option value="">Все</option>
+        <option value="material" {% if filter_resource_type == "material" %}selected{% endif %}>Материал</option>
+        <option value="service" {% if filter_resource_type == "service" %}selected{% endif %}>Услуга</option>
+        <option value="equipment" {% if filter_resource_type == "equipment" %}selected{% endif %}>Оборудование</option>
+      </select>
+      <a href="?tab=requests&without_order=1{% if request.GET.date_from %}&date_from={{ request.GET.date_from }}{% endif %}{% if request.GET.date_to %}&date_to={{ request.GET.date_to }}{% endif %}{% if request.GET.project %}&project={{ request.GET.project }}{% endif %}{% if request.GET.resource_type %}&resource_type={{ request.GET.resource_type }}{% endif %}" class="rounded-md px-3 py-1.5 text-sm font-medium {% if filter_without_order %}bg-indigo-100 text-indigo-700{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">Без заказа</a>
+      <button type="submit" class="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">Применить</button>
+    </form>
+  </div>
+
+  {% if requests_list %}
+    <div class="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-100">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Ресурсы</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Потребуется</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Кол-во</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Цена, ед.</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">План</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Факт</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Заказ</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for r in requests_list %}
+            <tr class="hover:bg-slate-50/50">
+              <td class="px-4 py-3">
+                <span class="inline-flex rounded px-1.5 py-0.5 text-xs font-medium
+                  {% if r.resource.type == 'material' %}bg-amber-100 text-amber-800
+                  {% elif r.resource.type == 'service' %}bg-blue-100 text-blue-800
+                  {% else %}bg-slate-100 text-slate-700{% endif %}">
+                  {% if r.resource.type == "material" %}MAT{% elif r.resource.type == "service" %}SRV{% else %}EQ{% endif %}
+                </span>
+                <span class="ml-1 font-medium text-slate-800">{{ r.resource.name }}</span>
+                <span class="block text-xs text-slate-500">{{ r.project.name }}</span>
+              </td>
+              <td class="px-4 py-3 {% if r.required_date < today %}text-red-600{% else %}text-slate-600{% endif %}">{{ r.required_date|date:"d M Y" }}</td>
+              <td class="px-4 py-3 text-slate-600">{{ r.quantity }} ({{ r.resource.unit }})</td>
+              <td class="px-4 py-3 text-slate-600">{{ r.price_plan }}</td>
+              <td class="px-4 py-3 text-slate-600">{{ r.total_plan }}</td>
+              <td class="px-4 py-3 text-slate-600">
+                {% if r.order_item %}{{ r.order_item.total_fact }}{% else %}—{% endif %}
+              </td>
+              <td class="px-4 py-3 text-slate-600">
+                {% if r.order_item %}<a href="{% url 'supply_order_detail' r.order_item.order_id %}" class="text-indigo-600 hover:text-indigo-800">{{ r.order_item.order.supplier }}</a>{% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="rounded-xl bg-white py-12 text-center shadow-sm ring-1 ring-slate-100">
+      <p class="text-slate-500">Нет заявок.</p>
+      <a href="{% url 'supply_request_create' %}" class="mt-2 inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">➕ Заявка</a>
+    </div>
+  {% endif %}
+{% else %}
+  <div class="mb-4 flex justify-end">
+    <a href="{% url 'supply_order_create' %}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">➕ Заказ из заявок</a>
+  </div>
+  {% if orders %}
+    <div class="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-100">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Поставщик</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Статус</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Дата</th>
+            <th class="px-4 py-3 text-right font-medium text-slate-700">Действия</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for o in orders %}
+            <tr class="hover:bg-slate-50/50">
+              <td class="px-4 py-3 font-medium text-slate-800">{{ o.supplier }}</td>
+              <td class="px-4 py-3">
+                <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+                  {% if o.status == 'new' %}bg-slate-100 text-slate-700
+                  {% elif o.status == 'paid' %}bg-blue-100 text-blue-800
+                  {% elif o.status == 'delivered' %}bg-green-100 text-green-800
+                  {% else %}bg-slate-200 text-slate-800{% endif %}">
+                  {{ o.get_status_display }}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-slate-600">{{ o.created_at|date:"d.m.Y" }}</td>
+              <td class="px-4 py-3 text-right">
+                <a href="{% url 'supply_order_detail' o.pk %}" class="text-indigo-600 hover:text-indigo-800">Открыть</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="rounded-xl bg-white py-12 text-center shadow-sm ring-1 ring-slate-100">
+      <p class="text-slate-500">Нет заказов.</p>
+      <a href="{% url 'supply_order_create' %}" class="mt-2 inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать заказ из заявок</a>
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

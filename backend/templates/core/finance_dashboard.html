@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Финансы — Metrix{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+  <h1 class="text-2xl font-semibold text-slate-900">Финансы</h1>
+  <div class="flex flex-wrap gap-2">
+    <a href="{% url 'finance_income' %}" class="inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">➕ Доход</a>
+    <a href="{% url 'finance_expense' %}" class="inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">➖ Расход</a>
+    <a href="{% url 'finance_transfer' %}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">🔁 Перевод</a>
+  </div>
+</div>
+
+{# Карточки счетов #}
+<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  {% for acc in accounts %}
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <p class="text-sm font-medium text-slate-600">{{ acc.name }}</p>
+      <p class="mt-1 text-2xl font-semibold text-slate-900">{{ acc.balance }} {{ acc.currency }}</p>
+    </div>
+  {% empty %}
+    <p class="text-sm text-slate-500">Нет счетов. Создайте счёт в настройках или он появится автоматически.</p>
+  {% endfor %}
+</div>
+
+{# Вкладки #}
+<div class="border-b border-slate-200 mb-4">
+  <nav class="-mb-px flex gap-4 text-sm">
+    <a href="?tab=journal" class="px-2 pb-2 border-b-2 {% if active_tab == 'journal' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Журнал операций</a>
+    <a href="#" class="px-2 pb-2 border-b-2 border-transparent text-slate-500">Заказы на оплату</a>
+    <a href="#" class="px-2 pb-2 border-b-2 border-transparent text-slate-500">Работы на оплату</a>
+  </nav>
+</div>
+
+{% if active_tab == "journal" %}
+  {# Фильтры #}
+  <form method="get" class="mb-6 flex flex-wrap items-center gap-3 rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-100">
+    <input type="hidden" name="tab" value="journal" />
+    <label class="text-sm text-slate-600">Период</label>
+    <input type="date" name="date_from" value="{{ filter_date_from }}" class="rounded-md border-slate-300 text-sm" />
+    <span class="text-slate-400">—</span>
+    <input type="date" name="date_to" value="{{ filter_date_to }}" class="rounded-md border-slate-300 text-sm" />
+    <label class="ml-2 text-sm text-slate-600">Проект</label>
+    <select name="project" class="rounded-md border-slate-300 text-sm">
+      <option value="">Все</option>
+      {% for p in projects %}
+        <option value="{{ p.pk }}" {% if filter_project_id == p.pk %}selected{% endif %}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+    <label class="text-sm text-slate-600">Тип</label>
+    <select name="type" class="rounded-md border-slate-300 text-sm">
+      <option value="">Все</option>
+      <option value="income" {% if filter_type == "income" %}selected{% endif %}>Доход</option>
+      <option value="expense" {% if filter_type == "expense" %}selected{% endif %}>Расход</option>
+      <option value="transfer" {% if filter_type == "transfer" %}selected{% endif %}>Перевод</option>
+    </select>
+    <label class="text-sm text-slate-600">Статья</label>
+    <select name="category" class="rounded-md border-slate-300 text-sm">
+      <option value="">Все</option>
+      {% for c in categories %}
+        <option value="{{ c.pk }}" {% if filter_category_id == c.pk %}selected{% endif %}>{{ c.name }} ({{ c.get_type_display }})</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">Применить</button>
+  </form>
+
+  {# Таблица операций #}
+  {% if operations %}
+    <div class="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-100">
+      <table class="min-w-full divide-y divide-slate-200 text-sm">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Дата</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Сумма</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Тип / Статья</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Контрагент</th>
+            <th class="px-4 py-3 text-left font-medium text-slate-700">Проект</th>
+            <th class="px-4 py-3 text-right font-medium text-slate-700">Действия</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for op in operations %}
+            <tr class="hover:bg-slate-50/50">
+              <td class="px-4 py-3 text-slate-600">{{ op.date|date:"d.m.Y" }}</td>
+              <td class="px-4 py-3">
+                {% if op.type == "income" %}
+                  <span class="font-medium text-green-600">+{{ op.amount }}</span>
+                {% elif op.type == "expense" %}
+                  <span class="font-medium text-red-600">−{{ op.amount }}</span>
+                {% else %}
+                  <span class="font-medium text-slate-700">↔ {{ op.amount }}</span>
+                  <span class="text-xs text-slate-500">({{ op.account.name }} → {{ op.account_to.name }})</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-3 text-slate-600">{{ op.get_type_display }}{% if op.category %} · {{ op.category.name }}{% endif %}</td>
+              <td class="px-4 py-3 text-slate-600">{{ op.contractor|default:"—" }}</td>
+              <td class="px-4 py-3 text-slate-600">{{ op.project.name|default:"—" }}</td>
+              <td class="px-4 py-3 text-right">
+                <form method="post" action="{% url 'finance_operation_delete' op.pk %}" class="inline" onsubmit="return confirm('Удалить операцию?');">
+                  {% csrf_token %}
+                  <button type="submit" class="text-red-600 hover:text-red-800">Удалить</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="rounded-xl bg-white py-12 text-center shadow-sm ring-1 ring-slate-100">
+      <p class="text-slate-500">Нет операций за выбранный период.</p>
+      <p class="mt-2 text-sm text-slate-400">Добавьте доход, расход или перевод кнопками выше.</p>
+    </div>
+  {% endif %}
+{% else %}
+  <div class="rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-100">
+    <p class="text-slate-500">Раздел в разработке.</p>
+  </div>
+{% endif %}
+{% endblock %}

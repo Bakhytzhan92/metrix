@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Cash Flow — Отчёты — Metrix{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+  <div>
+    <h1 class="text-2xl font-semibold text-slate-900">Отчёты</h1>
+    <p class="text-sm text-slate-500">Cash Flow (Движение денег)</p>
+  </div>
+</div>
+
+{# Верхние вкладки раздела #}
+<div class="border-b border-slate-200 mb-4">
+  <nav class="-mb-px flex flex-wrap gap-4 text-sm">
+    <a href="{% url 'reports_index' %}?tab=management" class="px-2 pb-2 border-b-2 border-transparent text-slate-600 hover:text-slate-900">Управленческие</a>
+    <a href="{% url 'reports_index' %}?tab=project" class="px-2 pb-2 border-b-2 border-transparent text-slate-600 hover:text-slate-900">Проектные</a>
+    <a href="{% url 'reports_index' %}?tab=settlements" class="px-2 pb-2 border-b-2 border-transparent text-slate-600 hover:text-slate-900">Взаиморасчёты</a>
+  </nav>
+</div>
+
+{# Подвкладки управленческих отчётов #}
+<div class="border-b border-slate-200 mb-4">
+  <nav class="-mb-px flex flex-wrap gap-4 text-sm">
+    <a href="{% url 'reports_pnl' %}?{{ qs_base }}&basis={{ basis }}" class="px-2 pb-2 border-b-2 border-transparent text-slate-600 hover:text-slate-900">Прибыли и убытки</a>
+    <a href="{% url 'reports_cashflow' %}?{{ qs_base }}&basis={{ basis }}" class="px-2 pb-2 border-b-2 border-indigo-500 text-indigo-600 font-medium">Движение денег</a>
+  </nav>
+</div>
+
+{# Фильтры #}
+<form method="get" class="mb-6 flex flex-wrap items-end gap-3 rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-100">
+  <div class="text-sm">
+    <label class="block text-slate-600 mb-1">Период</label>
+    <select name="period" class="rounded-md border-slate-300 text-sm">
+      <option value="year" {% if period_meta.period == "year" %}selected{% endif %}>Год</option>
+      <option value="quarter" {% if period_meta.period == "quarter" %}selected{% endif %}>Квартал</option>
+      <option value="month" {% if period_meta.period == "month" %}selected{% endif %}>Месяц</option>
+      <option value="custom" {% if period_meta.period == "custom" %}selected{% endif %}>Произвольно</option>
+    </select>
+  </div>
+  <div class="text-sm">
+    <label class="block text-slate-600 mb-1">Год</label>
+    <input type="number" name="year" value="{{ period_meta.year }}" class="w-24 rounded-md border-slate-300 text-sm" />
+  </div>
+  <div class="text-sm">
+    <label class="block text-slate-600 mb-1">Квартал</label>
+    <select name="quarter" class="w-24 rounded-md border-slate-300 text-sm">
+      <option value="1" {% if period_meta.quarter == 1 %}selected{% endif %}>1</option>
+      <option value="2" {% if period_meta.quarter == 2 %}selected{% endif %}>2</option>
+      <option value="3" {% if period_meta.quarter == 3 %}selected{% endif %}>3</option>
+      <option value="4" {% if period_meta.quarter == 4 %}selected{% endif %}>4</option>
+    </select>
+  </div>
+  <div class="text-sm">
+    <label class="block text-slate-600 mb-1">Месяц</label>
+    <select name="month" class="w-32 rounded-md border-slate-300 text-sm">
+      <option value="1" {% if period_meta.month == 1 %}selected{% endif %}>Янв</option>
+      <option value="2" {% if period_meta.month == 2 %}selected{% endif %}>Фев</option>
+      <option value="3" {% if period_meta.month == 3 %}selected{% endif %}>Мар</option>
+      <option value="4" {% if period_meta.month == 4 %}selected{% endif %}>Апр</option>
+      <option value="5" {% if period_meta.month == 5 %}selected{% endif %}>Май</option>
+      <option value="6" {% if period_meta.month == 6 %}selected{% endif %}>Июн</option>
+      <option value="7" {% if period_meta.month == 7 %}selected{% endif %}>Июл</option>
+      <option value="8" {% if period_meta.month == 8 %}selected{% endif %}>Авг</option>
+      <option value="9" {% if period_meta.month == 9 %}selected{% endif %}>Сен</option>
+      <option value="10" {% if period_meta.month == 10 %}selected{% endif %}>Окт</option>
+      <option value="11" {% if period_meta.month == 11 %}selected{% endif %}>Ноя</option>
+      <option value="12" {% if period_meta.month == 12 %}selected{% endif %}>Дек</option>
+    </select>
+  </div>
+  <div class="text-sm">
+    <label class="block text-slate-600 mb-1">Дата от</label>
+    <input type="date" name="date_from" value="{{ date_from|date:'Y-m-d' }}" class="rounded-md border-slate-300 text-sm" />
+  </div>
+  <div class="text-sm">
+    <label class="block text-slate-600 mb-1">Дата до</label>
+    <input type="date" name="date_to" value="{{ date_to|date:'Y-m-d' }}" class="rounded-md border-slate-300 text-sm" />
+  </div>
+  <input type="hidden" name="basis" value="{{ basis }}" />
+  <button type="submit" class="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Применить</button>
+  <div class="ml-auto flex items-center gap-2 text-sm">
+    <span class="text-slate-500">Режим:</span>
+    <a href="{% url 'reports_cashflow' %}?{{ qs_base }}&basis=cash" class="rounded-md px-3 py-2 {% if basis == 'cash' %}bg-indigo-100 text-indigo-700 font-medium{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">Кассовый</a>
+    <a href="{% url 'reports_cashflow' %}?{{ qs_base }}&basis=accrual" class="rounded-md px-3 py-2 {% if basis == 'accrual' %}bg-indigo-100 text-indigo-700 font-medium{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">Начисление</a>
+  </div>
+</form>
+
+<div class="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-100">
+  <table class="min-w-full divide-y divide-slate-200 text-sm">
+    <thead class="bg-slate-50">
+      <tr>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Раздел</th>
+        {% for m in months %}
+          <th class="px-4 py-3 text-right font-medium text-slate-700 whitespace-nowrap">{{ m|date:"M Y" }}</th>
+        {% endfor %}
+        <th class="px-4 py-3 text-right font-medium text-slate-700">Итого</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for r in rows %}
+        <tr class="hover:bg-slate-50/50">
+          <td class="px-4 py-3 font-medium text-slate-800">{{ r.label }}</td>
+          {% for v in r.values %}
+            <td class="px-4 py-3 text-right {% if v < 0 %}text-red-700{% elif v > 0 %}text-green-700{% else %}text-slate-600{% endif %}">{{ v|floatformat:2 }}</td>
+          {% endfor %}
+          <td class="px-4 py-3 text-right font-semibold {% if r.total < 0 %}text-red-700{% elif r.total > 0 %}text-green-700{% else %}text-slate-700{% endif %}">{{ r.total|floatformat:2 }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+

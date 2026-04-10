@@ -1,0 +1,137 @@
+{% extends "core/project/project_layout.html" %}
+
+{% block project_content %}
+<div class="space-y-4">
+  {# Заголовок и статистика #}
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <h2 class="text-lg font-semibold text-slate-900">Инвентарь</h2>
+    <p class="text-sm text-slate-600">
+      {{ total_count }} единиц на сумму {{ total_sum|floatformat:0 }} ₸
+      {% if written_off_count %}| Списано {{ written_off_count }} единиц на сумму {{ written_off_sum|floatformat:0 }} ₸{% endif %}
+    </p>
+  </div>
+
+  {# Фильтры #}
+  <form method="get" class="flex flex-wrap items-center gap-2">
+    <input type="text" name="q" value="{{ search_q }}" placeholder="Поиск по названию" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+    <select name="warehouse" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500">
+      <option value="">Все склады</option>
+      {% for w in warehouses %}
+      <option value="{{ w.id }}" {% if warehouse_filter == w.id|stringformat:"d" %}selected{% endif %}>{{ w.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="search_status" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500">
+      <option value="">Все статусы</option>
+      <option value="free" {% if status_filter == 'free' %}selected{% endif %}>Свободен</option>
+      <option value="in_use" {% if status_filter == 'in_use' %}selected{% endif %}>В работе</option>
+      <option value="broken" {% if status_filter == 'broken' %}selected{% endif %}>Сломан</option>
+      <option value="written_off" {% if status_filter == 'written_off' %}selected{% endif %}>Списан</option>
+    </select>
+    <button type="submit" class="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">Применить</button>
+  </form>
+
+  {# Кнопка «Создать склад» — открывает модалку #}
+  <div>
+    <button type="button" id="btn-create-warehouse" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать склад</button>
+  </div>
+
+  {# Kanban: колонки складов #}
+  <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
+    {% for warehouse, items in warehouse_columns %}
+    <div class="warehouse-column flex-shrink-0 w-72 rounded-xl border border-slate-200 bg-slate-50/50 p-3 shadow-sm" data-warehouse-id="{{ warehouse.id }}">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-medium text-slate-900 flex items-center gap-1">
+          <span class="text-slate-400">⌂</span> {{ warehouse.name }}
+        </h3>
+        <div class="relative warehouse-menu">
+          <button type="button" class="warehouse-menu-btn p-1 rounded hover:bg-slate-200 text-slate-500" aria-label="Меню склада">⋮</button>
+          <div class="warehouse-menu-dropdown hidden absolute right-0 top-full mt-1 py-1 w-40 rounded-lg bg-white shadow-lg border border-slate-200 z-10">
+            <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" class="block px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">+ Инвентарь</a>
+          </div>
+        </div>
+      </div>
+      <div class="space-y-2 inventory-cards">
+        {% for item in items %}
+        {% with status=item.status %}
+        <a href="{% url 'project_inventory_update' project.pk item.id %}" class="inventory-card block rounded-lg bg-white p-3 shadow border border-slate-100 hover:shadow-md transition-shadow text-left {% if status == 'free' %}border-l-4 border-l-green-500{% elif status == 'in_use' %}border-l-4 border-l-blue-500{% elif status == 'broken' %}border-l-4 border-l-slate-400{% elif status == 'written_off' %}border-l-4 border-l-red-600{% endif %}">
+          <div class="flex gap-2">
+            <div class="flex-shrink-0 w-12 h-12 rounded bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden">
+              {% if item.image %}
+              <img src="{{ item.image.url }}" alt="" class="w-full h-full object-cover" />
+              {% else %}
+              <span class="text-lg">🔧</span>
+              {% endif %}
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="font-medium text-slate-900 truncate">{{ item.name }}</p>
+              <p class="text-xs {% if status == 'free' %}text-green-600{% elif status == 'in_use' %}text-blue-600{% elif status == 'broken' %}text-slate-500{% else %}text-red-600{% endif %}">
+                {% if status == 'free' %}Свободен
+                {% elif status == 'in_use' %}{% if item.available_from %}Доступен {{ item.available_from|date:"d.m.Y" }}{% else %}В работе{% endif %}
+                {% elif status == 'broken' %}Сломан
+                {% else %}Списан{% endif %}
+              </p>
+            </div>
+          </div>
+        </a>
+        {% endwith %}
+        {% empty %}
+        <p class="text-sm text-slate-500 py-2">Нет единиц</p>
+        {% endfor %}
+      </div>
+      <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" class="mt-3 flex w-full items-center justify-center rounded-lg border-2 border-dashed border-slate-200 py-3 text-sm text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">+ инвентарь</a>
+    </div>
+    {% empty %}
+    <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center text-slate-500">
+      <p>Нет складов.</p>
+      <button type="button" id="btn-create-warehouse-empty" class="mt-2 text-indigo-600 hover:text-indigo-800 font-medium">Создать склад</button>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{# Модальное окно: Создать склад #}
+<div id="modal-create-warehouse" class="fixed inset-0 z-50 hidden" aria-hidden="true">
+  <div class="fixed inset-0 bg-slate-900/50" id="modal-warehouse-backdrop"></div>
+  <div class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-xl">
+    <h3 class="text-lg font-semibold text-slate-900 mb-4">Создать склад</h3>
+    <form method="post" action="{% url 'project_warehouse_create' project.pk %}">
+      {% csrf_token %}
+      <input type="text" name="name" required placeholder="Название" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+      <div class="mt-4 flex gap-2 justify-end">
+        <button type="button" class="modal-warehouse-cancel rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Отмена</button>
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  var modal = document.getElementById('modal-create-warehouse');
+  var btn = document.getElementById('btn-create-warehouse');
+  var btnEmpty = document.getElementById('btn-create-warehouse-empty');
+  var backdrop = document.getElementById('modal-warehouse-backdrop');
+  var cancelBtns = document.querySelectorAll('.modal-warehouse-cancel');
+  function openModal() { if (modal) modal.classList.remove('hidden'); }
+  function closeModal() { if (modal) modal.classList.add('hidden'); }
+  if (btn) btn.addEventListener('click', openModal);
+  if (btnEmpty) btnEmpty.addEventListener('click', openModal);
+  if (backdrop) backdrop.addEventListener('click', closeModal);
+  cancelBtns.forEach(function(b) { b.addEventListener('click', closeModal); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+
+  var menuBtns = document.querySelectorAll('.warehouse-menu-btn');
+  menuBtns.forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var drop = btn.closest('.warehouse-menu').querySelector('.warehouse-menu-dropdown');
+      document.querySelectorAll('.warehouse-menu-dropdown').forEach(function(d) { if (d !== drop) d.classList.add('hidden'); });
+      drop.classList.toggle('hidden');
+    });
+  });
+  document.addEventListener('click', function() {
+    document.querySelectorAll('.warehouse-menu-dropdown').forEach(function(d) { d.classList.add('hidden'); });
+  });
+})();
+</script>
+{% endblock %}

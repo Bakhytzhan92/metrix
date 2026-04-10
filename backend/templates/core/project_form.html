@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}{% if is_edit %}Редактировать проект{% else %}Новый проект{% endif %} — Metrix{% endblock %}
+
+{% block content %}
+  <h1 class="text-2xl font-semibold text-slate-900 mb-4">{% if is_edit %}Редактировать проект{% else %}Создать проект{% endif %}</h1>
+
+  <form method="post" class="space-y-4 max-w-lg bg-white p-6 rounded-xl shadow-sm ring-1 ring-slate-100">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form %}
+      <div class="text-sm">
+        <label class="block text-slate-700 mb-1" for="{{ field.id_for_label }}">
+          {{ field.label }}
+        </label>
+        {{ field }}
+        {% if field.help_text %}
+          <p class="text-xs text-slate-400 mt-1">{{ field.help_text }}</p>
+        {% endif %}
+        {% for error in field.errors %}
+          <p class="text-xs text-red-600 mt-1">{{ error }}</p>
+        {% endfor %}
+      </div>
+    {% endfor %}
+    <div class="flex gap-3 pt-2">
+      <button
+        type="submit"
+        class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+      >
+        Сохранить
+      </button>
+      <a href="{% if is_edit %}{% url 'project_detail' project.pk %}{% else %}{% url 'dashboard' %}{% endif %}" class="text-sm text-slate-600 hover:text-slate-900">
+        Отмена
+      </a>
+    </div>
+  </form>
+{% endblock %}
+

@@ -1,0 +1,567 @@
+{% extends "core/project/project_layout.html" %}
+{% load estimate_extras %}
+
+{% block project_content %}
+<div class="space-y-6">
+  {# Итоги сметы — карточки #}
+  <div class="grid gap-4 sm:grid-cols-3">
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <p class="text-sm font-medium text-slate-500">Себестоимость</p>
+      <p class="mt-1 text-xl font-semibold text-slate-900"><span class="js-project-total-cost tabular-nums">{{ totals.total_cost|floatformat:2 }}</span> ₸</p>
+    </div>
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <p class="text-sm font-medium text-slate-500">Наценка</p>
+      <p class="mt-1 text-xl font-semibold text-slate-900"><span class="js-project-total-markup tabular-nums">{{ totals.markup|floatformat:2 }}</span> ₸</p>
+    </div>
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <p class="text-sm font-medium text-slate-500">Итого по смете</p>
+        <label class="inline-flex items-center gap-2 shrink-0 cursor-pointer select-none text-sm font-normal text-slate-600">
+          <input type="checkbox" id="estimate-vat-checkbox" class="js-estimate-vat-checkbox h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" {% if project.estimate_vat_enabled %}checked{% endif %} data-vat-url="{% url 'estimate_vat_toggle' project.pk %}" />
+          <span>НДС 16%</span>
+        </label>
+      </div>
+      <p class="mt-1 text-xl font-semibold text-slate-900"><span class="js-project-total-price tabular-nums">{{ totals.client_total|floatformat:2 }}</span> ₸</p>
+      <p class="js-vat-hint mt-1 text-xs text-slate-500 {% if not project.estimate_vat_enabled %}hidden{% endif %}">Сумма для заказчика с учётом НДС 16%</p>
+    </div>
+  </div>
+
+  {# Кнопки: Добавить раздел, Импорт, Экспорт #}
+  <div class="flex flex-wrap items-center gap-3">
+    <a href="{% url 'estimate_section_add' project.pk %}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+      Добавить раздел
+    </a>
+    <form action="{% url 'estimate_import' project.pk %}" method="post" enctype="multipart/form-data" class="inline-flex items-center gap-2">
+      {% csrf_token %}
+      <input type="file" name="file" accept=".xlsx,.xls" class="text-sm text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100" required />
+      <button type="submit" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Импорт (Excel)</button>
+    </form>
+    <a href="{% url 'estimate_export' project.pk %}" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Экспорт</a>
+  </div>
+
+  {# Разделы работ — всегда раскрыты; автосохранение строк #}
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div class="border-b border-slate-200 px-4 py-3">
+      <h2 class="text-sm font-semibold text-slate-900">Разделы работ</h2>
+      <p class="text-xs text-slate-500 mt-1">Пересчёт при вводе. Новая строка — только кнопка «+ позиция». Перед уходом со страницы строки сохраняются автоматически; при сбое появится сообщение. У каждого раздела есть «Сохранить раздел» — сохраняет все строки раздела сразу.</p>
+    </div>
+    <div class="divide-y divide-slate-100">
+      {% for section in sections %}
+      <div class="group estimate-section" id="section-{{ section.pk }}">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-50/80 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-slate-900">{{ forloop.counter }}. {{ section.name }}</span>
+          </div>
+          <div class="flex items-center gap-2 text-sm text-slate-500">
+            <span>Себестоимость: <span class="js-section-cost tabular-nums">{{ section.section_total_cost|floatformat:2 }}</span> ₸</span>
+            <span>Итого: <span class="js-section-price tabular-nums">{{ section.section_total_price|floatformat:2 }}</span> ₸</span>
+            <a href="{% url 'estimate_section_edit' project.pk section.pk %}" class="text-indigo-600 hover:text-indigo-800">Изменить раздел</a>
+            <form action="{% url 'estimate_section_delete' project.pk section.pk %}" method="post" class="inline" onsubmit="return confirm('Удалить раздел и все позиции?');">
+              {% csrf_token %}
+              <button type="submit" class="text-red-600 hover:text-red-800">Удалить</button>
+            </form>
+          </div>
+        </div>
+        <div class="px-4 pb-4 pt-2 bg-slate-50/30">
+          {% with items=section.items.all %}
+          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <form action="{% url 'estimate_item_quick_add' project.pk section.pk %}" method="post" class="inline">
+              {% csrf_token %}
+              <button type="submit" class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
+                <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                + позиция
+              </button>
+            </form>
+            <button type="button" class="js-save-estimate-section inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-800 hover:bg-indigo-100">
+              Сохранить раздел
+            </button>
+          </div>
+          <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <table class="min-w-full divide-y divide-slate-200 text-sm">
+              <thead>
+                <tr class="bg-slate-50">
+                  <th class="px-2 py-2 text-center font-medium text-slate-700 w-10">№</th>
+                  <th class="px-2 py-2 text-left font-medium text-slate-700 w-36">Тип</th>
+                  <th class="px-2 py-2 text-left font-medium text-slate-700 min-w-[10rem]">Наименование</th>
+                  <th class="px-2 py-2 text-left font-medium text-slate-700 w-20">Ед. изм.</th>
+                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-24">Кол-во</th>
+                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-28">Цена</th>
+                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-28">Себестоимость</th>
+                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-24">Наценка %</th>
+                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-28">Цена заказч. (ед.)</th>
+                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-28">Итого</th>
+                  <th class="px-2 py-2 w-14"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                {% for item in items %}
+                <tr class="estimate-row hover:bg-slate-50/50 align-top" data-estimate-form="estimate-row-{{ item.pk }}">
+                  <td class="px-2 py-1.5 text-center tabular-nums text-slate-600">{{ forloop.counter }}</td>
+                  <td class="px-2 py-1.5">
+                    <select form="estimate-row-{{ item.pk }}" name="type" class="w-full min-w-0 rounded border border-slate-200 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                      <option value="material" {% if item.type == 'material' %}selected{% endif %}>Материалы</option>
+                      <option value="labor" {% if item.type == 'labor' %}selected{% endif %}>Работы</option>
+                      <option value="equipment" {% if item.type == 'equipment' %}selected{% endif %}>Механизмы</option>
+                      <option value="delivery" {% if item.type == 'delivery' %}selected{% endif %}>Доставка</option>
+                    </select>
+                  </td>
+                  <td class="px-2 py-1.5">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="name" value="{{ item.name }}" placeholder="Наименование" class="w-full min-w-0 rounded border border-slate-200 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  </td>
+                  <td class="px-2 py-1.5">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="unit" value="{{ item.unit }}" class="w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  </td>
+                  <td class="px-2 py-1.5">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="quantity" value="{{ item.quantity|qty_plain }}" inputmode="decimal" class="w-full rounded border border-slate-200 px-2 py-1 text-sm text-right tabular-nums focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  </td>
+                  <td class="px-2 py-1.5">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="cost_price" value="{{ item.cost_price }}" inputmode="decimal" class="w-full rounded border border-slate-200 px-2 py-1 text-sm text-right tabular-nums focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  </td>
+                  <td class="px-2 py-1.5 text-right tabular-nums text-slate-700 pt-2 js-item-total-cost">{{ item.total_cost|floatformat:2 }}</td>
+                  <td class="px-2 py-1.5">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="markup_percent" value="{{ item.markup_percent }}" inputmode="decimal" class="w-full rounded border border-slate-200 px-2 py-1 text-sm text-right tabular-nums focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  </td>
+                  <td class="px-2 py-1.5 text-right tabular-nums text-slate-700 pt-2 js-item-sell-price">{{ item.sell_price|floatformat:2 }}</td>
+                  <td class="px-2 py-1.5 text-right tabular-nums font-medium text-slate-900 pt-2 js-item-total-price">{{ item.total_price|floatformat:2 }}</td>
+                  <td class="px-2 py-1.5 text-center align-middle">
+                    <div class="inline-flex items-center justify-center gap-0.5">
+                    <form id="estimate-row-{{ item.pk }}" method="post" action="{% url 'estimate_item_inline' project.pk section.pk item.pk %}" class="hidden" aria-hidden="true">
+                      {% csrf_token %}
+                    </form>
+                    <a href="{% url 'project_supply' project.pk %}?tab=requests&estimate_item={{ item.pk }}#supply-create-request" class="inline-flex rounded-md p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Заявка в снабжение" aria-label="Заявка в снабжение">
+                      <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 18.5m2.106-4.25l5.25-5.25m0 0L18 9.75m-5.25 5.25L18 18"/>
+                      </svg>
+                    </a>
+                    <form action="{% url 'estimate_item_delete' project.pk section.pk item.pk %}" method="post" class="inline" onsubmit="return confirm('Удалить позицию?');">
+                      {% csrf_token %}
+                      <button type="submit" class="inline-flex rounded-md p-2 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Удалить позицию" aria-label="Удалить позицию">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+                        </svg>
+                      </button>
+                    </form>
+                    </div>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="11" class="px-4 py-6 text-center text-sm text-slate-500">Позиций нет — нажмите «+ позиция», чтобы добавить строку.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endwith %}
+        </div>
+      </div>
+      {% empty %}
+      <div class="px-4 py-8 text-center text-sm text-slate-500">
+        <p>Разделов пока нет.</p>
+        <a href="{% url 'estimate_section_add' project.pk %}" class="mt-2 inline-block text-indigo-600 hover:text-indigo-800">Добавить раздел</a>
+      </div>
+      {% endfor %}
+      {% if sections %}
+      <div class="estimate-grand-total px-4 py-4 bg-slate-100/90 border-t-2 border-slate-200">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-sm font-semibold text-slate-900">Итого по смете <span class="font-normal text-slate-500">(все разделы)</span></p>
+          <label class="inline-flex items-center gap-2 shrink-0 cursor-pointer select-none text-sm font-normal text-slate-600">
+            <input type="checkbox" class="js-estimate-vat-checkbox h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" {% if project.estimate_vat_enabled %}checked{% endif %} data-vat-url="{% url 'estimate_vat_toggle' project.pk %}" aria-label="НДС 16%" />
+            <span>НДС 16%</span>
+          </label>
+        </div>
+        <div class="mt-3 flex flex-col gap-2 text-sm text-slate-700">
+          <div class="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+            <span>Себестоимость: <strong class="text-slate-900 tabular-nums"><span class="js-project-total-cost">{{ totals.total_cost|floatformat:2 }}</span> ₸</strong></span>
+            <span>Наценка: <strong class="text-slate-900 tabular-nums"><span class="js-project-total-markup">{{ totals.markup|floatformat:2 }}</span> ₸</strong></span>
+          </div>
+          <div class="js-vat-detail flex flex-wrap items-baseline gap-x-8 gap-y-2 text-slate-600 {% if not project.estimate_vat_enabled %}hidden{% endif %}">
+            <span>Сумма для заказчика без НДС: <strong class="text-slate-900 tabular-nums"><span class="js-project-subtotal-client">{{ totals.total_price|floatformat:2 }}</span> ₸</strong></span>
+            <span>НДС 16%: <strong class="text-slate-900 tabular-nums"><span class="js-project-vat-amount">{{ totals.vat_amount|floatformat:2 }}</span> ₸</strong></span>
+          </div>
+          <p class="text-base font-semibold text-slate-900">Итого для заказчика<span class="js-vat-suffix text-sm font-normal text-slate-500 {% if not project.estimate_vat_enabled %}hidden{% endif %}"> (с НДС)</span>: <span class="tabular-nums"><span class="js-project-total-price">{{ totals.client_total|floatformat:2 }}</span> ₸</span></p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var SAVE_DEBOUNCE_MS = 320;
+  var saveTimers = {};
+
+  function getCookie(name) {
+    var m = document.cookie.match("(^|;) ?" + name + "=([^;]*)(;|$)");
+    return m ? decodeURIComponent(m[2]) : "";
+  }
+  function parseNum(s) {
+    if (s === null || s === undefined) return 0;
+    var t = String(s).replace(/\s/g, "").replace(",", ".");
+    if (t === "" || t === "-" || t === "." || t === "-.") return 0;
+    var n = parseFloat(t);
+    return isFinite(n) ? n : 0;
+  }
+  function isZeroLikeInput(val) {
+    if (val === null || val === undefined) return true;
+    var t = String(val).replace(/\s/g, "").replace(",", ".");
+    if (t === "" || t === "-" || t === "." || t === "-.") return true;
+    var n = parseFloat(t);
+    return isFinite(n) && n === 0;
+  }
+  function wireEstimateNumericZeroUX(input) {
+    var n = input.name;
+    if (n !== "quantity" && n !== "cost_price" && n !== "markup_percent") return;
+    input.addEventListener("focus", function () {
+      if (isZeroLikeInput(input.value)) input.value = "";
+    });
+    input.addEventListener("blur", function () {
+      if (String(input.value).trim() === "") input.value = "0";
+    });
+  }
+  function fmt2(n) {
+    return (Math.round(n * 100) / 100).toFixed(2);
+  }
+  function recalcRow(row) {
+    if (!row || !row.classList.contains("estimate-row")) return;
+    var qi = row.querySelector('input[name="quantity"]');
+    var ci = row.querySelector('input[name="cost_price"]');
+    var mi = row.querySelector('input[name="markup_percent"]');
+    var q = parseNum(qi && qi.value);
+    var cp = parseNum(ci && ci.value);
+    var m = parseNum(mi && mi.value);
+    var sell = cp * (1 + m / 100);
+    var tCost = q * cp;
+    var tPrice = q * sell;
+    var tc = row.querySelector(".js-item-total-cost");
+    var sp = row.querySelector(".js-item-sell-price");
+    var tp = row.querySelector(".js-item-total-price");
+    if (tc) tc.textContent = fmt2(tCost);
+    if (sp) sp.textContent = fmt2(sell);
+    if (tp) tp.textContent = fmt2(tPrice);
+  }
+  function recalcSection(section) {
+    if (!section) return;
+    var sumCost = 0;
+    var sumPrice = 0;
+    section.querySelectorAll("tr.estimate-row").forEach(function (row) {
+      recalcRow(row);
+      var tc = row.querySelector(".js-item-total-cost");
+      var tp = row.querySelector(".js-item-total-price");
+      sumCost += parseNum(tc && tc.textContent);
+      sumPrice += parseNum(tp && tp.textContent);
+    });
+    var sc = section.querySelector(".js-section-cost");
+    var spt = section.querySelector(".js-section-price");
+    if (sc) sc.textContent = fmt2(sumCost);
+    if (spt) spt.textContent = fmt2(sumPrice);
+  }
+  function setTextAll(selector, text) {
+    document.querySelectorAll(selector).forEach(function (el) {
+      el.textContent = text;
+    });
+  }
+  function isVatEnabled() {
+    var first = document.querySelector(".js-estimate-vat-checkbox");
+    return !!(first && first.checked);
+  }
+  function recalcProjectCards() {
+    var sumCost = 0;
+    var sumPrice = 0;
+    document.querySelectorAll(".estimate-section").forEach(function (sec) {
+      var elc = sec.querySelector(".js-section-cost");
+      var elp = sec.querySelector(".js-section-price");
+      sumCost += parseNum(elc && elc.textContent);
+      sumPrice += parseNum(elp && elp.textContent);
+    });
+    var vatOn = isVatEnabled();
+    var vatAmt = vatOn ? sumPrice * 0.16 : 0;
+    var clientTot = vatOn ? sumPrice * 1.16 : sumPrice;
+    setTextAll(".js-project-total-cost", fmt2(sumCost));
+    setTextAll(".js-project-total-markup", fmt2(sumPrice - sumCost));
+    setTextAll(".js-project-subtotal-client", fmt2(sumPrice));
+    setTextAll(".js-project-vat-amount", fmt2(vatAmt));
+    setTextAll(".js-project-total-price", fmt2(clientTot));
+    document.querySelectorAll(".js-vat-detail").forEach(function (el) {
+      if (vatOn) el.classList.remove("hidden");
+      else el.classList.add("hidden");
+    });
+    document.querySelectorAll(".js-vat-hint").forEach(function (el) {
+      if (vatOn) el.classList.remove("hidden");
+      else el.classList.add("hidden");
+    });
+    document.querySelectorAll(".js-vat-suffix").forEach(function (el) {
+      if (vatOn) el.classList.remove("hidden");
+      else el.classList.add("hidden");
+    });
+  }
+  function syncVatCheckboxes(source) {
+    var on = source.checked;
+    document.querySelectorAll(".js-estimate-vat-checkbox").forEach(function (c) {
+      c.checked = on;
+    });
+  }
+  function postVatToggle(checked) {
+    var el = document.querySelector(".js-estimate-vat-checkbox");
+    var url = el && el.getAttribute("data-vat-url");
+    if (!url) return;
+    var fd = new FormData();
+    var tok = getCookie("csrftoken");
+    if (tok) fd.append("csrfmiddlewaretoken", tok);
+    fd.append("vat", checked ? "1" : "0");
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        "X-CSRFToken": tok || ""
+      },
+      body: fd,
+      keepalive: true
+    }).catch(function () {});
+  }
+  function recalcFromForm(formEl) {
+    var section = formEl.closest(".estimate-section");
+    if (section) {
+      recalcSection(section);
+      recalcProjectCards();
+    }
+  }
+  function normalizeNumField(name, val) {
+    if (name !== "quantity" && name !== "cost_price" && name !== "markup_percent") return val;
+    var s = String(val == null ? "" : val).trim().replace(/\s/g, "").replace(",", ".");
+    if (s === "" || s === "-" || s === "." || s === "-.") return "0";
+    return s;
+  }
+  function collectRowFormData(formEl) {
+    var fd = new FormData();
+    var token = formEl.querySelector("[name=csrfmiddlewaretoken]");
+    if (token) fd.append("csrfmiddlewaretoken", token.value);
+    var id = formEl.id;
+    document.querySelectorAll('[form="' + id + '"]').forEach(function (el) {
+      if (el.name && !el.disabled) fd.append(el.name, normalizeNumField(el.name, el.value));
+    });
+    return fd;
+  }
+  function getRowForForm(formEl) {
+    return document.querySelector('tr[data-estimate-form="' + formEl.id + '"]') || formEl.closest("tr");
+  }
+  function applySaveResponse(row, data) {
+    if (!row || !data || !data.ok) return;
+    var tc = row.querySelector(".js-item-total-cost");
+    var tp = row.querySelector(".js-item-total-price");
+    var sp = row.querySelector(".js-item-sell-price");
+    if (tc) tc.textContent = data.total_cost;
+    if (tp) tp.textContent = data.total_price;
+    if (sp && data.sell_price) sp.textContent = data.sell_price;
+    var section = row.closest(".estimate-section");
+    if (section) {
+      var sce = section.querySelector(".js-section-cost");
+      var spt = section.querySelector(".js-section-price");
+      if (sce) sce.textContent = data.section_total_cost;
+      if (spt) spt.textContent = data.section_total_price;
+    }
+    recalcProjectCards();
+  }
+  function saveRowPromise(formEl, useKeepalive, options) {
+    options = options || {};
+    var silent = options.silent === true;
+    var force = options.force === true;
+    return new Promise(function (resolve) {
+      if (!formEl || !formEl.action) {
+        resolve({ ok: true, skipped: true });
+        return;
+      }
+      var row = getRowForForm(formEl);
+      if (!row) {
+        if (!silent) alert("Ошибка: не найдена строка таблицы для сохранения. Обновите страницу.");
+        resolve({ ok: false });
+        return;
+      }
+      if (!force && formEl.dataset.estimateDirty !== "1") {
+        resolve({ ok: true, skipped: true });
+        return;
+      }
+      var fd = collectRowFormData(formEl);
+      var csrftoken = fd.get("csrfmiddlewaretoken") || getCookie("csrftoken");
+      var opts = {
+        method: "POST",
+        headers: {
+          "X-Requested-With": "XMLHttpRequest",
+          "X-CSRFToken": csrftoken || ""
+        },
+        body: fd
+      };
+      if (useKeepalive) opts.keepalive = true;
+      fetch(formEl.action, opts)
+        .then(function (r) {
+          var ct = r.headers.get("content-type") || "";
+          if (!ct.includes("application/json")) {
+            if (!silent) alert("Сохранение не выполнено: ответ сервера не JSON (возможно, сессия истекла). Обновите страницу и попробуйте снова.");
+            resolve({ ok: false });
+            return null;
+          }
+          return r.json().then(function (data) {
+            if (!r.ok || !data.ok) {
+              var msg = (data.errors && JSON.stringify(data.errors, null, 0)) || (data.error || "Неизвестная ошибка");
+              if (!silent) alert("Строка сметы не сохранена: " + msg);
+              resolve({ ok: false, errors: data.errors });
+              return;
+            }
+            delete formEl.dataset.estimateDirty;
+            applySaveResponse(row, data);
+            resolve({ ok: true });
+          });
+        })
+        .catch(function () {
+          if (!silent) alert("Сеть недоступна или сбой запроса. Проверьте подключение и нажмите «Сохранить раздел».");
+          resolve({ ok: false });
+        });
+    });
+  }
+  function flushPendingSavesKeepalive() {
+    document.querySelectorAll('form[id^="estimate-row-"]').forEach(function (f) {
+      cancelScheduledSave(f.id);
+    });
+    document.querySelectorAll('form[id^="estimate-row-"]').forEach(function (formEl) {
+      if (formEl.dataset.estimateDirty === "1") {
+        saveRowPromise(formEl, true, { silent: true });
+      }
+    });
+  }
+  function flushPendingSavesBeforeNavigate() {
+    document.querySelectorAll('form[id^="estimate-row-"]').forEach(function (f) {
+      cancelScheduledSave(f.id);
+    });
+    var promises = [];
+    document.querySelectorAll('form[id^="estimate-row-"]').forEach(function (formEl) {
+      if (formEl.dataset.estimateDirty === "1") {
+        promises.push(saveRowPromise(formEl, false));
+      }
+    });
+    if (!promises.length) return Promise.resolve(true);
+    return Promise.all(promises).then(function (results) {
+      return !results.some(function (r) {
+        return r && r.ok === false;
+      });
+    });
+  }
+  function cancelScheduledSave(formId) {
+    if (saveTimers[formId]) {
+      clearTimeout(saveTimers[formId]);
+      saveTimers[formId] = null;
+    }
+  }
+  function scheduleSave(formEl) {
+    var fid = formEl.id;
+    cancelScheduledSave(fid);
+    saveTimers[fid] = setTimeout(function () {
+      saveTimers[fid] = null;
+      saveRowPromise(formEl, false);
+    }, SAVE_DEBOUNCE_MS);
+  }
+  function saveRowNow(formEl) {
+    cancelScheduledSave(formEl.id);
+    return saveRowPromise(formEl, false);
+  }
+  document.querySelectorAll('form[id^="estimate-row-"]').forEach(function (formEl) {
+    document.querySelectorAll('[form="' + formEl.id + '"]').forEach(function (input) {
+      wireEstimateNumericZeroUX(input);
+      input.addEventListener("input", function () {
+        formEl.dataset.estimateDirty = "1";
+        recalcFromForm(formEl);
+        scheduleSave(formEl);
+      });
+      input.addEventListener("change", function () {
+        formEl.dataset.estimateDirty = "1";
+        recalcFromForm(formEl);
+        scheduleSave(formEl);
+      });
+      input.addEventListener("blur", function () {
+        if (formEl.dataset.estimateDirty === "1") {
+          saveRowNow(formEl);
+        }
+      });
+    });
+  });
+  document.querySelectorAll(".js-estimate-vat-checkbox").forEach(function (cb) {
+    cb.addEventListener("change", function () {
+      syncVatCheckboxes(this);
+      postVatToggle(this.checked);
+      recalcProjectCards();
+    });
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") flushPendingSavesKeepalive();
+  });
+  window.addEventListener("pagehide", flushPendingSavesKeepalive);
+  window.addEventListener("blur", flushPendingSavesKeepalive);
+  window.addEventListener("beforeunload", flushPendingSavesKeepalive);
+  document.addEventListener(
+    "click",
+    function (ev) {
+      if (!document.querySelector('form[id^="estimate-row-"]')) return;
+      var a = ev.target.closest("a[href]");
+      if (!a) return;
+      if (ev.defaultPrevented) return;
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+      if (typeof ev.button === "number" && ev.button !== 0) return;
+      if (a.getAttribute("target") === "_blank") return;
+      var href = a.getAttribute("href");
+      if (!href || href.charAt(0) === "#" || href.indexOf("javascript:") === 0) return;
+      var url;
+      try {
+        url = new URL(href, window.location.href);
+      } catch (e) {
+        return;
+      }
+      if (url.origin !== window.location.origin) return;
+      var next = url.pathname + url.search;
+      var cur = window.location.pathname + window.location.search;
+      if (next === cur) return;
+      ev.preventDefault();
+      flushPendingSavesBeforeNavigate().then(function (allSaved) {
+        if (!allSaved) return;
+        window.location.assign(url.pathname + url.search + url.hash);
+      });
+    },
+    true
+  );
+  document.querySelectorAll(".js-save-estimate-section").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var sec = btn.closest(".estimate-section");
+      if (!sec) return;
+      var label = btn.textContent;
+      document.querySelectorAll('form[id^="estimate-row-"]').forEach(function (f) {
+        cancelScheduledSave(f.id);
+      });
+      var forms = sec.querySelectorAll('form[id^="estimate-row-"]');
+      if (!forms.length) return;
+      var promises = [];
+      forms.forEach(function (formEl) {
+        formEl.dataset.estimateDirty = "1";
+        promises.push(saveRowPromise(formEl, false));
+      });
+      btn.disabled = true;
+      btn.textContent = "Сохранение…";
+      Promise.all(promises)
+        .then(function (results) {
+          var bad = results.some(function (r) {
+            return r && r.ok === false;
+          });
+          btn.disabled = false;
+          btn.textContent = bad ? label : "Сохранено";
+          if (!bad) {
+            setTimeout(function () {
+              btn.textContent = label;
+            }, 2000);
+          }
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.textContent = label;
+        });
+    });
+  });
+})();
+</script>
+{% endblock %}

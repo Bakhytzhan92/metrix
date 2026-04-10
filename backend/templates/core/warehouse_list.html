@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Склады — Metrix{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+  <h1 class="text-2xl font-semibold text-slate-900">Склады</h1>
+  <div class="flex flex-wrap items-center gap-2">
+    <a href="{% url 'warehouse_create' %}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать склад</a>
+    <a href="{% url 'stock_transfer' %}" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Переместить</a>
+    <a href="{% url 'warehouses_dashboard' %}" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Отчёт</a>
+    <a href="{% url 'material_create' %}" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Добавить материал</a>
+  </div>
+</div>
+
+<div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+  <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Название</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Локация</th>
+          <th class="px-4 py-3 text-right font-medium text-slate-700">Кол-во материалов</th>
+          <th class="px-4 py-3 text-right font-medium text-slate-700">Общая стоимость</th>
+          <th class="px-4 py-3 text-right font-medium text-slate-700">Действия</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for stat in stats %}
+        <tr class="hover:bg-slate-50/50">
+          <td class="px-4 py-3 font-medium text-slate-900">
+            <a href="{% url 'warehouse_detail' stat.warehouse.pk %}" class="text-indigo-600 hover:text-indigo-800">{{ stat.warehouse.name }}</a>
+          </td>
+          <td class="px-4 py-3 text-slate-600">{{ stat.warehouse.location|default:"—" }}</td>
+          <td class="px-4 py-3 text-right tabular-nums text-slate-800">{{ stat.materials_count }}</td>
+          <td class="px-4 py-3 text-right tabular-nums font-medium text-slate-900">{{ stat.total_value|floatformat:2 }} ₸</td>
+          <td class="px-4 py-3 text-right">
+            <a href="{% url 'warehouse_detail' stat.warehouse.pk %}" class="text-indigo-600 hover:text-indigo-800">Открыть</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="px-4 py-8 text-center text-slate-500">Нет складов. <a href="{% url 'warehouse_create' %}" class="text-indigo-600 hover:text-indigo-800">Создать склад</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="mt-4 flex flex-wrap gap-3">
+  <a href="{% url 'stock_incoming' %}" class="inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Добавить поступление</a>
+  <a href="{% url 'stock_writeoff' %}" class="inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Добавить списание</a>
+</div>
+{% endblock %}

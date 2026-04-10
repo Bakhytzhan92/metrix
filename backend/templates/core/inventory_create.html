@@ -1,0 +1,17 @@
+{% extends "core/project/project_layout.html" %}
+
+{% block project_content %}
+<div class="max-w-lg mx-auto">
+  <div class="rounded-xl bg-white shadow-sm ring-1 ring-slate-100 p-6">
+    <h2 class="text-lg font-semibold text-slate-900 mb-4">Добавить инвентарь</h2>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <div class="mt-4 flex gap-2">
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Добавить</button>
+        <a href="{% url 'project_warehouses' project.pk %}" class="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Отмена</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

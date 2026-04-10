@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Изменить пользователя — Права доступа — Metrix{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-lg">
+  <h1 class="text-2xl font-semibold text-slate-900 mb-4">Изменить пользователя</h1>
+  <p class="text-sm text-slate-600 mb-4">{{ company_user.user.get_username }} ({{ company_user.user.email|default:"" }})</p>
+  <form method="post" class="space-y-4 rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+    {% csrf_token %}
+    {% for field in form %}
+      <div class="text-sm">
+        <label class="block font-medium text-slate-700 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% for error in field.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="flex gap-3 pt-2">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить</button>
+      <a href="{% url 'settings_access' %}" class="rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

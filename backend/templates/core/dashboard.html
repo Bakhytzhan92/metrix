@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Проекты — Metrix{% endblock %}
+
+{% block content %}
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-semibold text-slate-900">Проекты</h1>
+    <a
+      href="{% url 'project_create' %}"
+      class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+    >
+      + Проект
+    </a>
+  </div>
+
+  <div class="flex flex-wrap gap-4 items-center mb-6 text-sm">
+    <form method="get" class="flex flex-wrap gap-3 items-center">
+      <label class="flex items-center gap-2">
+        <span class="text-slate-600">Статус:</span>
+        <select
+          name="status"
+          class="rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+        >
+          <option value="">Все</option>
+          <option value="planning" {% if status_filter == "planning" %}selected{% endif %}>Планирование</option>
+          <option value="active" {% if status_filter == "active" %}selected{% endif %}>Активные</option>
+          <option value="completed" {% if status_filter == "completed" %}selected{% endif %}>Завершённые</option>
+          <option value="archived" {% if status_filter == "archived" %}selected{% endif %}>Архив</option>
+        </select>
+      </label>
+
+      <label class="flex items-center gap-2">
+        <span class="text-slate-600">Сортировка:</span>
+        <select
+          name="order"
+          class="rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+        >
+          <option value="recent" {% if order == "recent" %}selected{% endif %}>Новые сверху</option>
+          <option value="oldest" {% if order == "oldest" %}selected{% endif %}>Старые сверху</option>
+        </select>
+      </label>
+
+      <button
+        type="submit"
+        class="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
+      >
+        Применить
+      </button>
+    </form>
+  </div>
+
+  {% if projects %}
+    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {% for project in projects %}
+        {% include "core/includes/project_card.html" with project=project %}
+      {% endfor %}
+    </div>
+
+    <!-- Модальное подтверждение удаления проекта -->
+    <div id="project-delete-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-delete-title" role="dialog" aria-modal="true">
+      <div class="flex min-h-screen items-center justify-center p-4">
+        <div class="fixed inset-0 bg-slate-500/75 transition-opacity" id="project-delete-backdrop"></div>
+        <div class="relative z-10 w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+          <h3 id="modal-delete-title" class="text-lg font-semibold text-slate-900">Удалить проект?</h3>
+          <p class="mt-2 text-sm text-slate-600">
+            Проект «<span id="project-delete-name"></span>» и все связанные данные будут удалены. Это действие нельзя отменить.
+          </p>
+          <form id="project-delete-form" method="post" action="" class="mt-6 flex justify-end gap-2">
+            {% csrf_token %}
+            <button type="button" id="project-delete-cancel" class="rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Отмена</button>
+            <button type="submit" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Удалить</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    window.PROJECT_DELETE_URL_TEMPLATE = "{% url 'project_delete' 99999 %}";
+    (function() {
+      var deleteModal = document.getElementById('project-delete-modal');
+      var deleteForm = document.getElementById('project-delete-form');
+      var deleteNameEl = document.getElementById('project-delete-name');
+      var deleteCancelBtn = document.getElementById('project-delete-cancel');
+      var deleteBackdrop = document.getElementById('project-delete-backdrop');
+
+      function openDeleteModal(projectId, projectName) {
+        if (!deleteModal || !deleteForm || !deleteNameEl) return;
+        deleteForm.action = window.PROJECT_DELETE_URL_TEMPLATE.replace('99999', projectId);
+        deleteNameEl.textContent = projectName || '';
+        deleteModal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+      }
+      function closeDeleteModal() {
+        if (!deleteModal) return;
+        deleteModal.classList.add('hidden');
+        document.body.style.overflow = '';
+      }
+      if (deleteCancelBtn) deleteCancelBtn.addEventListener('click', closeDeleteModal);
+      if (deleteBackdrop) deleteBackdrop.addEventListener('click', closeDeleteModal);
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && deleteModal && !deleteModal.classList.contains('hidden')) closeDeleteModal();
+      });
+
+      document.addEventListener('click', function(e) {
+        var trigger = e.target.closest('.project-actions-trigger');
+        var menu = e.target.closest('.project-actions-menu');
+        var deleteBtn = e.target.closest('.project-action-delete');
+        if (deleteBtn) {
+          e.preventDefault();
+          var card = deleteBtn.closest('.project-card');
+          var id = deleteBtn.getAttribute('data-project-id') || (card && card.getAttribute('data-project-id'));
+          var name = deleteBtn.getAttribute('data-project-name') || (card && card.getAttribute('data-project-name')) || '';
+          openDeleteModal(id, name);
+          closeAllMenus();
+          return;
+        }
+        if (trigger) {
+          e.preventDefault();
+          e.stopPropagation();
+          var actions = trigger.closest('.project-actions');
+          var openMenu = actions && actions.querySelector('.project-actions-menu');
+          var isHidden = openMenu && openMenu.classList.contains('hidden');
+          closeAllMenus();
+          if (openMenu && isHidden) {
+            openMenu.classList.remove('hidden');
+            trigger.setAttribute('aria-expanded', 'true');
+          }
+          return;
+        }
+        if (!menu || !e.target.closest('a') && !e.target.closest('button')) {
+          closeAllMenus();
+        }
+      });
+
+      function closeAllMenus() {
+        document.querySelectorAll('.project-actions-menu').forEach(function(m) { m.classList.add('hidden'); });
+        document.querySelectorAll('.project-actions-trigger').forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
+      }
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.project-actions')) closeAllMenus();
+      });
+    })();
+    </script>
+  {% else %}
+    <p class="text-sm text-slate-500">У вас ещё нет проектов. Создайте первый.</p>
+  {% endif %}
+{% endblock %}
+

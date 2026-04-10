@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Задачи — Metrix{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+  <h1 class="text-2xl font-semibold text-slate-900">Задачи</h1>
+  <a
+    href="{% url 'task_create' %}"
+    class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+  >
+    + Добавить задачу
+  </a>
+</div>
+
+{# Фильтры (как в Metrix) #}
+<form method="get" class="mb-6 flex flex-wrap items-center gap-3 rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-100">
+  <span class="text-sm font-medium text-slate-600">Фильтры:</span>
+  <label class="flex items-center gap-1 text-sm">
+    <span class="text-slate-500">Проект</span>
+    <select name="project" class="rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+      <option value="">Все</option>
+      {% for p in projects %}
+        <option value="{{ p.pk }}" {% if filter_project_id == p.pk %}selected{% endif %}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="flex items-center gap-1 text-sm">
+    <span class="text-slate-500">Статус</span>
+    <select name="status" class="rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+      <option value="">Все</option>
+      <option value="new" {% if filter_status == "new" %}selected{% endif %}>Новая</option>
+      <option value="in_progress" {% if filter_status == "in_progress" %}selected{% endif %}>В работе</option>
+      <option value="done" {% if filter_status == "done" %}selected{% endif %}>Выполнена</option>
+      <option value="canceled" {% if filter_status == "canceled" %}selected{% endif %}>Отменена</option>
+    </select>
+  </label>
+  <label class="flex items-center gap-1 text-sm">
+    <span class="text-slate-500">Ответственный</span>
+    <select name="assigned" class="rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+      <option value="">Все</option>
+      {% for uid, uname in assignee_choices %}
+        <option value="{{ uid }}" {% if filter_assigned_id == uid %}selected{% endif %}>{{ uname }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="flex items-center gap-1 text-sm">
+    <span class="text-slate-500">Сортировка</span>
+    <select name="sort" class="rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+      <option value="created_at" {% if sort == "created_at" %}selected{% endif %}>По дате создания</option>
+      <option value="due_date" {% if sort == "due_date" %}selected{% endif %}>По дедлайну</option>
+    </select>
+  </label>
+  <button type="submit" class="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">
+    Применить
+  </button>
+</form>
+
+{% if tasks %}
+  <div class="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-100">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Название</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Проект</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Статус</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Приоритет</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Ответственный</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Дедлайн</th>
+          <th class="px-4 py-3 text-right font-medium text-slate-700">Действия</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for task in tasks %}
+          <tr class="hover:bg-slate-50/50">
+            <td class="px-4 py-3">
+              <a href="{% url 'task_edit' task.pk %}" class="font-medium text-indigo-600 hover:text-indigo-800">{{ task.title }}</a>
+            </td>
+            <td class="px-4 py-3 text-slate-600">{{ task.project.name }}</td>
+            <td class="px-4 py-3">
+              <span
+                class="task-status-badge inline-flex rounded-full px-2 py-0.5 text-xs font-medium
+                  {% if task.status == 'new' %}bg-slate-100 text-slate-700
+                  {% elif task.status == 'in_progress' %}bg-blue-100 text-blue-800
+                  {% elif task.status == 'done' %}bg-green-100 text-green-800
+                  {% else %}bg-red-100 text-red-800{% endif %}"
+                data-task-id="{{ task.pk }}"
+                data-status="{{ task.status }}"
+              >
+                {{ task.get_status_display }}
+              </span>
+              <form class="task-status-form inline ml-1" data-task-id="{{ task.pk }}" action="{% url 'task_status' task.pk %}" method="post" style="display:inline;">
+                {% csrf_token %}
+                <select name="status" class="task-status-select rounded border-slate-300 text-xs focus:border-indigo-500 focus:ring-indigo-500" title="Сменить статус">
+                  <option value="new" {% if task.status == "new" %}selected{% endif %}>Новая</option>
+                  <option value="in_progress" {% if task.status == "in_progress" %}selected{% endif %}>В работе</option>
+                  <option value="done" {% if task.status == "done" %}selected{% endif %}>Выполнена</option>
+                  <option value="canceled" {% if task.status == "canceled" %}selected{% endif %}>Отменена</option>
+                </select>
+              </form>
+            </td>
+            <td class="px-4 py-3 text-slate-600">{{ task.get_priority_display }}</td>
+            <td class="px-4 py-3 text-slate-600">{{ task.assigned_to|default:"—" }}</td>
+            <td class="px-4 py-3 text-slate-600">{{ task.due_date|date:"d.m.Y"|default:"—" }}</td>
+            <td class="px-4 py-3 text-right">
+              <a href="{% url 'task_edit' task.pk %}" class="text-indigo-600 hover:text-indigo-800">Изменить</a>
+              <span class="text-slate-300">|</span>
+              <form method="post" action="{% url 'task_delete' task.pk %}" class="inline" onsubmit="return confirm('Удалить задачу?');">
+                {% csrf_token %}
+                <button type="submit" class="text-red-600 hover:text-red-800">Удалить</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="flex flex-col items-center justify-center rounded-xl bg-white py-16 shadow-sm ring-1 ring-slate-100 text-center">
+    <span class="mb-4 text-slate-300 text-5xl">✎</span>
+    <p class="mb-4 text-slate-600">Создайте первую задачу</p>
+    <a
+      href="{% url 'task_create' %}"
+      class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+    >
+      + Добавить задачу
+    </a>
+  </div>
+{% endif %}
+
+<script>
+(function() {
+  document.querySelectorAll('.task-status-form').forEach(function(form) {
+    var select = form.querySelector('.task-status-select');
+    if (!select) return;
+    select.addEventListener('change', function() {
+      var formData = new FormData(form);
+      formData.set('status', select.value);
+      fetch(form.action, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok) {
+          var badge = document.querySelector('.task-status-badge[data-task-id="' + form.dataset.taskId + '"]');
+          if (badge) {
+            badge.textContent = data.status_display;
+            badge.className = 'task-status-badge inline-flex rounded-full px-2 py-0.5 text-xs font-medium ';
+            if (data.status === 'new') badge.className += 'bg-slate-100 text-slate-700';
+            else if (data.status === 'in_progress') badge.className += 'bg-blue-100 text-blue-800';
+            else if (data.status === 'done') badge.className += 'bg-green-100 text-green-800';
+            else badge.className += 'bg-red-100 text-red-800';
+          }
+        }
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

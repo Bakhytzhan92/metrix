@@ -1,0 +1,43 @@
+{% comment %}
+  Компонент: карточка проекта с выпадающим меню действий (ProjectActions).
+  Переменная: project (объект проекта).
+  Кнопка в правом верхнем углу; меню: Редактировать, Переместить, Удалить.
+  Закрытие по клику вне меню и по Escape — в script на странице дашборда.
+{% endcomment %}
+<div
+  class="project-card relative flex flex-col justify-between rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100 hover:shadow-md transition-shadow"
+  data-project-id="{{ project.pk }}"
+  data-project-name="{{ project.name|escapejs }}"
+>
+  <div class="project-actions absolute top-3 right-3 z-10">
+    <button
+      type="button"
+      class="project-actions-trigger inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      aria-label="Действия"
+      aria-expanded="false"
+      aria-haspopup="true"
+    >
+      <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+      </svg>
+    </button>
+    <div
+      class="project-actions-menu absolute right-0 top-full mt-1 hidden min-w-[160px] rounded-lg bg-white py-1 shadow-lg ring-1 ring-slate-200"
+      role="menu"
+    >
+      <a href="{% url 'project_edit' project.pk %}" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" role="menuitem">Редактировать</a>
+      <span class="block px-4 py-2 text-sm text-slate-400 cursor-default" role="menuitem">Переместить</span>
+      <button type="button" class="project-action-delete block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50" role="menuitem" data-project-id="{{ project.pk }}" data-project-name="{{ project.name|escapejs }}">Удалить</button>
+    </div>
+  </div>
+  <a href="{% url 'project_detail' project.pk %}" class="block pr-10 -m-5 p-5 rounded-xl hover:bg-slate-50/50">
+    <div>
+      <h2 class="text-lg font-semibold text-slate-900 mb-1">{{ project.name }}</h2>
+      <p class="text-xs text-slate-500 mb-3">{{ project.get_status_display }}</p>
+    </div>
+    <div class="mt-2 text-xs text-slate-500 flex items-center justify-between">
+      <span>{{ project.start_date|default:"–" }} — {{ project.end_date|default:"–" }}</span>
+      <span class="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">Актуальный</span>
+    </div>
+  </a>
+</div>

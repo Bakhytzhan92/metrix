@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Заказ {{ order.supplier }} — Снабжение — Metrix{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+  <div>
+    <h1 class="text-2xl font-semibold text-slate-900">Заказ: {{ order.supplier }}</h1>
+    <p class="text-sm text-slate-500">Создан {{ order.created_at|date:"d.m.Y H:i" }}</p>
+  </div>
+  <form method="post" class="flex items-center gap-2">
+    {% csrf_token %}
+    <label class="text-sm text-slate-600">Статус</label>
+    <select name="status" class="rounded-md border-slate-300 text-sm">
+      {% for value, label in status_choices %}
+        <option value="{{ value }}" {% if order.status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Сохранить</button>
+  </form>
+</div>
+
+<div class="rounded-xl bg-white shadow-sm ring-1 ring-slate-100 overflow-hidden">
+  <table class="min-w-full divide-y divide-slate-200 text-sm">
+    <thead class="bg-slate-50">
+      <tr>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Ресурс</th>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Кол-во</th>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Цена, факт</th>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Сумма, факт</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for item in order.items.all %}
+        <tr>
+          <td class="px-4 py-3">{{ item.request.resource.name }} ({{ item.request.project.name }})</td>
+          <td class="px-4 py-3">{{ item.quantity }} {{ item.request.resource.unit }}</td>
+          <td class="px-4 py-3">{{ item.price_fact }}</td>
+          <td class="px-4 py-3">{{ item.total_fact }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="mt-4"><a href="{% url 'supply_dashboard' %}?tab=orders" class="text-indigo-600 hover:text-indigo-800">← К списку заказов</a></p>
+{% endblock %}

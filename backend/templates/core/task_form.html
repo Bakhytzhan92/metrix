@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — Metrix{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-2xl">
+  <h1 class="mb-6 text-2xl font-semibold text-slate-900">{{ title }}</h1>
+
+  <form method="post" class="space-y-4 rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form %}
+      <div class="text-sm">
+        <label class="mb-1 block font-medium text-slate-700" for="{{ field.id_for_label }}">
+          {{ field.label }}
+        </label>
+        {{ field }}
+        {% if field.help_text %}
+          <p class="mt-1 text-xs text-slate-400">{{ field.help_text }}</p>
+        {% endif %}
+        {% for error in field.errors %}
+          <p class="mt-1 text-xs text-red-600">{{ error }}</p>
+        {% endfor %}
+      </div>
+    {% endfor %}
+    <div class="flex gap-3 pt-2">
+      <button
+        type="submit"
+        class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+      >
+        Сохранить
+      </button>
+      <a href="{% url 'task_list' %}" class="inline-flex items-center rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">
+        Отмена
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

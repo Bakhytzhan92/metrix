@@ -1,0 +1,24 @@
+{% extends "core/project/project_layout.html" %}
+{% block project_content %}
+<div class="mx-auto max-w-xl space-y-6">
+  <div>
+    <a href="{% url 'project_finance_section' project.pk %}?tab=journal" class="text-sm text-indigo-600 hover:text-indigo-800">← Журнал</a>
+    <h1 class="mt-2 text-lg font-semibold text-slate-900">Редактирование операции</h1>
+    <p class="text-xs text-slate-500 mt-1">{{ operation.date }} · {{ operation.get_type_display }}</p>
+  </div>
+  <form method="post" class="space-y-3 rounded-xl border border-slate-200 bg-white p-6 shadow-sm text-sm">
+    {% csrf_token %}
+    {% for field in form %}
+    <div>
+      <label class="block text-xs text-slate-600 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.errors %}<p class="text-xs text-red-600 mt-1">{{ field.errors }}</p>{% endif %}
+    </div>
+    {% endfor %}
+    <div class="flex gap-2 pt-2">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить</button>
+      <a href="{% url 'project_finance_section' project.pk %}?tab=journal" class="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

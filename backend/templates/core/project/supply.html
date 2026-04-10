@@ -1,0 +1,299 @@
+{% extends "core/project/project_layout.html" %}
+{% block project_content %}
+<div class="space-y-6">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-lg font-semibold text-slate-900">Снабжение</h1>
+      <p class="text-xs text-slate-500 mt-0.5">Заявки по смете → заказы поставщику → финансы и склад. KPI считаются по смете и заявкам/заказам.</p>
+    </div>
+    <a href="{% url 'project_estimate' project.pk %}" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Смета</a>
+  </div>
+
+  {# KPI #}
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-slate-500">Бюджет (смета)</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900">{{ kpi.budget|floatformat:2 }} ₸</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-slate-500">Закуплено (по плану)</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-emerald-700">{{ kpi.purchased_on_plan|floatformat:2 }} ₸</p>
+    </div>
+    <div class="rounded-xl border border-red-100 bg-red-50/50 p-4 shadow-sm">
+      <p class="text-xs font-medium text-red-800">Закуплено (сверх плана)</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-red-700">{{ kpi.purchased_over|floatformat:2 }} ₸</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-slate-500">Осталось закупить</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900">{{ kpi.remaining|floatformat:2 }} ₸</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-slate-500">Экономия (план − факт)</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-indigo-700">{{ kpi.savings|floatformat:2 }} ₸</p>
+    </div>
+  </div>
+
+  {# Фильтры #}
+  <form method="get" class="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm text-sm">
+    <input type="hidden" name="tab" value="{{ supply_tab }}" />
+    {% if preselect_estimate_item %}<input type="hidden" name="estimate_item" value="{{ preselect_estimate_item }}" />{% endif %}
+    <div>
+      <label class="block text-xs text-slate-600 mb-1">Статус</label>
+      <select name="status" class="rounded-md border border-slate-300 px-2 py-1.5">
+        <option value="">Все</option>
+        {% for val, label in status_choices %}
+        <option value="{{ val }}" {% if filter_status == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-600 mb-1">Тип ресурса</label>
+      <select name="resource_type" class="rounded-md border border-slate-300 px-2 py-1.5">
+        <option value="">Все</option>
+        {% for val, label in resource_types %}
+        <option value="{{ val }}" {% if filter_resource_type == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-600 mb-1">Период с</label>
+      <input type="date" name="date_from" value="{{ filter_date_from }}" class="rounded-md border border-slate-300 px-2 py-1.5" />
+    </div>
+    <div>
+      <label class="block text-xs text-slate-600 mb-1">По</label>
+      <input type="date" name="date_to" value="{{ filter_date_to }}" class="rounded-md border border-slate-300 px-2 py-1.5" />
+    </div>
+    <div>
+      <label class="block text-xs text-slate-600 mb-1">Поиск</label>
+      <input type="text" name="q" value="{{ filter_q }}" placeholder="Название ресурса" class="rounded-md border border-slate-300 px-2 py-1.5 w-44" />
+    </div>
+    <button type="submit" class="rounded-md bg-slate-800 px-3 py-2 text-white text-sm hover:bg-slate-900">Применить</button>
+    <a href="{% url 'project_supply' project.pk %}?tab={{ supply_tab }}" class="text-sm text-indigo-600 py-2">Сброс</a>
+  </form>
+
+  {# Табы #}
+  <div class="border-b border-slate-200 flex gap-1 text-sm">
+    <a href="?tab=requests{% if preselect_estimate_item %}&estimate_item={{ preselect_estimate_item }}{% endif %}{% if filter_status %}&status={{ filter_status }}{% endif %}{% if filter_q %}&q={{ filter_q|urlencode }}{% endif %}" class="px-4 py-2.5 rounded-t-md border-b-2 {% if supply_tab == 'requests' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Заявки</a>
+    <a href="?tab=orders{% if preselect_estimate_item %}&estimate_item={{ preselect_estimate_item }}{% endif %}" class="px-4 py-2.5 rounded-t-md border-b-2 {% if supply_tab == 'orders' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Заказы</a>
+  </div>
+
+  {% if supply_tab == 'orders' %}
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-100 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Поставщик</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Сумма</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Оплачено</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Статус поставки</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Оплата</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Дата</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Заявки</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Очередь</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for o in supply_orders %}
+        <tr class="hover:bg-slate-50/60">
+          <td class="px-3 py-2 font-medium text-slate-900">{{ o.supplier }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ o.total_amount|floatformat:2 }} ₸</td>
+          <td class="px-3 py-2 text-right tabular-nums text-slate-700">{{ o.paid_amount|floatformat:2 }} ₸</td>
+          <td class="px-3 py-2 text-slate-600">{{ o.get_status_display }}</td>
+          <td class="px-3 py-2">
+            <form method="post" action="{% url 'project_supply_order_payment' project.pk o.pk %}" class="inline-flex items-center gap-2">
+              {% csrf_token %}
+              <select name="payment_status" onchange="this.form.submit()" class="rounded border border-slate-200 text-xs py-1 pr-6 max-w-[10rem]">
+                {% for val, label in payment_status_choices %}
+                <option value="{{ val }}" {% if o.payment_status == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </td>
+          <td class="px-3 py-2 text-slate-600 tabular-nums">{{ o.created_at|date:"d.m.Y" }}</td>
+          <td class="px-3 py-2 text-xs text-slate-600 max-w-xs">
+            {% for it in o.items.all %}
+            <span class="inline-block mr-2">{{ it.request.resource.name }}</span>{% if not forloop.last %};{% endif %}
+            {% empty %}—{% endfor %}
+          </td>
+          <td class="px-3 py-2 text-xs">
+            {% if o.payment_status == 'draft' %}
+            <form method="post" action="{% url 'project_supply_order_submit_payment' project.pk o.pk %}" class="inline">
+              {% csrf_token %}
+              <button type="submit" class="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">Отправить на оплату</button>
+            </form>
+            {% elif o.payment_status == 'awaiting_payment' %}
+            <a href="{% url 'project_finance_section' project.pk %}?tab=payment_orders" class="text-indigo-600 hover:text-indigo-800">В финансах →</a>
+            {% elif o.payment_status == 'partial' %}
+            <span class="text-amber-700">Частично</span>
+            {% elif o.payment_status == 'paid' %}
+            <span class="text-emerald-700">Оплачено</span>
+            {% else %}—{% endif %}
+            {% if o.finance_operation_id %}
+            <p class="mt-1 text-[10px] text-slate-400">есть ранее созданная проводка</p>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="px-4 py-8 text-center text-slate-500">Заказов пока нет. Создайте из заявок.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="rounded-xl border border-indigo-100 bg-indigo-50/30 p-4">
+    <h2 class="text-sm font-semibold text-slate-900 mb-3">Создать заказ из заявок</h2>
+    <form method="post" action="{% url 'project_supply_order_create' project.pk %}" class="space-y-3 max-w-xl">
+      {% csrf_token %}
+      <div>
+        <label class="block text-xs text-slate-600 mb-1">{{ ord_form.supplier.label }}</label>
+        {{ ord_form.supplier }}
+        {% if ord_form.supplier.errors %}<p class="text-xs text-red-600">{{ ord_form.supplier.errors }}</p>{% endif %}
+      </div>
+      <div>
+        Выберите заявки (без активного заказа):
+        <div class="mt-2 space-y-1 max-h-48 overflow-y-auto border border-slate-200 rounded-md p-2 bg-white">
+          {% for val, label in ord_form.request_ids.field.choices %}
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="request_ids" value="{{ val }}" />
+            <span>{{ label }}</span>
+          </label>
+          {% empty %}
+          <p class="text-sm text-slate-500">Нет подходящих заявок (создайте заявки во вкладке «Заявки»).</p>
+          {% endfor %}
+        </div>
+        {% if ord_form.request_ids.errors %}<p class="text-xs text-red-600">{{ ord_form.request_ids.errors }}</p>{% endif %}
+      </div>
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать заказ</button>
+    </form>
+  </div>
+
+  {% else %}
+
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-100 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Ресурс</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Этап (смета)</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Требуется</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Срок доставки</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Кол-во</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Цена ед.</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">План</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Факт</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Заказ</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Статус</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in supply_requests %}
+        <tr class="hover:bg-slate-50/60 {% if r.status == 'purchased' %}bg-emerald-50/40{% endif %} {% if r.delivery_date and r.delivery_date < today and r.status != 'purchased' and r.status != 'cancelled' %}bg-red-50/50{% endif %}" data-req-id="{{ r.pk }}">
+          <td class="px-3 py-2">
+            <div class="font-medium text-slate-900">{{ r.resource.name }}</div>
+            <div class="text-xs text-slate-500">{{ r.resource.get_type_display }}</div>
+          </td>
+          <td class="px-3 py-2 text-slate-600 text-xs">
+            {% if r.estimate_item %}
+            {{ r.estimate_item.section.name }} → {{ r.estimate_item.name|default:"—" }}
+            {% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2 tabular-nums text-slate-700">{{ r.required_date|date:"d.m.Y" }}</td>
+          <td class="px-3 py-2 tabular-nums">{% if r.delivery_date %}{{ r.delivery_date|date:"d.m.Y" }}{% else %}—{% endif %}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ r.quantity }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ r.price_plan|floatformat:2 }}</td>
+          <td class="px-3 py-2 text-right tabular-nums font-medium">{{ r.total_plan|floatformat:2 }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">
+            {% if r.order_item %}
+            {{ r.order_item.total_fact|floatformat:2 }}
+            {% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs">
+            {% if r.order_item %}
+            №{{ r.order_item.order_id }} · {{ r.order_item.order.supplier|truncatechars:20 }}
+            {% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2">
+            <select class="js-req-status rounded border border-slate-200 text-xs py-1 w-full max-w-[9rem]" data-req="{{ r.pk }}">
+              {% for val, label in status_choices %}
+              <option value="{{ val }}" {% if r.status == val %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="10" class="px-4 py-8 text-center text-slate-500">Нет заявок по фильтру.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div id="supply-create-request" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm scroll-mt-4">
+    <h2 class="text-sm font-semibold text-slate-900 mb-3">➕ Создать заявку из сметы</h2>
+    <form method="post" action="{% url 'project_supply_request_create' project.pk %}" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl text-sm">
+      {% csrf_token %}
+      <div class="sm:col-span-2">
+        <label class="block text-xs text-slate-600 mb-1">{{ req_form.estimate_item.label }}</label>
+        {{ req_form.estimate_item }}
+      </div>
+      <div>
+        <label class="block text-xs text-slate-600 mb-1">{{ req_form.required_date.label }}</label>
+        {{ req_form.required_date }}
+      </div>
+      <div>
+        <label class="block text-xs text-slate-600 mb-1">{{ req_form.delivery_date.label }}</label>
+        {{ req_form.delivery_date }}
+      </div>
+      <div>
+        <label class="block text-xs text-slate-600 mb-1">{{ req_form.quantity.label }}</label>
+        {{ req_form.quantity }}
+      </div>
+      <div>
+        <label class="block text-xs text-slate-600 mb-1">{{ req_form.price_plan.label }}</label>
+        {{ req_form.price_plan }}
+      </div>
+      <div class="sm:col-span-2">
+        <label class="block text-xs text-slate-600 mb-1">{{ req_form.supplier_name.label }}</label>
+        {{ req_form.supplier_name }}
+      </div>
+      <div class="flex items-end">
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать заявку</button>
+      </div>
+    </form>
+    <p class="mt-2 text-xs text-slate-500">Цена и ресурс подставляются из позиции сметы; объём и даты можно изменить. После создания заявка в статусе «Ожидает закупки».</p>
+  </div>
+  {% endif %}
+</div>
+
+{% if supply_tab == 'requests' and supply_requests %}
+<script>
+(function () {
+  function getCookie(name) {
+    var m = document.cookie.match("(^|;) ?" + name + "=([^;]*)(;|$)");
+    return m ? decodeURIComponent(m[2]) : "";
+  }
+  var csrftoken = getCookie("csrftoken");
+  var API_TMPL = "{% url 'project_supply_request_api' project.pk 999999 %}".replace("999999", "__ID__");
+  document.querySelectorAll(".js-req-status").forEach(function (sel) {
+    sel.addEventListener("change", function () {
+      var id = sel.getAttribute("data-req");
+      var url = API_TMPL.replace("__ID__", id);
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrftoken,
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        body: JSON.stringify({ status: sel.value }),
+        credentials: "same-origin"
+      }).then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok || !j.ok) alert("Не удалось сохранить статус");
+        });
+      }).catch(function () { alert("Ошибка сети"); });
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

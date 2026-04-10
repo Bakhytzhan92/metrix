@@ -1,0 +1,252 @@
+{% extends "core/project/project_layout.html" %}
+{% block project_content %}
+<div class="space-y-6">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-lg font-semibold text-slate-900">Финансы</h1>
+      <p class="text-xs text-slate-500 mt-0.5">Журнал, заказы на оплату из снабжения, работы по актам из документов. Все оплаты попадают в журнал.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="{% url 'project_estimate' project.pk %}" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Смета</a>
+      <a href="{% url 'project_supply' project.pk %}" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Снабжение</a>
+      <a href="{% url 'project_documents' project.pk %}" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Документы</a>
+    </div>
+  </div>
+
+  {# KPI #}
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm">
+      <p class="text-xs font-medium text-emerald-800">Доходы</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-emerald-700">{{ kpi.income|floatformat:2 }} ₸</p>
+    </div>
+    <div class="rounded-xl border border-red-100 bg-red-50/40 p-4 shadow-sm">
+      <p class="text-xs font-medium text-red-800">Расходы</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-red-700">{{ kpi.expense|floatformat:2 }} ₸</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-slate-500">Заказы на оплату</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900">{{ kpi.orders_to_pay|floatformat:2 }} ₸</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p class="text-xs font-medium text-slate-500">Работы на оплату</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900">{{ kpi.works_to_pay|floatformat:2 }} ₸</p>
+    </div>
+  </div>
+
+  {# Вкладки #}
+  <div class="border-b border-slate-200 flex flex-wrap gap-1 text-sm">
+    <a href="?tab=journal&amp;date_from={{ filter_date_from|urlencode }}&amp;date_to={{ filter_date_to|urlencode }}&amp;type={{ filter_type|urlencode }}&amp;contractor={{ filter_contractor|urlencode }}" class="px-4 py-2.5 rounded-t-md border-b-2 {% if finance_tab == 'journal' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Журнал операций</a>
+    <a href="?tab=payment_orders" class="px-4 py-2.5 rounded-t-md border-b-2 {% if finance_tab == 'payment_orders' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Заказы на оплату</a>
+    <a href="?tab=work_payments" class="px-4 py-2.5 rounded-t-md border-b-2 {% if finance_tab == 'work_payments' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Работы на оплату</a>
+  </div>
+
+  {% if finance_tab == 'journal' %}
+  {# Фильтры журнала #}
+  <form method="get" class="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm text-sm">
+    <input type="hidden" name="tab" value="journal" />
+    <div>
+      <label class="block text-xs text-slate-600 mb-1">Период с</label>
+      <input type="date" name="date_from" value="{{ filter_date_from }}" class="rounded-md border border-slate-300 px-2 py-1.5" />
+    </div>
+    <div>
+      <label class="block text-xs text-slate-600 mb-1">По</label>
+      <input type="date" name="date_to" value="{{ filter_date_to }}" class="rounded-md border border-slate-300 px-2 py-1.5" />
+    </div>
+    <div>
+      <label class="block text-xs text-slate-600 mb-1">Тип</label>
+      <select name="type" class="rounded-md border border-slate-300 px-2 py-1.5">
+        <option value="">Все</option>
+        {% for val, label in type_choices %}
+        <option value="{{ val }}" {% if filter_type == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-slate-600 mb-1">Контрагент</label>
+      <input type="text" name="contractor" value="{{ filter_contractor }}" placeholder="Поиск" class="rounded-md border border-slate-300 px-2 py-1.5 w-40" />
+    </div>
+    <button type="submit" class="rounded-md bg-slate-800 px-3 py-2 text-white text-sm hover:bg-slate-900">Применить</button>
+    <a href="{% url 'project_finance_export_journal' project.pk %}?date_from={{ filter_date_from|urlencode }}&amp;date_to={{ filter_date_to|urlencode }}&amp;type={{ filter_type|urlencode }}&amp;contractor={{ filter_contractor|urlencode }}" class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Экспорт Excel</a>
+  </form>
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div class="rounded-xl border border-emerald-100 bg-white p-4 shadow-sm">
+      <h2 class="text-sm font-semibold text-slate-900 mb-3">➕ Доход</h2>
+      <form method="post" action="{% url 'project_finance_income_create' project.pk %}" class="space-y-3 text-sm">
+        {% csrf_token %}
+        {% for field in income_form %}
+          {% if field.is_hidden %}{{ field }}{% else %}
+          <div>
+            <label class="block text-xs text-slate-600 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<p class="text-xs text-red-600 mt-1">{{ field.errors }}</p>{% endif %}
+          </div>
+          {% endif %}
+        {% endfor %}
+        <button type="submit" class="mt-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">Добавить</button>
+      </form>
+    </div>
+    <div class="rounded-xl border border-red-100 bg-white p-4 shadow-sm">
+      <h2 class="text-sm font-semibold text-slate-900 mb-3">➖ Расход</h2>
+      <form method="post" action="{% url 'project_finance_expense_create' project.pk %}" class="space-y-3 text-sm">
+        {% csrf_token %}
+        {% for field in expense_form %}
+          {% if field.is_hidden %}{{ field }}{% else %}
+          <div>
+            <label class="block text-xs text-slate-600 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<p class="text-xs text-red-600 mt-1">{{ field.errors }}</p>{% endif %}
+          </div>
+          {% endif %}
+        {% endfor %}
+        <button type="submit" class="mt-2 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700">Добавить</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-100 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Дата</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Тип</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Статья</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Контрагент</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Сумма</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Статус</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Основание</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Комментарий</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700 w-28">Действия</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for op in journal_operations %}
+        <tr class="hover:bg-slate-50/60 {% if op.type == 'income' %}bg-emerald-50/20{% elif op.type == 'expense' %}bg-red-50/10{% endif %}">
+          <td class="px-3 py-2 tabular-nums text-slate-700">{{ op.date|date:"d.m.Y" }}</td>
+          <td class="px-3 py-2 {% if op.type == 'income' %}text-emerald-700{% elif op.type == 'expense' %}text-red-700{% else %}text-slate-600{% endif %}">{{ op.get_type_display }}</td>
+          <td class="px-3 py-2 text-slate-600">{% if op.category %}{{ op.category.name }}{% else %}—{% endif %}</td>
+          <td class="px-3 py-2 text-slate-600">{{ op.contractor|default:"—" }}</td>
+          <td class="px-3 py-2 text-right tabular-nums font-medium">{{ op.amount|floatformat:2 }} ₸</td>
+          <td class="px-3 py-2 text-xs">{{ op.get_journal_status_display }}</td>
+          <td class="px-3 py-2 text-xs text-slate-600">
+            {% if op.basis == 'supply_order' and op.supply_order %}Заказ №{{ op.supply_order_id }}{% elif op.basis == 'work_act' and op.work_act %}Акт{% elif op.basis == 'estimate' %}Смета{% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs text-slate-500 max-w-xs truncate" title="{{ op.description }}">{{ op.description|default:"—" }}</td>
+          <td class="px-3 py-2 text-right text-xs space-y-1">
+            <a href="{% url 'project_finance_operation_edit' project.pk op.pk %}" class="text-indigo-600 hover:text-indigo-800 block">Изменить</a>
+            <form method="post" action="{% url 'project_finance_operation_soft_delete' project.pk op.pk %}" onsubmit="return confirm('Удалить операцию из журнала? Баланс будет скорректирован.');">
+              {% csrf_token %}
+              <button type="submit" class="text-red-600 hover:text-red-800">Удалить</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="px-4 py-10 text-center text-slate-500">Операций пока нет — добавьте доход или расход выше.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% elif finance_tab == 'payment_orders' %}
+  {% if supply_for_payment %}
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-100 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Поставщик</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Материал / позиции</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Кол-во</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Сумма</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Оплачено</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Дата</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Статус</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Оплатить</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in supply_for_payment %}
+        <tr class="border-b border-slate-100 hover:bg-slate-50/60">
+          <td class="px-3 py-2 font-medium text-slate-900">{{ o.supplier }}</td>
+          <td class="px-3 py-2 text-xs text-slate-600 max-w-xs">
+            {% for it in o.items.all %}{{ it.request.resource.name }}{% if not forloop.last %}; {% endif %}{% empty %}—{% endfor %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums text-xs">
+            {% for it in o.items.all %}{{ it.quantity }}{% if not forloop.last %} / {% endif %}{% empty %}—{% endfor %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ o.total_amount|floatformat:2 }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-slate-600">{{ o.paid_amount|floatformat:2 }}</td>
+          <td class="px-3 py-2 tabular-nums text-slate-600">{{ o.created_at|date:"d.m.Y" }}</td>
+          <td class="px-3 py-2 text-xs">{{ o.get_payment_status_display }}</td>
+          <td class="px-3 py-2">
+            <form method="post" action="{% url 'project_finance_pay_supply_order' project.pk o.pk %}" class="flex flex-col gap-1 w-36">
+              {% csrf_token %}
+              <input type="number" name="amount" step="0.01" min="0.01" value="{{ o.remaining_amount|stringformat:'.2f' }}" class="rounded border border-slate-200 text-xs px-1 py-0.5 w-full tabular-nums" />
+              <input type="date" name="pay_date" value="{{ today|date:'Y-m-d' }}" class="rounded border border-slate-200 text-xs px-1 py-0.5 w-full" />
+              <button type="submit" class="rounded bg-indigo-600 text-white text-xs py-1 font-medium hover:bg-indigo-700">Оплатить</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 py-16 px-6 text-center">
+    <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+      <svg class="h-8 w-8" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/></svg>
+    </div>
+    <p class="text-sm text-slate-600 max-w-md mx-auto">После отправки на оплату заказов с типом «Оплата поставщикам» в модуле «Снабжение» они появятся здесь для формирования операций оплаты.</p>
+    <a href="{% url 'project_supply' project.pk %}?tab=orders" class="mt-4 inline-block text-sm text-indigo-600 hover:text-indigo-800">Перейти в снабжение</a>
+  </div>
+  {% endif %}
+
+  {% else %}
+  {# work_payments #}
+  {% if works_for_payment %}
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-100 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Подрядчик</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Вид работ</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Сумма</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Оплачено</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Дата акта</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Статус</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Оплатить</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in works_for_payment %}
+        <tr class="border-b border-slate-100 hover:bg-slate-50/60">
+          <td class="px-3 py-2 font-medium text-slate-900">{{ a.contractor }}</td>
+          <td class="px-3 py-2 text-slate-600 text-xs">{{ a.work_type|default:"—" }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ a.amount|floatformat:2 }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-slate-600">{{ a.paid_amount|floatformat:2 }}</td>
+          <td class="px-3 py-2 tabular-nums text-slate-600">{{ a.act_date|date:"d.m.Y" }}</td>
+          <td class="px-3 py-2 text-xs">{{ a.get_payment_status_display }}</td>
+          <td class="px-3 py-2">
+            <form method="post" action="{% url 'project_finance_pay_work_act' project.pk a.pk %}" class="flex flex-col gap-1 w-36">
+              {% csrf_token %}
+              <input type="number" name="amount" step="0.01" min="0.01" value="{{ a.remaining_amount|stringformat:'.2f' }}" class="rounded border border-slate-200 text-xs px-1 py-0.5 w-full tabular-nums" />
+              <input type="date" name="pay_date" value="{{ today|date:'Y-m-d' }}" class="rounded border border-slate-200 text-xs px-1 py-0.5 w-full" />
+              <button type="submit" class="rounded bg-indigo-600 text-white text-xs py-1 font-medium hover:bg-indigo-700">Оплатить</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 py-16 px-6 text-center">
+    <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+      <svg class="h-8 w-8" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/></svg>
+    </div>
+    <p class="text-sm text-slate-600 max-w-md mx-auto">После отправки на оплату актов в модуле «Документы» они появятся здесь для формирования операций оплаты.</p>
+    <a href="{% url 'project_documents' project.pk %}" class="mt-4 inline-block text-sm text-indigo-600 hover:text-indigo-800">Перейти в документы</a>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

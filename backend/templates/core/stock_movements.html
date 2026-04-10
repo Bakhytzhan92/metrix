@@ -1,0 +1,45 @@
+{% comment %}Таблица движений: Дата, Материал, Тип операции, Количество, Склад откуда, Склад куда, Проект, Комментарий.{% endcomment %}
+<div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+  <table class="min-w-full divide-y divide-slate-200 text-sm">
+    <thead class="bg-slate-50">
+      <tr>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Дата</th>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Материал</th>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Тип операции</th>
+        <th class="px-4 py-3 text-right font-medium text-slate-700">Количество</th>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Склад откуда</th>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Склад куда</th>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Проект</th>
+        <th class="px-4 py-3 text-left font-medium text-slate-700">Комментарий</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for m in movements %}
+      <tr class="hover:bg-slate-50/50">
+        <td class="px-4 py-3 text-slate-600">{{ m.date|date:"d.m.Y" }}</td>
+        <td class="px-4 py-3 font-medium text-slate-900">{{ m.material.name }}</td>
+        <td class="px-4 py-3">
+          {% if m.movement_type == 'incoming' %}
+            <span class="text-green-700 font-medium">Поступление</span>
+          {% elif m.movement_type == 'outgoing' %}
+            <span class="text-amber-700 font-medium">Списание на объект</span>
+          {% elif m.movement_type == 'transfer' %}
+            <span class="text-indigo-700 font-medium">Перемещение</span>
+          {% else %}
+            <span class="text-red-700 font-medium">Списание</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-right tabular-nums">{{ m.quantity|floatformat:4 }}</td>
+        <td class="px-4 py-3 text-slate-600">{% if m.warehouse_from %}{{ m.warehouse_from.name }}{% else %}—{% endif %}</td>
+        <td class="px-4 py-3 text-slate-600">{% if m.warehouse_to %}{{ m.warehouse_to.name }}{% else %}—{% endif %}</td>
+        <td class="px-4 py-3 text-slate-600">{% if m.project %}{{ m.project.name }}{% else %}—{% endif %}</td>
+        <td class="px-4 py-3 text-slate-500 max-w-xs truncate">{{ m.comment|default:"—" }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="8" class="px-4 py-8 text-center text-slate-500">Нет движений.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

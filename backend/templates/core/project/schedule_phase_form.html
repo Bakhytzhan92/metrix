@@ -1,0 +1,26 @@
+{% extends "core/project/project_layout.html" %}
+{% block project_content %}
+<div class="max-w-xl rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+  <h2 class="text-lg font-semibold text-slate-900 mb-1">
+    {% if is_edit %}Редактировать этап{% else %}Добавить этап{% endif %}
+  </h2>
+  <p class="text-sm text-slate-500 mb-4">
+    График работ. При выборе раздела сметы подставляются стоимость и объём (сумма количеств по позициям).
+  </p>
+  <form method="post" class="space-y-3">
+    {% csrf_token %}
+    {% for field in form %}
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.help_text %}<p class="text-xs text-slate-500 mt-0.5">{{ field.help_text }}</p>{% endif %}
+      {{ field.errors }}
+    </div>
+    {% endfor %}
+    <div class="mt-6 flex flex-wrap gap-2">
+      <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить</button>
+      <a href="{% url 'project_schedule' project.pk %}" class="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">К графику</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+backend/db.sqlite3
+media/
+staticfiles/
+backend/media/
+backend/staticfiles/
+
+# Node
+node_modules/
+web/node_modules/
+npm-debug.log*
+.pnpm-debug.log*
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Локальные черновики (не коммитить)
+recovered_snip.txt
+_line100.txt
+_msg149.txt

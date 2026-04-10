@@ -1,0 +1,95 @@
+{% extends "core/project/project_layout.html" %}
+
+{% block project_content %}
+<section class="space-y-6">
+  <h2 class="sr-only">Аналитика проекта</h2>
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <h3 class="text-sm font-semibold text-slate-900 mb-3">Экономика проекта</h3>
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Всего по смете</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Себестоимость</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+      </dl>
+    </div>
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <h3 class="text-sm font-semibold text-slate-900 mb-3">План</h3>
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Прибыль без НДС</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Рентабельность</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+      </dl>
+    </div>
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <h3 class="text-sm font-semibold text-slate-900 mb-3">Прогноз</h3>
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Прибыль без НДС</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Рентабельность</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+      </dl>
+    </div>
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100 sm:col-span-2">
+      <h3 class="text-sm font-semibold text-slate-900 mb-3">Финансовый баланс</h3>
+      <dl class="grid gap-2 sm:grid-cols-2 text-sm">
+        <div class="flex justify-between sm:block">
+          <dt class="text-slate-500">Экономия</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+        <div class="flex justify-between sm:block">
+          <dt class="text-slate-500">Баланс доходов и расходов</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+      </dl>
+    </div>
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <h3 class="text-sm font-semibold text-slate-900 mb-3">Выручка</h3>
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Разница</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Текущая</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Предстоящая</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+      </dl>
+    </div>
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <h3 class="text-sm font-semibold text-slate-900 mb-3">Затраты</h3>
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Экономия</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Текущие</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Предстоящие</dt>
+          <dd class="font-medium text-slate-900">—</dd>
+        </div>
+      </dl>
+    </div>
+  </div>
+</section>
+{% endblock %}

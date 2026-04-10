@@ -1,0 +1,71 @@
+{% extends "core/project/project_layout.html" %}
+{% block project_content %}
+<div class="space-y-6">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-lg font-semibold text-slate-900">Документы</h1>
+      <p class="text-xs text-slate-500 mt-0.5">Акты выполненных работ: после отправки на оплату они попадут в «Финансы» → «Работы на оплату».</p>
+    </div>
+    <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Финансы: работы</a>
+  </div>
+
+  <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <h2 class="text-sm font-semibold text-slate-900 mb-3">Новый акт</h2>
+    <form method="post" action="{% url 'project_work_act_create' project.pk %}" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm max-w-5xl">
+      {% csrf_token %}
+      {% for field in act_form %}
+      <div class="{% if field.name == 'description' %}sm:col-span-2 lg:col-span-3{% endif %}">
+        <label class="block text-xs text-slate-600 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.errors %}<p class="text-xs text-red-600">{{ field.errors }}</p>{% endif %}
+      </div>
+      {% endfor %}
+      <div class="sm:col-span-2 lg:col-span-3">
+        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить акт</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-100 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Подрядчик</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Вид работ</th>
+          <th class="px-3 py-2 text-right font-medium text-slate-700">Сумма</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Дата акта</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Статус</th>
+          <th class="px-3 py-2 text-left font-medium text-slate-700">Действие</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for a in work_acts %}
+        <tr class="hover:bg-slate-50/60">
+          <td class="px-3 py-2 font-medium text-slate-900">{{ a.contractor }}</td>
+          <td class="px-3 py-2 text-slate-600 text-xs">{{ a.work_type|default:"—" }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ a.amount|floatformat:2 }} ₸</td>
+          <td class="px-3 py-2 tabular-nums text-slate-600">{{ a.act_date|date:"d.m.Y" }}</td>
+          <td class="px-3 py-2 text-xs">{{ a.get_payment_status_display }}</td>
+          <td class="px-3 py-2">
+            {% if a.payment_status == 'draft' %}
+            <form method="post" action="{% url 'project_work_act_submit_payment' project.pk a.pk %}" class="inline">
+              {% csrf_token %}
+              <button type="submit" class="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">Отправить на оплату</button>
+            </form>
+            {% elif a.payment_status == 'awaiting_payment' %}
+            <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="text-xs text-indigo-600 hover:text-indigo-800">В финансах →</a>
+            {% elif a.payment_status == 'partial' %}
+            <span class="text-xs text-amber-700">Частично оплачено</span>
+            {% else %}
+            <span class="text-xs text-emerald-700">Оплачено</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="px-4 py-10 text-center text-slate-500">Актов пока нет — добавьте первый выше.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

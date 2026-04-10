@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Права доступа — Настройки — Metrix{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+  <h1 class="text-2xl font-semibold text-slate-900">Права доступа</h1>
+</div>
+
+<div class="border-b border-slate-200 mb-4">
+  <nav class="-mb-px flex gap-4 text-sm">
+    <a href="?tab=users" class="px-2 pb-2 border-b-2 {% if active_tab == 'users' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Пользователи</a>
+    <a href="?tab=roles" class="px-2 pb-2 border-b-2 {% if active_tab == 'roles' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Права и роли</a>
+  </nav>
+</div>
+
+{% if active_tab == "users" %}
+  <div class="mb-4 flex justify-end">
+    <button type="button" id="btn-open-add-user" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">➕ Добавить пользователя</button>
+  </div>
+
+  <div class="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-100">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Пользователь</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Кол-во проектов</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Email</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Телефон</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Роль</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Статус</th>
+          <th class="px-4 py-3 text-right font-medium text-slate-700">Действия</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in user_rows %}
+          <tr class="hover:bg-slate-50/50">
+            <td class="px-4 py-3 font-medium text-slate-800">{{ row.company_user.user.get_full_name|default:row.company_user.user.username }}</td>
+            <td class="px-4 py-3 text-slate-600">{{ row.project_count }}</td>
+            <td class="px-4 py-3 text-slate-600">{{ row.company_user.user.email|default:"—" }}</td>
+            <td class="px-4 py-3 text-slate-500">—</td>
+            <td class="px-4 py-3 text-slate-600">{{ row.company_user.role.name|default:"—" }}</td>
+            <td class="px-4 py-3">
+              {% if row.company_user.is_active %}
+                <span class="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">Активен</span>
+              {% else %}
+                <span class="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">Неактивен</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right">
+              <a href="{% url 'settings_access_edit' row.company_user.pk %}" class="text-indigo-600 hover:text-indigo-800 mr-2">✏ Изменить</a>
+              <form method="post" action="{% url 'settings_access_delete' row.company_user.pk %}" class="inline" onsubmit="return confirm('Удалить пользователя из компании?');">
+                {% csrf_token %}
+                <button type="submit" class="text-red-600 hover:text-red-800">🗑 Удалить</button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="7" class="px-4 py-8 text-center text-slate-500">Нет пользователей. Добавьте первого.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Модальное окно: Добавить пользователя -->
+  <div id="modal-add-user" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex min-h-screen items-center justify-center p-4">
+      <div class="fixed inset-0 bg-slate-500/75 transition-opacity" id="modal-backdrop"></div>
+      <div class="relative z-10 w-full max-w-lg rounded-xl bg-white shadow-xl">
+        <div class="p-6">
+          <h2 id="modal-title" class="text-lg font-semibold text-slate-900 mb-4">Добавить пользователя</h2>
+          <form method="post" action="{% url 'settings_access_add_user' %}" id="form-add-user">
+            {% csrf_token %}
+            {{ add_form.non_field_errors }}
+            {% for field in add_form %}
+              <div class="mb-4 text-sm">
+                <label class="block font-medium text-slate-700 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% for error in field.errors %}<p class="mt-1 text-xs text-red-600">{{ error }}</p>{% endfor %}
+              </div>
+            {% endfor %}
+            <div class="flex justify-end gap-2 mt-6">
+              <button type="button" id="btn-cancel-modal" class="rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Отмена</button>
+              <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+{% else %}
+  <div class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+    <p class="text-sm font-medium text-slate-700 mb-3">Системные роли</p>
+    <ul class="space-y-2 text-sm text-slate-600">
+      {% for role in roles %}
+        <li class="flex items-start gap-2">
+          <span class="font-medium text-slate-800">{{ role.name }}</span>
+          {% if role.is_system %}<span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">системная</span>{% endif %}
+          — {{ role.description|default:"" }}
+        </li>
+      {% empty %}
+        <li class="text-slate-500">Нет ролей.</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<script>
+(function() {
+  var modal = document.getElementById('modal-add-user');
+  var btnOpen = document.getElementById('btn-open-add-user');
+  var btnCancel = document.getElementById('btn-cancel-modal');
+  var backdrop = document.getElementById('modal-backdrop');
+  if (!modal || !btnOpen) return;
+  function openModal() {
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal() {
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+  btnOpen.addEventListener('click', openModal);
+  if (btnCancel) btnCancel.addEventListener('click', closeModal);
+  if (backdrop) backdrop.addEventListener('click', closeModal);
+  modal.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+})();
+</script>
+{% endblock %}

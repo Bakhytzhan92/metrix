@@ -1,0 +1,851 @@
+{% extends "core/project/project_layout.html" %}
+{% block project_content %}
+<style>
+  .sched-shell { --sched-row-h: 44px; --sched-border: #e2e8f0; }
+  .sched-cards { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+  @media (min-width: 768px) { .sched-cards { grid-template-columns: 1fr 1fr; } }
+  .sched-card { border: 1px solid var(--sched-border); border-radius: 0.75rem; background: #fff; padding: 1rem; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); }
+  .sched-split { display: flex; border: 1px solid var(--sched-border); border-radius: 0.5rem; overflow: hidden; background: #fff; min-height: 420px; max-height: calc(100vh - 220px); }
+  .sched-pinned { flex: 0 0 auto; min-width: 260px; max-width: min(96vw, 1600px); display: flex; flex-direction: column; border-right: 1px solid var(--sched-border); background: #fafafa; }
+  .sched-pinned-scroll { overflow: auto; flex: 1; }
+  .sched-table { table-layout: fixed; width: auto; min-width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .sched-table th { position: sticky; top: 0; z-index: 2; background: #f1f5f9; text-align: left; padding: 0.5rem 0.35rem; font-weight: 600; color: #334155; border-bottom: 1px solid var(--sched-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+  .sched-table th .sched-col-resizer { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; margin-right: -4px; cursor: col-resize; z-index: 5; user-select: none; }
+  .sched-table th .sched-col-resizer:hover,
+  .sched-table th .sched-col-resizer-active { background: rgba(99, 102, 241, 0.35); }
+  .sched-table td { padding: 0.35rem 0.35rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; height: var(--sched-row-h); box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; }
+  .sched-table tr.sched-sec td { background: #f1f5f9; font-weight: 600; color: #0f172a; }
+  .sched-table tr:hover td { background: #f8fafc; }
+  .sched-table tr.sched-sec:hover td { background: #e2e8f0; }
+  .sched-timeline-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #fff; }
+  .sched-timeline-head-scroll { overflow: hidden; border-bottom: 1px solid var(--sched-border); background: #f8fafc; }
+  .sched-timeline-head-inner { display: flex; height: 36px; font-size: 11px; color: #64748b; user-select: none; }
+  .sched-timeline-head-cell { flex-shrink: 0; border-right: 1px solid #e2e8f0; padding: 4px 2px; text-align: center; box-sizing: border-box; }
+  .sched-timeline-body { flex: 1; overflow: auto; position: relative; }
+  .sched-timeline-canvas { position: relative; min-height: 100%; }
+  .sched-gantt-row { height: var(--sched-row-h); box-sizing: border-box; border-bottom: 1px solid #f1f5f9; position: relative; }
+  .sched-gantt-row:nth-child(even) { background: #fafafa; }
+  .sched-bar { position: absolute; top: 7px; height: 30px; border-radius: 6px; cursor: grab; min-width: 8px; box-sizing: border-box; border: 2px solid rgba(0,0,0,.12); display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: #0f172a; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; z-index: 1; transition: box-shadow .15s, filter .15s; }
+  .sched-bar:hover { box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); filter: brightness(1.03); z-index: 2; }
+  .sched-bar:active { cursor: grabbing; }
+  .sched-bar.sched-status-planned { background: #94a3b8; }
+  .sched-bar.sched-status-in_progress { background: #3b82f6; color: #fff; border-color: #1d4ed8; }
+  .sched-bar.sched-status-completed { background: #22c55e; color: #fff; border-color: #15803d; }
+  .sched-bar.sched-sec-bar { background: #2563eb; color: #fff; border-color: #1e40af; cursor: default; }
+  .sched-bar-resize { position: absolute; right: -4px; top: 0; width: 10px; height: 100%; cursor: ew-resize; z-index: 3; }
+  .sched-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; z-index: 4; pointer-events: none; box-shadow: 0 0 0 1px rgba(239,68,68,.3); }
+  .sched-today-caret { position: absolute; top: 0; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #ef4444; transform: translateX(-4px); z-index: 4; pointer-events: none; }
+  .sched-dep-svg { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; overflow: visible; }
+  .sched-zoom-active { border-color: #6366f1 !important; background: #eef2ff !important; }
+  .sched-input-xs { width: 100%; max-width: none; min-width: 0; box-sizing: border-box; font-size: 0.75rem; padding: 0.2rem 0.35rem; border: 1px solid #cbd5e1; border-radius: 0.25rem; background: #fff; }
+  .sched-input-days { max-width: none; text-align: right; }
+  .sched-table select.sched-input-xs { width: 100%; min-width: 0; max-width: none; }
+  /* «Начало»: без цифр в поле — только вызов календаря (как «Show date picker» в Chrome) */
+  .sched-table input[type="date"].sched-date-icon-only {
+    width: 2.35rem;
+    min-width: 2.35rem;
+    max-width: 2.35rem;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0.2rem 0.05rem;
+    display: block;
+    cursor: pointer;
+    color: transparent;
+    text-shadow: 0 0 0 transparent;
+  }
+  .sched-table input[type="date"].sched-date-icon-only::-webkit-calendar-picker-indicator {
+    opacity: 1;
+    cursor: pointer;
+    margin: 0;
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit,
+  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-fields-wrapper,
+  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-text,
+  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-month-field,
+  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-day-field,
+  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-year-field {
+    display: none;
+  }
+  .sched-table input[type="date"].sched-date-icon-only::-moz-focus-inner { border: 0; }
+  .sched-sec-toggle { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; border: none; background: transparent; cursor: pointer; color: #64748b; margin-right: 2px; }
+</style>
+
+<div class="sched-shell space-y-4">
+  <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-lg font-semibold text-slate-900">График работ</h1>
+      <p class="text-xs text-slate-500 mt-0.5">Этапы из сметы: разделы — группы, позиции — работы. Сроки сохраняются в позиции сметы.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="{% url 'project_estimate' project.pk %}" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Смета</a>
+      <a href="{% url 'estimate_export' project.pk %}" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Экспорт</a>
+    </div>
+  </div>
+
+  <div class="sched-cards">
+    <div class="sched-card">
+      <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Проект</p>
+      <p class="text-base font-semibold text-slate-900 mt-1">{{ project.name }}</p>
+      <p class="text-sm text-slate-600 mt-2">Сумма для заказчика: <span class="tabular-nums font-medium text-slate-900">{{ totals.client_total|floatformat:2 }}</span> ₸</p>
+      <p class="text-xs text-slate-500 mt-1">{{ project.get_status_display }}</p>
+    </div>
+    <div class="sched-card">
+      <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Сроки производства работ</p>
+      {% if schedule_summary_start and schedule_summary_end %}
+      <p class="text-sm text-slate-700 mt-2">С <strong>{{ schedule_summary_start|date:"d.m.Y" }}</strong> по <strong>{{ schedule_summary_end|date:"d.m.Y" }}</strong></p>
+      <p class="text-sm text-slate-600 mt-1">Длительность: <span class="tabular-nums font-medium">{{ schedule_summary_days }}</span> дн.</p>
+      {% else %}
+      <p class="text-sm text-slate-500 mt-2">Задайте даты позиций в таблице или перетащите полосы на графике.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3" id="sched-filter-form">
+    <input type="hidden" name="materials" id="sched-materials-input" value="{% if show_materials %}1{% else %}0{% endif %}">
+    <div class="flex flex-wrap items-end gap-3 text-sm">
+      <div>
+        <label class="block text-slate-600 text-xs mb-1">Статус</label>
+        <select name="status" class="rounded-md border border-slate-300 px-2 py-1.5">
+          <option value="">Все</option>
+          {% for val, label in status_choices %}
+          <option value="{{ val }}" {% if filter_status == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-slate-600 text-xs mb-1">Ответственный</label>
+        <select name="assignee" class="rounded-md border border-slate-300 px-2 py-1.5 min-w-[10rem]">
+          <option value="">Все</option>
+          {% for u in assignee_choices %}
+          <option value="{{ u.pk }}" {% if filter_assignee_id == u.pk %}selected{% endif %}>{{ u.get_username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-slate-600 text-xs mb-1">Период с</label>
+        <input type="date" name="date_from" value="{{ filter_date_from }}" class="rounded-md border border-slate-300 px-2 py-1.5" />
+      </div>
+      <div>
+        <label class="block text-slate-600 text-xs mb-1">По</label>
+        <input type="date" name="date_to" value="{{ filter_date_to }}" class="rounded-md border border-slate-300 px-2 py-1.5" />
+      </div>
+      <button type="submit" class="rounded-md bg-slate-800 px-3 py-2 text-white hover:bg-slate-900">Фильтр</button>
+      <a href="{% url 'project_schedule' project.pk %}" class="text-sm text-indigo-600 hover:text-indigo-800 py-2">Сброс</a>
+    </div>
+    <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100">
+      <label class="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
+        <input type="checkbox" class="rounded border-slate-300 js-sched-materials-toggle" {% if show_materials %}checked{% endif %} />
+        <span>Показывать материалы</span>
+      </label>
+      <span class="text-slate-300">|</span>
+      <span class="text-slate-500 text-xs">Масштаб:</span>
+      <button type="button" class="js-sched-zoom rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50 sched-zoom-active" data-zoom="day">День</button>
+      <button type="button" class="js-sched-zoom rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50" data-zoom="week">Неделя</button>
+      <button type="button" class="js-sched-zoom rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50" data-zoom="month">Месяц</button>
+      <button type="button" id="sched-goto-today" class="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-800 hover:bg-indigo-100">Вернуться к сегодня</button>
+      <a href="{% url 'project_supply' project.pk %}" class="ml-auto inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-800">
+        Запланировать закупки <span aria-hidden="true">→</span>
+      </a>
+    </div>
+  </form>
+
+  <div class="flex flex-wrap items-center gap-3 text-xs text-slate-600 px-1">
+    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-slate-400"></span> План</span>
+    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-blue-500"></span> В работе</span>
+    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-green-500"></span> Завершено</span>
+    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-blue-700"></span> Сводка по разделу</span>
+  </div>
+
+  {% if not schedule_rows %}
+  <div class="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+    Нет строк по фильтру или в смете пока нет разделов с позициями. Добавьте разделы и позиции в «Смета».
+  </div>
+  {% else %}
+
+  {{ schedule_rows|json_script:"schedule-rows-data" }}
+
+  <div class="sched-split" id="sched-split">
+    <div class="sched-pinned">
+      <div class="sched-pinned-scroll" id="sched-left-scroll">
+        <table class="sched-table" id="sched-left-table">
+          <colgroup>
+            <col class="sched-col" data-col-index="0" />
+            <col class="sched-col" data-col-index="1" />
+            <col class="sched-col" data-col-index="2" />
+            <col class="sched-col" data-col-index="3" />
+            <col class="sched-col" data-col-index="4" />
+            <col class="sched-col" data-col-index="5" />
+            <col class="sched-col" data-col-index="6" />
+            <col class="sched-col" data-col-index="7" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>№<span class="sched-col-resizer" data-col-index="0" title="Потянуть для ширины столбца"></span></th>
+              <th>Этап<span class="sched-col-resizer" data-col-index="1" title="Потянуть для ширины столбца"></span></th>
+              <th>Кол-во<span class="sched-col-resizer" data-col-index="2" title="Потянуть для ширины столбца"></span></th>
+              <th>Начало<span class="sched-col-resizer" data-col-index="3" title="Потянуть для ширины столбца"></span></th>
+              <th>Дни<span class="sched-col-resizer" data-col-index="4" title="Потянуть для ширины столбца"></span></th>
+              <th>Статус<span class="sched-col-resizer" data-col-index="5" title="Потянуть для ширины столбца"></span></th>
+              <th>Отв.<span class="sched-col-resizer" data-col-index="6" title="Потянуть для ширины столбца"></span></th>
+              <th>После<span class="sched-col-resizer" data-col-index="7" title="Потянуть для ширины столбца"></span></th>
+            </tr>
+          </thead>
+          <tbody id="sched-left-tbody">
+            {% for row in schedule_rows %}
+            <tr class="sched-tr {% if row.kind == 'section' %}sched-sec{% endif %}"
+                data-row-index="{{ row.row_index }}"
+                {% if row.kind == 'section' %}data-sec-header="{{ row.section_id }}"{% endif %}
+                {% if row.kind == 'item' %}data-under-sec="{{ row.section_id }}" data-item-id="{{ row.item_id }}"{% endif %}>
+              <td class="tabular-nums text-slate-600">{% if row.kind == 'item' %}{{ row.number }}{% endif %}</td>
+              <td class="text-slate-900">
+                {% if row.kind == 'section' %}
+                <button type="button" class="sched-sec-toggle js-sec-toggle" data-sec="{{ row.section_id }}" aria-expanded="true">▼</button>
+                {% endif %}
+                {{ row.name }}
+              </td>
+              <td class="text-slate-600 text-xs">
+                {% if row.kind == 'item' %}{{ row.quantity }}{% if row.unit %} {{ row.unit }}{% endif %}{% endif %}
+              </td>
+              <td class="text-center align-middle">
+                {% if row.kind == 'item' %}
+                <input type="date" class="sched-input-xs js-sched-start sched-date-icon-only" data-item="{{ row.item_id }}"
+                  value="{% if row.schedule_start %}{{ row.schedule_start }}{% endif %}"
+                  title="{% if row.schedule_start %}Начало: {{ row.schedule_start }}{% else %}Выбрать дату начала{% endif %}" />
+                {% endif %}
+              </td>
+              <td>
+                {% if row.kind == 'item' %}
+                <input type="number" min="1" step="1" class="sched-input-xs sched-input-days js-sched-dur" data-item="{{ row.item_id }}"
+                  value="{% if row.duration_days %}{{ row.duration_days }}{% endif %}" placeholder="—" />
+                {% endif %}
+              </td>
+              <td>
+                {% if row.kind == 'item' %}
+                <select class="sched-input-xs js-sched-status" data-item="{{ row.item_id }}" style="font-size:10px;padding:2px">
+                  {% for val, label in status_choices %}
+                  <option value="{{ val }}" {% if row.status == val %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.kind == 'item' %}
+                <select class="sched-input-xs js-sched-assignee" data-item="{{ row.item_id }}" style="font-size:10px;padding:2px">
+                  <option value="">—</option>
+                  {% for u in assignee_choices %}
+                  <option value="{{ u.pk }}" {% if row.assignee_id == u.pk %}selected{% endif %}>{{ u.get_username }}</option>
+                  {% endfor %}
+                </select>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.kind == 'item' %}
+                <select class="sched-input-xs js-sched-pred" data-item="{{ row.item_id }}" style="font-size:10px;padding:2px">
+                  <option value="">—</option>
+                  {% for po in pred_options %}
+                    {% if po.id != row.item_id %}
+                    <option value="{{ po.id }}" {% if row.predecessor_id == po.id %}selected{% endif %}>{{ po.label }}</option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="sched-timeline-wrap">
+      <div class="sched-timeline-head-scroll" id="sched-head-scroll">
+        <div class="sched-timeline-head-inner" id="sched-head-inner"></div>
+      </div>
+      <div class="sched-timeline-body" id="sched-body-scroll">
+        <div class="sched-timeline-canvas" id="sched-canvas" style="position:relative;">
+          <svg class="sched-dep-svg" id="sched-dep-svg"></svg>
+          <div id="sched-gantt-rows"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if schedule_rows %}
+<script>
+(function () {
+  const ROW_H = 44;
+  const TODAY = "{{ today|date:'Y-m-d' }}";
+  const csrftoken = (function () {
+    var m = document.cookie.match("(^|;) ?csrftoken=([^;]*)(;|$)");
+    return m ? decodeURIComponent(m[2]) : "";
+  })();
+  const API_TMPL = "{% url 'schedule_item_api' project.pk 999999 %}".replace("999999", "__ID__");
+  function apiUrl(itemId) { return API_TMPL.replace("__ID__", String(itemId)); }
+
+  function getCookie(name) {
+    var m = document.cookie.match("(^|;) ?" + name + "=([^;]*)(;|$)");
+    return m ? decodeURIComponent(m[2]) : "";
+  }
+  if (!csrftoken && getCookie("csrftoken")) { /* use getCookie */ }
+
+  const el = document.getElementById("schedule-rows-data");
+  const rows = el ? JSON.parse(el.textContent) : [];
+  let zoom = "day";
+  const pxPerDayMap = { day: 28, week: 10, month: 4 };
+
+  function parseYMD(s) {
+    if (!s) return null;
+    var p = s.split("-");
+    if (p.length !== 3) return null;
+    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  }
+  function formatYMD(d) {
+    if (!d || isNaN(d.getTime())) return "";
+    var y = d.getFullYear(), mo = String(d.getMonth() + 1).padStart(2, "0"), da = String(d.getDate()).padStart(2, "0");
+    return y + "-" + mo + "-" + da;
+  }
+  function addDays(d, n) {
+    var x = new Date(d.getTime());
+    x.setDate(x.getDate() + n);
+    return x;
+  }
+  function daysBetween(a, b) {
+    return Math.round((b - a) / 864e5);
+  }
+
+  function computeRange() {
+    var minD = null, maxD = null, t = parseYMD(TODAY);
+    rows.forEach(function (r) {
+      var s = r.schedule_start ? parseYMD(r.schedule_start) : null;
+      var e = r.schedule_end ? parseYMD(r.schedule_end) : null;
+      if (s) { minD = minD ? (s < minD ? s : minD) : s; }
+      if (e) { maxD = maxD ? (e > maxD ? e : maxD) : e; }
+    });
+    if (!minD || !maxD) {
+      minD = addDays(t, -7);
+      maxD = addDays(t, 90);
+    } else {
+      minD = addDays(minD, -7);
+      maxD = addDays(maxD, 14);
+    }
+    return { start: minD, end: maxD };
+  }
+
+  var range = computeRange();
+  function totalDays() { return Math.max(1, daysBetween(range.start, range.end) + 1); }
+  function pxPerDay() { return pxPerDayMap[zoom] || 28; }
+  function timelineWidth() { return totalDays() * pxPerDay(); }
+
+  function dayOffset(d) {
+    return daysBetween(range.start, d);
+  }
+
+  function buildHeader() {
+    var inner = document.getElementById("sched-head-inner");
+    if (!inner) return;
+    inner.innerHTML = "";
+    inner.style.width = timelineWidth() + "px";
+    var d = new Date(range.start);
+    var end = range.end;
+    if (zoom === "month") {
+      d = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
+      while (d <= end) {
+        var cell = document.createElement("div");
+        cell.className = "sched-timeline-head-cell";
+        var daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        var monthStart = new Date(d);
+        var monthEnd = new Date(d.getFullYear(), d.getMonth(), daysInMonth);
+        if (monthStart < range.start) monthStart = new Date(range.start);
+        if (monthEnd > range.end) monthEnd = new Date(range.end);
+        var w = (daysBetween(monthStart, monthEnd) + 1) * pxPerDay();
+        cell.style.width = w + "px";
+        cell.style.flexShrink = "0";
+        cell.textContent = d.toLocaleString("ru", { month: "short", year: "2-digit" });
+        inner.appendChild(cell);
+        d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      }
+      return;
+    }
+    if (zoom === "week") {
+      while (d <= end) {
+        var cellW = document.createElement("div");
+        cellW.className = "sched-timeline-head-cell";
+        var weekEnd = addDays(d, 6);
+        if (weekEnd > end) weekEnd = new Date(end);
+        var ws = new Date(Math.max(d.getTime(), range.start.getTime()));
+        var we = new Date(weekEnd.getTime());
+        var ww = (daysBetween(ws, we) + 1) * pxPerDay();
+        cellW.style.width = ww + "px";
+        cellW.style.flexShrink = "0";
+        cellW.textContent = formatYMD(d).slice(5) + " — " + formatYMD(weekEnd).slice(5);
+        inner.appendChild(cellW);
+        d = addDays(weekEnd, 1);
+      }
+      return;
+    }
+    while (d <= end) {
+      var c = document.createElement("div");
+      c.className = "sched-timeline-head-cell";
+      c.style.width = pxPerDay() + "px";
+      c.style.flexShrink = "0";
+      c.textContent = String(d.getDate());
+      inner.appendChild(c);
+      d = addDays(d, 1);
+    }
+  }
+
+  function refreshSectionAggregates() {
+    var bySec = {};
+    rows.forEach(function (r) {
+      if (r.kind === "item" && r.schedule_start && r.schedule_end) {
+        if (!bySec[r.section_id]) bySec[r.section_id] = [];
+        bySec[r.section_id].push(r);
+      }
+    });
+    rows.forEach(function (r) {
+      if (r.kind !== "section") return;
+      var arr = bySec[r.section_id] || [];
+      if (!arr.length) {
+        r.schedule_start = null;
+        r.schedule_end = null;
+        r.duration_days = null;
+        return;
+      }
+      var minS = null, maxE = null;
+      arr.forEach(function (it) {
+        if (!minS || it.schedule_start < minS) minS = it.schedule_start;
+        if (!maxE || it.schedule_end > maxE) maxE = it.schedule_end;
+      });
+      r.schedule_start = minS;
+      r.schedule_end = maxE;
+      var ds = parseYMD(minS), de = parseYMD(maxE);
+      r.duration_days = ds && de ? daysBetween(ds, de) + 1 : null;
+    });
+  }
+
+  function applyCollapseVisibility() {
+    var storageKey = "sched-collapse-{{ project.pk }}";
+    var collapsed = {};
+    try { collapsed = JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch (e) {}
+    document.querySelectorAll(".sched-tr[data-under-sec], .sched-gantt-row[data-under-sec]").forEach(function (el) {
+      var sid = el.getAttribute("data-under-sec");
+      el.style.display = collapsed[sid] ? "none" : "";
+    });
+  }
+
+  function rebuildGanttRows() {
+    var host = document.getElementById("sched-gantt-rows");
+    var canvas = document.getElementById("sched-canvas");
+    var svg = document.getElementById("sched-dep-svg");
+    if (!host || !canvas) return;
+    host.innerHTML = "";
+    host.style.width = timelineWidth() + "px";
+    var totalH = rows.length * ROW_H;
+    canvas.style.minHeight = totalH + "px";
+    if (svg) {
+      svg.setAttribute("width", timelineWidth());
+      svg.setAttribute("height", totalH);
+    }
+
+    var todayLine = document.createElement("div");
+    todayLine.className = "sched-today-line";
+    var td = parseYMD(TODAY);
+    if (td && td >= range.start && td <= range.end) {
+      todayLine.style.left = (dayOffset(td) * pxPerDay() + pxPerDay() / 2) + "px";
+      host.appendChild(todayLine);
+      var caret = document.createElement("div");
+      caret.className = "sched-today-caret";
+      caret.style.left = todayLine.style.left;
+      host.appendChild(caret);
+    }
+
+    rows.forEach(function (r, idx) {
+      var rowEl = document.createElement("div");
+      rowEl.className = "sched-gantt-row";
+      rowEl.setAttribute("data-row-index", String(r.row_index));
+      rowEl.style.width = timelineWidth() + "px";
+      if (r.kind === "section") {
+        rowEl.setAttribute("data-sec-header", String(r.section_id));
+      } else {
+        rowEl.setAttribute("data-under-sec", String(r.section_id));
+        rowEl.dataset.itemId = String(r.item_id);
+      }
+
+      if (r.schedule_start && r.schedule_end) {
+        var s = parseYMD(r.schedule_start);
+        var e = parseYMD(r.schedule_end);
+        var bar = document.createElement("div");
+        bar.className = "sched-bar " + (r.kind === "section" ? "sched-sec-bar" : ("sched-status-" + (r.status || "planned")));
+        bar.title = (r.name || "") + "\n" + r.schedule_start + " — " + r.schedule_end + "\n" + (r.duration_days || "") + " дн.";
+        var left = dayOffset(s) * pxPerDay();
+        var width = (daysBetween(s, e) + 1) * pxPerDay() - 4;
+        if (width < 6) width = 6;
+        bar.style.left = left + "px";
+        bar.style.width = width + "px";
+        if (r.kind !== "section") {
+          bar.textContent = r.name && r.name.length < 40 ? r.name : "";
+          bar.dataset.itemId = String(r.item_id);
+          var rz = document.createElement("div");
+          rz.className = "sched-bar-resize";
+          bar.appendChild(rz);
+        }
+        rowEl.appendChild(bar);
+      }
+      host.appendChild(rowEl);
+    });
+    applyCollapseVisibility();
+    drawDeps();
+  }
+
+  function drawDeps() {
+    var svg = document.getElementById("sched-dep-svg");
+    if (!svg) return;
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var itemToRow = {};
+    rows.forEach(function (r) {
+      if (r.kind === "item" && r.item_id) itemToRow[r.item_id] = r.row_index;
+    });
+    rows.forEach(function (r) {
+      if (r.kind !== "item" || !r.predecessor_id) return;
+      var fi = itemToRow[r.item_id];
+      var pi = itemToRow[r.predecessor_id];
+      if (fi === undefined || pi === undefined) return;
+      var fromEl = document.querySelector(".sched-gantt-row[data-row-index=\"" + pi + "\"] .sched-bar");
+      var toEl = document.querySelector(".sched-gantt-row[data-row-index=\"" + fi + "\"] .sched-bar");
+      if (!fromEl || !toEl) return;
+      var host = document.getElementById("sched-gantt-rows");
+      if (!host) return;
+      var fx = fromEl.offsetLeft + fromEl.offsetWidth;
+      var fy = fromEl.offsetParent.offsetTop + fromEl.offsetTop + fromEl.offsetHeight / 2;
+      var tx = toEl.offsetLeft;
+      var ty = toEl.offsetParent.offsetTop + toEl.offsetTop + toEl.offsetHeight / 2;
+      var line = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      var mx = (fx + tx) / 2;
+      var d = "M " + fx + " " + fy + " C " + mx + " " + fy + ", " + mx + " " + ty + ", " + tx + " " + ty;
+      line.setAttribute("d", d);
+      line.setAttribute("fill", "none");
+      line.setAttribute("stroke", "#94a3b8");
+      line.setAttribute("stroke-width", "1.5");
+      line.setAttribute("stroke-dasharray", "4 3");
+      svg.appendChild(line);
+    });
+  }
+
+  function syncScroll() {
+    var left = document.getElementById("sched-left-scroll");
+    var body = document.getElementById("sched-body-scroll");
+    var head = document.getElementById("sched-head-scroll");
+    if (!left || !body) return;
+    left.addEventListener("scroll", function () { body.scrollTop = left.scrollTop; });
+    body.addEventListener("scroll", function () {
+      left.scrollTop = body.scrollTop;
+      if (head) head.scrollLeft = body.scrollLeft;
+    });
+    if (head) {
+      head.addEventListener("scroll", function () { body.scrollLeft = head.scrollLeft; });
+    }
+  }
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrftoken || getCookie("csrftoken") || "",
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      body: JSON.stringify(body),
+      credentials: "same-origin"
+    });
+  }
+
+  function applyItemPayload(itemId, payload) {
+    rows.forEach(function (r) {
+      if (r.kind === "item" && r.item_id === itemId) {
+        if (payload.schedule_start !== undefined) r.schedule_start = payload.schedule_start;
+        if (payload.schedule_end !== undefined) r.schedule_end = payload.schedule_end;
+        if (payload.duration_days != null) r.duration_days = payload.duration_days;
+        if (payload.schedule_status) r.status = payload.schedule_status;
+        if (payload.schedule_assignee_id !== undefined) r.assignee_id = payload.schedule_assignee_id;
+        if (payload.schedule_predecessor_id !== undefined) r.predecessor_id = payload.schedule_predecessor_id;
+      }
+    });
+    var inpS = document.querySelector(".js-sched-start[data-item=\"" + itemId + "\"]");
+    var inpD = document.querySelector(".js-sched-dur[data-item=\"" + itemId + "\"]");
+    if (inpS && payload.schedule_start !== undefined) {
+      inpS.value = payload.schedule_start || "";
+      inpS.title = payload.schedule_start
+        ? "Начало: " + payload.schedule_start
+        : "Выбрать дату начала";
+    }
+    if (inpD && payload.duration_days != null) inpD.value = payload.duration_days || "";
+    refreshSectionAggregates();
+    range = computeRange();
+    buildHeader();
+    rebuildGanttRows();
+  }
+
+  function saveItem(itemId, body, done) {
+    postJson(apiUrl(itemId), body).then(function (r) {
+      return r.json().then(function (j) { return { r: r, j: j }; });
+    }).then(function (x) {
+      if (!x.r.ok || !x.j.ok) {
+        var err = (x.j.errors && JSON.stringify(x.j.errors)) || x.j.error || "Ошибка";
+        alert(err);
+        return;
+      }
+      if (x.j.item) applyItemPayload(itemId, x.j.item);
+      if (done) done();
+    }).catch(function () { alert("Сеть"); });
+  }
+
+  function wireInputs() {
+    document.querySelectorAll(".js-sched-start").forEach(function (inp) {
+      inp.addEventListener("change", function () {
+        inp.title = inp.value ? "Начало: " + inp.value : "Выбрать дату начала";
+        var id = Number(inp.dataset.item);
+        var durInp = document.querySelector(".js-sched-dur[data-item=\"" + id + "\"]");
+        var dur = durInp && durInp.value ? parseInt(durInp.value, 10) : null;
+        var body = { schedule_start: inp.value || null };
+        if (dur && dur >= 1) body.duration_days = dur;
+        else body.schedule_end = null;
+        saveItem(id, body);
+      });
+    });
+    document.querySelectorAll(".js-sched-dur").forEach(function (inp) {
+      inp.addEventListener("change", function () {
+        var id = Number(inp.dataset.item);
+        var d = parseInt(inp.value, 10);
+        if (!d || d < 1) return;
+        saveItem(id, { duration_days: d });
+      });
+    });
+    document.querySelectorAll(".js-sched-status").forEach(function (sel) {
+      sel.addEventListener("change", function () {
+        saveItem(Number(sel.dataset.item), { schedule_status: sel.value });
+      });
+    });
+    document.querySelectorAll(".js-sched-assignee").forEach(function (sel) {
+      sel.addEventListener("change", function () {
+        var v = sel.value;
+        saveItem(Number(sel.dataset.item), { schedule_assignee_id: v === "" ? null : v });
+      });
+    });
+    document.querySelectorAll(".js-sched-pred").forEach(function (sel) {
+      sel.addEventListener("change", function () {
+        var v = sel.value;
+        saveItem(Number(sel.dataset.item), { schedule_predecessor_id: v === "" ? null : v });
+      });
+    });
+  }
+
+  function wireDragResize() {
+    var host = document.getElementById("sched-gantt-rows");
+    if (!host) return;
+    var dragState = null;
+
+    host.addEventListener("mousedown", function (ev) {
+      var bar = ev.target.closest(".sched-bar");
+      if (!bar || bar.classList.contains("sched-sec-bar")) return;
+      var rz = ev.target.closest(".sched-bar-resize");
+      var itemId = Number(bar.dataset.itemId);
+      if (!itemId) return;
+      var row = rows.find(function (x) { return x.kind === "item" && x.item_id === itemId; });
+      if (!row || !row.schedule_start || !row.schedule_end) {
+        if (!rz) {
+          var t = parseYMD(TODAY);
+          var dur = 5;
+          saveItem(itemId, { schedule_start: formatYMD(t), duration_days: dur });
+        }
+        return;
+      }
+      var s = parseYMD(row.schedule_start);
+      var e = parseYMD(row.schedule_end);
+      if (rz) {
+        dragState = { mode: "resize", itemId: itemId, startX: ev.clientX, origEnd: e };
+      } else {
+        dragState = { mode: "drag", itemId: itemId, startX: ev.clientX, origStart: s, origEnd: e };
+      }
+      ev.preventDefault();
+    });
+
+    window.addEventListener("mousemove", function (ev) {
+      if (!dragState) return;
+      var dx = ev.clientX - dragState.startX;
+      var dd = Math.round(dx / pxPerDay());
+      if (dragState.mode === "drag") {
+        var ns = addDays(dragState.origStart, dd);
+        var ne = addDays(dragState.origEnd, dd);
+        if (ns < range.start || ne > range.end) return;
+        var bar = document.querySelector(".sched-bar[data-item-id=\"" + dragState.itemId + "\"]");
+        if (bar) {
+          bar.style.left = (dayOffset(ns) * pxPerDay()) + "px";
+        }
+      } else {
+        var ne2 = addDays(dragState.origEnd, dd);
+        if (ne2 < dragState.origStart) ne2 = new Date(dragState.origStart);
+        var bar = document.querySelector(".sched-bar[data-item-id=\"" + dragState.itemId + "\"]");
+        if (bar) {
+          var s = dragState.origStart;
+          var w = (daysBetween(s, ne2) + 1) * pxPerDay() - 4;
+          bar.style.width = Math.max(6, w) + "px";
+        }
+      }
+    });
+
+    window.addEventListener("mouseup", function (ev) {
+      if (!dragState) return;
+      var dx = ev.clientX - dragState.startX;
+      var dd = Math.round(dx / pxPerDay());
+      var id = dragState.itemId;
+      if (dragState.mode === "drag") {
+        var ns = addDays(dragState.origStart, dd);
+        var ne = addDays(dragState.origEnd, dd);
+        saveItem(id, { schedule_start: formatYMD(ns), schedule_end: formatYMD(ne) });
+      } else {
+        var ne3 = addDays(dragState.origEnd, dd);
+        if (ne3 < dragState.origStart) ne3 = new Date(dragState.origStart);
+        saveItem(id, { schedule_end: formatYMD(ne3) });
+      }
+      dragState = null;
+    });
+  }
+
+  function wireSectionToggle() {
+    var storageKey = "sched-collapse-{{ project.pk }}";
+    function getCollapsed() {
+      try { return JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch (e) { return {}; }
+    }
+    function syncToggleIcons() {
+      var collapsed = getCollapsed();
+      document.querySelectorAll(".js-sec-toggle").forEach(function (b) {
+        var s = b.getAttribute("data-sec");
+        var c = !!collapsed[s];
+        b.textContent = c ? "▶" : "▼";
+        b.setAttribute("aria-expanded", c ? "false" : "true");
+      });
+    }
+    document.querySelectorAll(".js-sec-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var collapsed = getCollapsed();
+        var sid = btn.getAttribute("data-sec");
+        collapsed[sid] = !collapsed[sid];
+        localStorage.setItem(storageKey, JSON.stringify(collapsed));
+        applyCollapseVisibility();
+        syncToggleIcons();
+        drawDeps();
+      });
+    });
+    syncToggleIcons();
+    applyCollapseVisibility();
+  }
+
+  document.querySelectorAll(".js-sched-zoom").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      zoom = btn.getAttribute("data-zoom") || "day";
+      document.querySelectorAll(".js-sched-zoom").forEach(function (b) { b.classList.remove("sched-zoom-active"); });
+      btn.classList.add("sched-zoom-active");
+      range = computeRange();
+      buildHeader();
+      rebuildGanttRows();
+    });
+  });
+
+  var gt = document.getElementById("sched-goto-today");
+  if (gt) {
+    gt.addEventListener("click", function () {
+      var body = document.getElementById("sched-body-scroll");
+      if (!body) return;
+      var td = parseYMD(TODAY);
+      if (!td) return;
+      var off = dayOffset(td) * pxPerDay();
+      body.scrollLeft = Math.max(0, off - body.clientWidth / 2);
+    });
+  }
+
+  var mt = document.querySelector(".js-sched-materials-toggle");
+  var mf = document.getElementById("sched-materials-input");
+  if (mt && mf) {
+    mt.addEventListener("change", function () {
+      mf.value = mt.checked ? "1" : "0";
+      document.getElementById("sched-filter-form").submit();
+    });
+  }
+
+  function wireScheduleColumnResize() {
+    var table = document.getElementById("sched-left-table");
+    if (!table) return;
+    var colEls = table.querySelectorAll("colgroup col");
+    if (!colEls.length) return;
+    var storageKey = "sched-col-widths-{{ project.pk }}";
+    var mins = [28, 72, 48, 90, 36, 64, 72, 88];
+    var defaults = [40, 160, 64, 118, 44, 88, 100, 140];
+    function applyWidths(arr) {
+      arr.forEach(function (w, i) {
+        if (i < colEls.length && typeof w === "number" && w >= mins[i]) {
+          colEls[i].style.width = Math.round(w) + "px";
+        }
+      });
+    }
+    try {
+      var saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+      if (saved && saved.length === colEls.length) {
+        applyWidths(saved);
+      } else {
+        applyWidths(defaults);
+      }
+    } catch (e) {
+      applyWidths(defaults);
+    }
+    var thRow = table.querySelectorAll("thead th");
+    table.querySelectorAll(".sched-col-resizer").forEach(function (handle) {
+      var idx = parseInt(handle.getAttribute("data-col-index"), 10);
+      if (isNaN(idx) || idx < 0 || idx >= colEls.length) return;
+      handle.addEventListener("mousedown", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var th = thRow[idx];
+        if (!th) return;
+        var startX = ev.clientX;
+        var startW = th.getBoundingClientRect().width;
+        handle.classList.add("sched-col-resizer-active");
+        var prevCursor = document.body.style.cursor;
+        document.body.style.cursor = "col-resize";
+        function onMove(e) {
+          var nw = Math.max(mins[idx], Math.round(startW + (e.clientX - startX)));
+          colEls[idx].style.width = nw + "px";
+        }
+        function onUp() {
+          handle.classList.remove("sched-col-resizer-active");
+          document.body.style.cursor = prevCursor;
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          var widths = [];
+          for (var i = 0; i < colEls.length; i++) {
+            var thEl = thRow[i];
+            widths.push(thEl ? Math.round(thEl.getBoundingClientRect().width) : mins[i]);
+          }
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(widths));
+          } catch (e2) {}
+        }
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+      });
+    });
+  }
+
+  wireScheduleColumnResize();
+  buildHeader();
+  rebuildGanttRows();
+  syncScroll();
+  wireInputs();
+  wireDragResize();
+  wireSectionToggle();
+})();
+</script>
+{% endif %}
+{% endblock %}
