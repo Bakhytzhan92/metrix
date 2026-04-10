@@ -26,6 +26,9 @@ backend/staticfiles/
 # Node
 node_modules/
 web/node_modules/
+# Next.js build / dev cache (не коммитить)
+web/.next/
+.next/
 npm-debug.log*
 .pnpm-debug.log*
 
