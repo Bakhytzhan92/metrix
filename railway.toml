@@ -1,0 +1,6 @@
+[build]
+buildCommand = "pip install -r requirements.txt && cd backend && python manage.py collectstatic --noinput"
+
+[deploy]
+preDeployCommand = "cd backend && python manage.py migrate --noinput"
+startCommand = "cd backend && python -m gunicorn gectaro_saas.wsgi:application --bind 0.0.0.0:$PORT"
