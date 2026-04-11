@@ -41,11 +41,11 @@ if ($status) {
 Write-Host ""
 Write-Host "Дальше на GitHub (в браузере):" -ForegroundColor Cyan
 Write-Host "  1. https://github.com/new — создайте репозиторий (без README, если уже есть коммит)."
-Write-Host "  2. Скопируйте URL, например: https://github.com/ВАШ_ЛОГИН/gectaro-kz.git"
+Write-Host "  2. Скопируйте URL, например: https://github.com/ВАШ_ЛОГИН/ИМЯ_РЕПО.git"
 Write-Host ""
 Write-Host "В PowerShell выполните (подставьте свой URL):" -ForegroundColor Cyan
 Write-Host "  cd `"$Root`""
-Write-Host "  git remote add origin https://github.com/ВАШ_ЛОГИН/gectaro-kz.git"
+Write-Host "  git remote add origin https://github.com/ВАШ_ЛОГИН/ИМЯ_РЕПО.git"
 Write-Host "  git branch -M main"
 Write-Host "  git push -u origin main"
 Write-Host ""

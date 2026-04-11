@@ -11,7 +11,24 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-key-change-me")
 
 DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
 
+_allowed_extra = os.getenv("DJANGO_ALLOWED_HOSTS", "")
 ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1"]
+if _allowed_extra.strip():
+    ALLOWED_HOSTS.extend(h.strip() for h in _allowed_extra.split(",") if h.strip())
+_railway_host = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+if _railway_host:
+    ALLOWED_HOSTS.append(_railway_host.strip())
+ALLOWED_HOSTS = list(dict.fromkeys(ALLOWED_HOSTS))
+
+_csrf_origins = os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "")
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in _csrf_origins.split(",") if o.strip()
+]
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -91,6 +108,14 @@ if _static_dir.exists():
 else:
     STATICFILES_DIRS = []
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
