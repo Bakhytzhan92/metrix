@@ -161,6 +161,68 @@ class Project(models.Model):
         return self.name
 
 
+class UploadedDocument(models.Model):
+    """Загруженный PDF для умного импорта (извлечение текста + план от ИИ)."""
+
+    STATUS_UPLOADED = "uploaded"
+    STATUS_PROCESSING = "processing"
+    STATUS_DONE = "done"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_UPLOADED, "Загружен"),
+        (STATUS_PROCESSING, "Обработка"),
+        (STATUS_DONE, "Готово"),
+        (STATUS_ERROR, "Ошибка"),
+    ]
+
+    TYPE_RESIDENTIAL = "residential"
+    TYPE_COMMERCIAL = "commercial"
+    TYPE_RENOVATION = "renovation"
+    PROJECT_TYPE_CHOICES = [
+        (TYPE_RESIDENTIAL, "Жилой дом"),
+        (TYPE_COMMERCIAL, "Коммерческий объект"),
+        (TYPE_RENOVATION, "Ремонт"),
+    ]
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="uploaded_documents",
+    )
+    file = models.FileField("Файл", upload_to="documents/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_documents",
+    )
+    project_type = models.CharField(
+        "Тип объекта",
+        max_length=20,
+        choices=PROJECT_TYPE_CHOICES,
+        default=TYPE_RESIDENTIAL,
+    )
+    parsed_text = models.TextField("Извлечённый текст", blank=True, null=True)
+    ai_result = models.JSONField("Результат ИИ", blank=True, null=True)
+    status = models.CharField(
+        "Статус",
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_UPLOADED,
+    )
+    error_message = models.TextField("Сообщение об ошибке", blank=True)
+
+    class Meta:
+        verbose_name = "Загруженный документ (ИИ)"
+        verbose_name_plural = "Загруженные документы (ИИ)"
+        ordering = ["-uploaded_at"]
+
+    def __str__(self) -> str:
+        return f"Документ #{self.pk} — {self.project.name}"
+
+
 class EstimateSection(models.Model):
     """Раздел работ сметы (например: Земляные работы, Фундаменты)."""
 

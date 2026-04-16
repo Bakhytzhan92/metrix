@@ -1,5 +1,6 @@
 from django.urls import path
 
+from . import ai_api
 from . import views
 
 urlpatterns = [
@@ -119,6 +120,7 @@ urlpatterns = [
     path("projects/<int:pk>/warehouses/inventory/<int:item_id>/update/", views.project_inventory_update, name="project_inventory_update"),
     path("projects/<int:pk>/warehouses/inventory/<int:item_id>/transfer/", views.project_inventory_transfer, name="project_inventory_transfer"),
     path("projects/<int:pk>/documents/", views.project_documents, name="project_documents"),
+    path("projects/<int:pk>/ai/", ai_api.project_ai_import, name="project_ai_import"),
     path("projects/<int:pk>/legacy/", views.project_detail, name="project_legacy"),
     path("projects/<int:pk>/edit/", views.project_edit, name="project_edit"),
     path("projects/<int:pk>/delete/", views.project_delete, name="project_delete"),
@@ -162,6 +164,14 @@ urlpatterns = [
         name="inventory_delete",
     ),
     path("company/settings/", views.company_settings, name="company_settings"),
+    # Умный импорт PDF + ИИ (API)
+    path("api/upload-pdf/", ai_api.api_upload_pdf, name="api_upload_pdf"),
+    path("api/document/<int:doc_id>/", ai_api.api_document_detail, name="api_document_detail"),
+    path(
+        "api/document/<int:doc_id>/apply/",
+        ai_api.api_document_apply,
+        name="api_document_apply",
+    ),
     # Настройки → Права доступа
     path("settings/access/", views.settings_access, name="settings_access"),
     path("settings/access/add/", views.settings_access_add_user, name="settings_access_add_user"),

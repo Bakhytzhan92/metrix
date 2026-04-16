@@ -6,6 +6,7 @@ from .models import (
     CompanyUser,
     ProjectAccess,
     Project,
+    UploadedDocument,
     Task,
     Finance,
     InventoryItem,
@@ -64,6 +65,14 @@ class ProjectAdmin(admin.ModelAdmin):
     list_display = ("name", "company", "status", "start_date", "end_date", "created_at")
     list_filter = ("status", "company")
     search_fields = ("name",)
+
+
+@admin.register(UploadedDocument)
+class UploadedDocumentAdmin(admin.ModelAdmin):
+    list_display = ("id", "project", "status", "project_type", "uploaded_at", "uploaded_by")
+    list_filter = ("status", "project_type")
+    search_fields = ("project__name",)
+    readonly_fields = ("uploaded_at", "parsed_text", "ai_result")
 
 
 @admin.register(Task)
