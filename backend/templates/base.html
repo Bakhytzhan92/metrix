@@ -7,6 +7,16 @@
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="bg-slate-50 text-slate-900">
+    {% load rbac_extras %}
+    {% if impersonation_active %}
+    <div class="bg-amber-100 text-amber-950 text-center text-sm py-2 px-4 border-b border-amber-200 flex flex-wrap items-center justify-center gap-3">
+      <span>Режим имперсонации. Администратор платформы: <strong>{{ impersonation_admin_username }}</strong></span>
+      <form method="post" action="{% url 'superadmin:superadmin_stop_impersonation' %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="text-amber-900 underline font-medium bg-transparent border-0 cursor-pointer p-0 text-sm">Вернуться в супер-админку</button>
+      </form>
+    </div>
+    {% endif %}
     <div class="min-h-screen flex">
       <!-- Sidebar -->
       <aside class="hidden md:flex w-60 flex-col bg-white border-r border-slate-200">
@@ -14,34 +24,64 @@
           <span class="text-lg font-semibold text-slate-800">Metrix</span>
         </div>
         <nav class="flex-1 px-4 py-4 space-y-1 text-sm">
-          <a href="{% url 'dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name|default:''|slice:":8" == 'project_' %}bg-slate-100 font-medium{% endif %}">
+          {% has_perm 'view_projects' as can_projects %}
+          {% if can_projects %}
+          <a href="{% url 'dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name|default:''|slice:':8' == 'project_' %}bg-slate-100 font-medium{% endif %}">
             <span>Проекты</span>
           </a>
+          {% endif %}
+          {% has_perm 'view_tasks' as can_tasks %}
+          {% if can_tasks %}
           <a href="{% url 'task_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'task_list' or request.resolver_match.url_name == 'task_create' or request.resolver_match.url_name == 'task_edit' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
             <span>Задачи</span>
           </a>
+          {% endif %}
+          {% has_perm 'view_finance' as can_fin %}
+          {% if can_fin %}
           <a href="{% url 'finance_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'finance_dashboard' or request.resolver_match.url_name == 'finance_income' or request.resolver_match.url_name == 'finance_expense' or request.resolver_match.url_name == 'finance_transfer' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
             <span>Финансы</span>
           </a>
+          {% endif %}
+          {% has_perm 'view_supply' as can_sup %}
+          {% if can_sup %}
           <a href="{% url 'supply_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'supply_dashboard' or request.resolver_match.url_name == 'supply_request_create' or request.resolver_match.url_name == 'supply_order_create' or request.resolver_match.url_name == 'supply_order_detail' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
             <span>Снабжение</span>
           </a>
+          {% endif %}
+          {% has_perm 'view_warehouse' as can_wh %}
+          {% if can_wh %}
           <a href="{% url 'warehouses_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'warehouses_dashboard' or request.resolver_match.url_name == 'warehouse_detail' or request.resolver_match.url_name == 'warehouse_create' or request.resolver_match.url_name == 'stock_incoming' or request.resolver_match.url_name == 'stock_writeoff' or request.resolver_match.url_name == 'stock_transfer' or request.resolver_match.url_name == 'material_create' or request.resolver_match.url_name == 'warehouses_incoming' or request.resolver_match.url_name == 'warehouses_outgoing' or request.resolver_match.url_name == 'warehouses_transfer' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
             <span>Склады</span>
           </a>
+          {% endif %}
+          {% has_perm 'view_reports' as can_rep %}
+          {% if can_rep %}
           <a href="{% url 'reports_index' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'reports_index' or request.resolver_match.url_name == 'reports_pnl' or request.resolver_match.url_name == 'reports_cashflow' or request.resolver_match.url_name == 'reports_project' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
             <span>Отчёты</span>
           </a>
+          {% endif %}
           <a href="#" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100">
             <span>Справочники</span>
           </a>
+          {% has_perm 'manage_users' as can_set %}
+          {% if can_set %}
           <a href="{% url 'company_settings' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'company_settings' or request.resolver_match.url_name == 'settings_access' or request.resolver_match.url_name == 'settings_access_edit' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
             <span>Настройки</span>
           </a>
+          {% endif %}
+          {% if is_saas_super_admin %}
+          <a href="{% url 'superadmin:superadmin_panel' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-violet-100 text-violet-800 font-medium border border-violet-200">
+            <span>Платформа</span>
+          </a>
+          {% endif %}
         </nav>
-        <div class="px-4 py-4 border-t border-slate-100 text-xs text-slate-500">
+        <div class="px-4 py-4 border-t border-slate-100 text-xs text-slate-500 space-y-1">
           {% if user.is_authenticated %}
-            {{ user.get_username }}
+            <p class="font-medium text-slate-700 truncate" title="{{ user.get_username }}">Логин: {{ user.get_username }}</p>
+            {% if user.email %}
+            <p class="truncate text-slate-500" title="{{ user.email }}">{{ user.email }}</p>
+            {% endif %}
+            <a href="{% url 'password_change' %}" class="text-indigo-600 hover:text-indigo-800 inline-block">Сменить пароль</a>
           {% endif %}
         </div>
       </aside>
@@ -63,9 +103,15 @@
                 Срок истекает: {{ current_company.subscription_expires_at|date:"d.m.Y" }}
               </span>
             {% endif %}
+            {% has_perm 'manage_users' as can_set_top %}
+            {% if can_set_top %}
             <a href="{% url 'company_settings' %}" class="text-slate-600 hover:text-slate-900">Настройки компании</a>
+            {% endif %}
             {% if user.is_authenticated %}
-              <a href="{% url 'logout' %}" class="text-slate-600 hover:text-slate-900">Выйти</a>
+              <form method="post" action="{% url 'logout' %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="text-slate-600 hover:text-slate-900 bg-transparent border-0 cursor-pointer text-xs md:text-sm p-0 font-inherit">Выйти</button>
+              </form>
             {% else %}
               <a href="{% url 'login' %}" class="text-slate-600 hover:text-slate-900">Войти</a>
             {% endif %}

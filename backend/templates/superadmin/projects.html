@@ -1,0 +1,43 @@
+{% extends "superadmin/base.html" %}
+{% block title %}Проекты{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Проекты</h1>
+<div class="flex flex-wrap gap-2 mb-4">
+  <label class="text-sm text-slate-600">Компания (id): <input type="number" id="fcompany" class="border rounded px-2 py-1 w-24" /></label>
+  <button type="button" id="filter" class="px-3 py-1 rounded bg-slate-800 text-white text-sm">Фильтр</button>
+</div>
+<div class="overflow-x-auto bg-white rounded-lg border border-slate-200 shadow-sm">
+  <table class="min-w-full text-sm">
+    <thead class="bg-slate-50 text-left text-slate-600">
+      <tr>
+        <th class="px-3 py-2">Проект</th>
+        <th class="px-3 py-2">Компания</th>
+        <th class="px-3 py-2">Статус</th>
+        <th class="px-3 py-2">Создан</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const rows = document.getElementById('rows');
+  async function load() {
+    const cid = document.getElementById('fcompany').value;
+    let url = '/api/superadmin/projects/';
+    if (cid) url += '?company=' + encodeURIComponent(cid);
+    const r = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+    const d = await r.json();
+    rows.innerHTML = '';
+    for (const p of d.projects || []) {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-slate-100';
+      tr.innerHTML = `<td class="px-3 py-2">${p.name}</td><td class="px-3 py-2">${p.company_name}</td><td class="px-3 py-2">${p.status}</td><td class="px-3 py-2">${p.created_at?.slice(0,10)}</td>`;
+      rows.appendChild(tr);
+    }
+  }
+  document.getElementById('filter').addEventListener('click', load);
+  load();
+</script>
+{% endblock %}

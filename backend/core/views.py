@@ -146,6 +146,10 @@ def dashboard(request: HttpRequest) -> HttpResponse:
 @login_required
 def project_create(request: HttpRequest) -> HttpResponse:
     from .company_roles import ensure_company_default_roles
+    from .subscription_limits import (
+        apply_trial_for_new_company,
+        can_create_project,
+    )
 
     company = get_current_company(request.user)
     if not company:
@@ -153,7 +157,21 @@ def project_create(request: HttpRequest) -> HttpResponse:
             name=f"Компания {request.user.username}", owner=request.user
         )
         ensure_company_default_roles(company)
+        apply_trial_for_new_company(
+            company,
+        )
     if request.method == "POST":
+        ok_proj, err_proj = can_create_project(
+            company,
+        )
+        if not ok_proj:
+            messages.error(
+                request,
+                err_proj or "Нельзя создать проект.",
+            )
+            return redirect(
+                "dashboard",
+            )
         form = ProjectForm(request.POST)
         if form.is_valid():
             project = form.save(commit=False)
@@ -2377,6 +2395,20 @@ def settings_access_add_user(request: HttpRequest) -> HttpResponse:
     if CompanyUser.objects.filter(user=user, company=company).exists():
         messages.error(request, "Пользователь с таким email уже добавлен в компанию.")
         return redirect("settings_access")
+
+    from .subscription_limits import can_add_company_user
+
+    ok_u, err_u = can_add_company_user(
+        company,
+    )
+    if not ok_u:
+        messages.error(
+            request,
+            err_u or "Нельзя добавить пользователя.",
+        )
+        return redirect(
+            "settings_access",
+        )
 
     company_user = CompanyUser.objects.create(
         user=user,

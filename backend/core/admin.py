@@ -1,11 +1,15 @@
 from django.contrib import admin
 
 from .models import (
+    ActivityLog,
     Company,
     CompanyRole,
     CompanyUser,
+    Permission,
     ProjectAccess,
     Project,
+    Tariff,
+    UserProfile,
     UploadedDocument,
     Task,
     Finance,
@@ -36,16 +40,78 @@ from .models import (
 )
 
 
+@admin.register(Tariff)
+class TariffAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "max_projects",
+        "max_users",
+        "trial_days",
+        "is_public",
+    )
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "is_super_admin",
+    )
+    list_filter = ("is_super_admin",)
+    search_fields = (
+        "user__username",
+        "user__email",
+    )
+
+
+@admin.register(ActivityLog)
+class ActivityLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "created_at",
+        "user",
+        "action",
+        "entity",
+        "entity_id",
+    )
+    list_filter = ("entity",)
+    search_fields = (
+        "action",
+        "user__username",
+    )
+
+
 @admin.register(Company)
 class CompanyAdmin(admin.ModelAdmin):
-    list_display = ("name", "subscription_plan", "subscription_expires_at", "owner")
-    search_fields = ("name",)
+    list_display = (
+        "name",
+        "tariff",
+        "subscription_plan",
+        "account_status",
+        "is_active",
+        "subscription_expires_at",
+        "owner",
+    )
+    list_filter = (
+        "is_active",
+        "account_status",
+    )
+    search_fields = (
+        "name",
+        "contact_email",
+    )
+
+
+@admin.register(Permission)
+class PermissionAdmin(admin.ModelAdmin):
+    list_display = ("code", "name")
+    search_fields = ("code", "name")
 
 
 @admin.register(CompanyRole)
 class CompanyRoleAdmin(admin.ModelAdmin):
     list_display = ("name", "company", "slug", "is_system")
     list_filter = ("company", "is_system")
+    filter_horizontal = ("permissions",)
 
 
 @admin.register(CompanyUser)

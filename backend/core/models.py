@@ -1,14 +1,76 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
+
+
+class Tariff(models.Model):
+    """Тариф SaaS: лимиты проектов и пользователей (0 = без лимита)."""
+
+    name = models.CharField("Название", max_length=100, unique=True)
+    max_projects = models.PositiveIntegerField(
+        "Макс. проектов", default=0, help_text="0 — без ограничения"
+    )
+    max_users = models.PositiveIntegerField(
+        "Макс. пользователей в компании", default=0, help_text="0 — без ограничения"
+    )
+    trial_days = models.PositiveIntegerField(
+        "Дней пробного периода", default=14, help_text="Для автопроставления trial"
+    )
+    is_public = models.BooleanField("Доступен для назначения", default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Тариф"
+        verbose_name_plural = "Тарифы"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class Company(models.Model):
+    STATUS_ACTIVE = "active"
+    STATUS_TRIAL = "trial"
+    STATUS_EXPIRED = "expired"
+    STATUS_BLOCKED = "blocked"
+    ACCOUNT_STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Активен"),
+        (STATUS_TRIAL, "Пробный период"),
+        (STATUS_EXPIRED, "Подписка истекла"),
+        (STATUS_BLOCKED, "Заблокирован"),
+    ]
+
     name = models.CharField("Название компании", max_length=255)
     subscription_plan = models.CharField(
-        "Тарифный план", max_length=100, default="Trial"
+        "Тарифный план (legacy)", max_length=100, default="Trial"
     )
     subscription_expires_at = models.DateField(
         "Срок действия подписки", null=True, blank=True
+    )
+    tariff = models.ForeignKey(
+        Tariff,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="companies",
+        verbose_name="Тариф",
+    )
+    contact_email = models.EmailField("Контактный email", blank=True, default="")
+    is_active = models.BooleanField(
+        "Доступ к платформе",
+        default=True,
+        help_text="Если выключено — вход для компании заблокирован (кроме супер-админа).",
+    )
+    account_status = models.CharField(
+        "Статус аккаунта",
+        max_length=20,
+        choices=ACCOUNT_STATUS_CHOICES,
+        default=STATUS_ACTIVE,
+    )
+    created_at = models.DateTimeField(
+        "Создана",
+        default=timezone.now,
+        editable=False,
     )
 
     owner = models.ForeignKey(
@@ -20,8 +82,74 @@ class Company(models.Model):
     def __str__(self) -> str:
         return self.name
 
+    @property
+    def effective_tariff(self) -> "Tariff | None":
+        return self.tariff
+
+    @property
+    def display_tariff_name(self) -> str:
+        if self.tariff_id:
+            return self.tariff.name
+        return self.subscription_plan or "—"
+
+
+class UserProfile(models.Model):
+    """Расширение пользователя (без смены AUTH_USER_MODEL)."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="saas_profile",
+    )
+    is_super_admin = models.BooleanField("Супер-администратор платформы", default=False)
+
+    class Meta:
+        verbose_name = "Профиль пользователя (SaaS)"
+        verbose_name_plural = "Профили пользователей (SaaS)"
+
+    def __str__(self) -> str:
+        return f"{self.user} (super_admin={self.is_super_admin})"
+
+
+class ActivityLog(models.Model):
+    """Журнал действий для панели супер-администратора."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="saas_activity_logs",
+    )
+    action = models.CharField("Действие", max_length=255)
+    entity = models.CharField("Сущность", max_length=100)
+    entity_id = models.CharField("ID сущности", max_length=64, blank=True, default="")
+    meta = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Запись активности"
+        verbose_name_plural = "Журнал активности"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.created_at:%Y-%m-%d %H:%M} {self.action}"
+
 
 # ---------- Роли и доступ (Настройки → Права доступа) ----------
+
+
+class Permission(models.Model):
+    """Глобальный справочник прав (RBAC). Коды привязываются к ролям компании."""
+
+    code = models.CharField("Код", max_length=64, unique=True)
+    name = models.CharField("Название", max_length=255)
+
+    class Meta:
+        verbose_name = "Право доступа"
+        verbose_name_plural = "Права доступа"
+        ordering = ["code"]
+
+    def __str__(self) -> str:
+        return f"{self.code}"
 
 
 class CompanyRole(models.Model):
@@ -30,6 +158,9 @@ class CompanyRole(models.Model):
     SLUG_OWNER = "owner"
     SLUG_MANAGER = "manager"
     SLUG_EMPLOYEE = "employee"
+    SLUG_PTO = "pto"
+    SLUG_SUPPLY = "supply"
+    SLUG_ACCOUNTANT = "accountant"
 
     company = models.ForeignKey(
         Company, on_delete=models.CASCADE, related_name="roles"
@@ -41,7 +172,13 @@ class CompanyRole(models.Model):
         "Код (для системных ролей)",
         max_length=30,
         blank=True,
-        help_text="owner / manager / employee для системных ролей",
+        help_text="owner / manager / employee / pto / supply / accountant",
+    )
+    permissions = models.ManyToManyField(
+        Permission,
+        blank=True,
+        related_name="company_roles",
+        verbose_name="Права",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -67,11 +204,12 @@ class CompanyUser(models.Model):
     )
     role = models.ForeignKey(
         CompanyRole,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
         related_name="company_users",
         null=True,
         blank=True,
-        help_text="Пусто = доступ только через владельца (legacy).",
+        help_text="Пусто = доступ только через владельца (legacy). "
+        "При удалении роли поле обнуляется; при удалении компании роли и участники удаляются каскадно.",
     )
     is_active = models.BooleanField("Активен", default=True)
     auto_add_to_new_projects = models.BooleanField(

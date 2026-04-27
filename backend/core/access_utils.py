@@ -1,32 +1,27 @@
 """
-Проверка доступа к разделам по роли пользователя в компании.
-Владелец (company.owner) и роль «Владелец компании» — полный доступ.
-Руководитель — полный доступ (чтение/редактирование; read-only можно уточнить на уровне view).
-Сотрудник — без доступа к: Финансы, Отчёты, Настройки.
+Проверка доступа к разделам по RBAC (роль в компании + права Permission).
+Владелец компании (owner) — полный доступ. Роль «Владелец» (slug owner) — полный доступ.
 """
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 
 from .models import Company, CompanyRole, CompanyUser
+from .rbac import codes_required_for_path
 
 User = get_user_model()
-
-# Префиксы URL, доступ к которым ограничивается по ролям
-RESTRICTED_FINANCE = "/finance/"
-RESTRICTED_REPORTS = "/reports/"
-RESTRICTED_SETTINGS = "/settings/"
-RESTRICTED_WAREHOUSES = "/warehouses/"
-
-# Для роли «Сотрудник» запрещены только эти разделы
-EMPLOYEE_DENIED_PREFIXES = (RESTRICTED_FINANCE, RESTRICTED_REPORTS, RESTRICTED_SETTINGS)
 
 
 def get_company_user(user, company):
     """Возвращает CompanyUser для пользователя и компании или None."""
     if not user.is_authenticated or not company:
         return None
-    return CompanyUser.objects.filter(user=user, company=company).select_related("role").first()
+    return (
+        CompanyUser.objects.filter(user=user, company=company)
+        .select_related("role")
+        .prefetch_related("role__permissions")
+        .first()
+    )
 
 
 def get_current_company(user):
@@ -46,53 +41,96 @@ def is_company_owner(user, company):
     return company and company.owner_id == user.id
 
 
-def can_access_path(user, company, path: str) -> bool:
-    """
-    Проверяет, разрешён ли пользователю доступ к данному path (request.path).
-    Владелец компании и роль «Владелец» — полный доступ.
-    Роль «Руководитель» — полный доступ.
-    Роль «Сотрудник» — без доступа к /finance/, /reports/, /settings/.
-    Нет роли / не в компании — доступ запрещён для ограниченных разделов.
-    """
+def get_user_permission_codes(user, company) -> frozenset[str]:
+    """Множество кодов прав пользователя в компании (без учёта view/edit-эквивалентов)."""
+    if not user.is_authenticated or not company:
+        return frozenset()
+    if is_company_owner(user, company):
+        from .models import Permission
+
+        return frozenset(Permission.objects.values_list("code", flat=True))
+
+    cu = get_company_user(user, company)
+    if not cu or not cu.is_active or not cu.role_id:
+        return frozenset()
+    role = cu.role
+    if role.slug == CompanyRole.SLUG_OWNER:
+        from .models import Permission
+
+        return frozenset(Permission.objects.values_list("code", flat=True))
+
+    return frozenset(role.permissions.values_list("code", flat=True))
+
+
+def has_permission(user, company, code: str) -> bool:
+    """Проверка одного права; view_* выполняется и при наличии edit_* для того же ресурса."""
     if not user.is_authenticated or not company:
         return False
+    codes = get_user_permission_codes(user, company)
+    if code in codes:
+        return True
+    if code.startswith("view_"):
+        suffix = code[5:]
+        edit_code = f"edit_{suffix}"
+        if edit_code in codes:
+            return True
+    return False
 
-    # Владелец компании всегда имеет полный доступ
+
+def has_any_permission(user, company, codes: list[str]) -> bool:
+    if not codes:
+        return True
+    return any(has_permission(user, company, c) for c in codes)
+
+
+def path_allowed_without_role(path: str) -> bool:
+    """
+    Если пользователь в компании без роли / без записи CompanyUser — только «мягкие»
+    разделы (как раньше: без финансов, отчётов, настроек, складов компании).
+    """
+    restricted = ("/finance/", "/reports/", "/settings/", "/warehouses/")
+    return not any(path.startswith(p) for p in restricted)
+
+
+def can_access_path(user, company, path: str) -> bool:
+    """
+    Доступ к URL: владелец компании — да; иначе CompanyUser + RBAC.
+    Без привязки к компании разрешены только пути без требований RBAC.
+    """
+    if not user.is_authenticated:
+        return False
+    from .models import UserProfile
+
+    if UserProfile.objects.filter(
+        user=user,
+        is_super_admin=True,
+    ).exists():
+        return True
+    if not company:
+        if path in ("/", ""):
+            return True
+        return codes_required_for_path(path) is None
     if is_company_owner(user, company):
         return True
 
     company_user = get_company_user(user, company)
     if not company_user or not company_user.is_active:
-        # Нет записи в компании — для ограниченных разделов запрет
         return path_allowed_without_role(path)
 
-    role = company_user.role
-    if not role:
+    if not company_user.role_id:
         return path_allowed_without_role(path)
 
-    slug = (role.slug or "").strip()
-    if slug == CompanyRole.SLUG_OWNER:
+    required = codes_required_for_path(path)
+    if required is None:
         return True
-    if slug == CompanyRole.SLUG_MANAGER:
-        return True
-    if slug == CompanyRole.SLUG_EMPLOYEE:
-        return not any(path.startswith(p) for p in EMPLOYEE_DENIED_PREFIXES)
 
-    # Кастомная роль: по умолчанию запрещаем ограниченные разделы
-    return not any(path.startswith(p) for p in EMPLOYEE_DENIED_PREFIXES)
-
-
-def path_allowed_without_role(path: str) -> bool:
-    """Доступ к ограниченным путям без роли (только владелец имеет доступ)."""
-    restricted = (RESTRICTED_FINANCE, RESTRICTED_REPORTS, RESTRICTED_SETTINGS, RESTRICTED_WAREHOUSES)
-    return not any(path.startswith(p) for p in restricted)
+    return has_any_permission(user, company, required)
 
 
 def can_manage_access(user, company) -> bool:
-    """Может ли пользователь управлять правами (настройки → права доступа). Только владелец или роль Владелец."""
+    """Настройки компании и пользователи: manage_users или владелец компании."""
     if not user.is_authenticated or not company:
         return False
     if is_company_owner(user, company):
         return True
-    cu = get_company_user(user, company)
-    return cu and cu.is_active and cu.role_id and (cu.role.slug == CompanyRole.SLUG_OWNER)
+    return has_permission(user, company, "manage_users")

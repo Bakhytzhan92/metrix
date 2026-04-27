@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>{% block title %}Платформа — супер-админ{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-100 text-slate-900 min-h-screen">
+    {% csrf_token %}
+    <nav class="bg-slate-900 text-white">
+      <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-4">
+        <a href="{% url 'superadmin:superadmin_panel' %}" class="font-semibold text-violet-300">SaaS Control</a>
+        <a href="{% url 'superadmin:superadmin_panel' %}" class="text-sm opacity-90 hover:opacity-100">Обзор</a>
+        <a href="{% url 'superadmin:superadmin_companies' %}" class="text-sm opacity-90 hover:opacity-100">Компании</a>
+        <a href="{% url 'superadmin:superadmin_users' %}" class="text-sm opacity-90 hover:opacity-100">Пользователи</a>
+        <a href="{% url 'superadmin:superadmin_projects' %}" class="text-sm opacity-90 hover:opacity-100">Проекты</a>
+        <a href="{% url 'superadmin:superadmin_logs' %}" class="text-sm opacity-90 hover:opacity-100">Логи</a>
+        <a href="{% url 'superadmin:superadmin_tariffs' %}" class="text-sm opacity-90 hover:opacity-100">Тарифы</a>
+        <a href="{% url 'dashboard' %}" class="text-sm ml-auto text-slate-300 hover:text-white">В приложение</a>
+      </div>
+    </nav>
+    <main class="max-w-7xl mx-auto px-4 py-8">{% block content %}{% endblock %}</main>
+    <script>
+      async function apiPost(url, body) {
+        const token = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+        const res = await fetch(url, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRFToken': token,
+          },
+          body: body !== undefined && body !== null ? JSON.stringify(body) : '{}',
+        });
+        const text = await res.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (e) {
+          return {
+            ok: false,
+            error: 'Сервер вернул не JSON (код ' + res.status + '). ' + (text ? text.slice(0, 240) : ''),
+          };
+        }
+        if (!res.ok) {
+          data.ok = false;
+          if (!data.error) {
+            data.error = data.detail || 'Ошибка ' + res.status;
+          }
+        }
+        return data;
+      }
+    </script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

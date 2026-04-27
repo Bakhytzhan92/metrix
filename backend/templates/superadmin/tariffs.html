@@ -1,0 +1,36 @@
+{% extends "superadmin/base.html" %}
+{% block title %}Тарифы{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Тарифы</h1>
+<p class="text-sm text-slate-600 mb-4">Лимиты: 0 означает «без ограничения». Назначение компаниям — в разделе «Компании».</p>
+<div class="overflow-x-auto bg-white rounded-lg border border-slate-200 shadow-sm">
+  <table class="min-w-full text-sm">
+    <thead class="bg-slate-50 text-left text-slate-600">
+      <tr>
+        <th class="px-3 py-2">Название</th>
+        <th class="px-3 py-2">Макс. проектов</th>
+        <th class="px-3 py-2">Макс. пользователей</th>
+        <th class="px-3 py-2">Дней trial</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const rows = document.getElementById('rows');
+  async function load() {
+    const r = await fetch('/api/superadmin/tariffs/', { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+    const d = await r.json();
+    rows.innerHTML = '';
+    for (const t of d.tariffs || []) {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-slate-100';
+      tr.innerHTML = `<td class="px-3 py-2 font-medium">${t.name}</td><td class="px-3 py-2">${t.max_projects || '∞'}</td><td class="px-3 py-2">${t.max_users || '∞'}</td><td class="px-3 py-2">${t.trial_days}</td>`;
+      rows.appendChild(tr);
+    }
+  }
+  load();
+</script>
+{% endblock %}

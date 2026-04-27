@@ -37,6 +37,7 @@
       <button type="submit" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Импорт (Excel)</button>
     </form>
     <a href="{% url 'estimate_export' project.pk %}" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Экспорт</a>
+    <button type="button" id="btn-estimate-pdf-import" class="inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100">Импорт из PDF</button>
   </div>
 
   {# Разделы работ — всегда раскрыты; автосохранение строк #}
@@ -77,53 +78,53 @@
             </button>
           </div>
           <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-            <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <table class="min-w-full divide-y divide-slate-200 text-xs">
               <thead>
                 <tr class="bg-slate-50">
-                  <th class="px-2 py-2 text-center font-medium text-slate-700 w-10">№</th>
-                  <th class="px-2 py-2 text-left font-medium text-slate-700 w-36">Тип</th>
-                  <th class="px-2 py-2 text-left font-medium text-slate-700 min-w-[10rem]">Наименование</th>
-                  <th class="px-2 py-2 text-left font-medium text-slate-700 w-20">Ед. изм.</th>
-                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-24">Кол-во</th>
-                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-28">Цена</th>
-                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-28">Себестоимость</th>
-                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-24">Наценка %</th>
-                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-28">Цена заказч. (ед.)</th>
-                  <th class="px-2 py-2 text-right font-medium text-slate-700 w-28">Итого</th>
-                  <th class="px-2 py-2 w-14"></th>
+                  <th class="px-1.5 py-1 text-center font-medium text-slate-700 w-8">№</th>
+                  <th class="px-1.5 py-1 text-left font-medium text-slate-700 w-32">Тип</th>
+                  <th class="px-1.5 py-1 text-left font-medium text-slate-700 min-w-[12rem]">Наименование</th>
+                  <th class="px-1.5 py-1 text-left font-medium text-slate-700 w-16">Ед. изм.</th>
+                  <th class="px-1.5 py-1 text-right font-medium text-slate-700 w-20">Кол-во</th>
+                  <th class="px-1.5 py-1 text-right font-medium text-slate-700 w-24">Цена</th>
+                  <th class="px-1.5 py-1 text-right font-medium text-slate-700 w-24">Себестоимость</th>
+                  <th class="px-1.5 py-1 text-right font-medium text-slate-700 w-20">Наценка %</th>
+                  <th class="px-1.5 py-1 text-right font-medium text-slate-700 w-24">Цена заказч. (ед.)</th>
+                  <th class="px-1.5 py-1 text-right font-medium text-slate-700 w-24">Итого</th>
+                  <th class="px-1 py-1 w-12"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
                 {% for item in items %}
                 <tr class="estimate-row hover:bg-slate-50/50 align-top" data-estimate-form="estimate-row-{{ item.pk }}">
-                  <td class="px-2 py-1.5 text-center tabular-nums text-slate-600">{{ forloop.counter }}</td>
-                  <td class="px-2 py-1.5">
-                    <select form="estimate-row-{{ item.pk }}" name="type" class="w-full min-w-0 rounded border border-slate-200 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                  <td class="px-1.5 py-0.5 text-center tabular-nums text-slate-600 leading-tight">{{ forloop.counter }}</td>
+                  <td class="px-1.5 py-0.5">
+                    <select form="estimate-row-{{ item.pk }}" name="type" class="w-full min-w-0 rounded border border-slate-200 px-1.5 py-0.5 text-xs leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                       <option value="material" {% if item.type == 'material' %}selected{% endif %}>Материалы</option>
                       <option value="labor" {% if item.type == 'labor' %}selected{% endif %}>Работы</option>
                       <option value="equipment" {% if item.type == 'equipment' %}selected{% endif %}>Механизмы</option>
                       <option value="delivery" {% if item.type == 'delivery' %}selected{% endif %}>Доставка</option>
                     </select>
                   </td>
-                  <td class="px-2 py-1.5">
-                    <input form="estimate-row-{{ item.pk }}" type="text" name="name" value="{{ item.name }}" placeholder="Наименование" class="w-full min-w-0 rounded border border-slate-200 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  <td class="px-1.5 py-0.5 align-top max-w-2xl">
+                    <textarea form="estimate-row-{{ item.pk }}" name="name" rows="2" placeholder="Наименование" class="w-full min-w-0 min-h-[2.25rem] max-h-40 resize-y overflow-y-auto rounded border border-slate-200 px-1.5 py-0.5 text-xs leading-snug text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">{{ item.name|strip_norm_code }}</textarea>
                   </td>
-                  <td class="px-2 py-1.5">
-                    <input form="estimate-row-{{ item.pk }}" type="text" name="unit" value="{{ item.unit }}" class="w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  <td class="px-1.5 py-0.5">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="unit" value="{{ item.unit }}" class="w-full rounded border border-slate-200 px-1.5 py-0.5 text-xs leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </td>
-                  <td class="px-2 py-1.5">
-                    <input form="estimate-row-{{ item.pk }}" type="text" name="quantity" value="{{ item.quantity|qty_plain }}" inputmode="decimal" class="w-full rounded border border-slate-200 px-2 py-1 text-sm text-right tabular-nums focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  <td class="px-1.5 py-0.5">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="quantity" value="{{ item.quantity|qty_plain }}" inputmode="decimal" class="w-full rounded border border-slate-200 px-1.5 py-0.5 text-xs text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </td>
-                  <td class="px-2 py-1.5">
-                    <input form="estimate-row-{{ item.pk }}" type="text" name="cost_price" value="{{ item.cost_price }}" inputmode="decimal" class="w-full rounded border border-slate-200 px-2 py-1 text-sm text-right tabular-nums focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  <td class="px-1.5 py-0.5">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="cost_price" value="{{ item.cost_price }}" inputmode="decimal" class="w-full rounded border border-slate-200 px-1.5 py-0.5 text-xs text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </td>
-                  <td class="px-2 py-1.5 text-right tabular-nums text-slate-700 pt-2 js-item-total-cost">{{ item.total_cost|floatformat:2 }}</td>
-                  <td class="px-2 py-1.5">
-                    <input form="estimate-row-{{ item.pk }}" type="text" name="markup_percent" value="{{ item.markup_percent }}" inputmode="decimal" class="w-full rounded border border-slate-200 px-2 py-1 text-sm text-right tabular-nums focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  <td class="px-1.5 py-0.5 text-right tabular-nums text-slate-700 align-middle text-xs leading-tight js-item-total-cost">{{ item.total_cost|floatformat:2 }}</td>
+                  <td class="px-1.5 py-0.5">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="markup_percent" value="{{ item.markup_percent }}" inputmode="decimal" class="w-full rounded border border-slate-200 px-1.5 py-0.5 text-xs text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </td>
-                  <td class="px-2 py-1.5 text-right tabular-nums text-slate-700 pt-2 js-item-sell-price">{{ item.sell_price|floatformat:2 }}</td>
-                  <td class="px-2 py-1.5 text-right tabular-nums font-medium text-slate-900 pt-2 js-item-total-price">{{ item.total_price|floatformat:2 }}</td>
-                  <td class="px-2 py-1.5 text-center align-middle">
+                  <td class="px-1.5 py-0.5 text-right tabular-nums text-slate-700 align-middle text-xs leading-tight js-item-sell-price">{{ item.sell_price|floatformat:2 }}</td>
+                  <td class="px-1.5 py-0.5 text-right tabular-nums font-medium text-slate-900 align-middle text-xs leading-tight js-item-total-price">{{ item.total_price|floatformat:2 }}</td>
+                  <td class="px-1 py-0.5 text-center align-middle">
                     <div class="inline-flex items-center justify-center gap-0.5">
                     <form id="estimate-row-{{ item.pk }}" method="post" action="{% url 'estimate_item_inline' project.pk section.pk item.pk %}" class="hidden" aria-hidden="true">
                       {% csrf_token %}
@@ -183,6 +184,48 @@
         </div>
       </div>
       {% endif %}
+    </div>
+  </div>
+
+  {# Модалка: импорт ЛСР из PDF #}
+  <div id="modal-estimate-pdf" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-estimate-pdf-title">
+    <div class="absolute inset-0 bg-slate-900/50" data-close-pdf-modal></div>
+    <div class="relative z-10 w-full max-w-3xl max-h-[min(90vh,720px)] overflow-hidden rounded-xl bg-white shadow-xl ring-1 ring-slate-200 flex flex-col">
+      <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <h2 id="modal-estimate-pdf-title" class="text-base font-semibold text-slate-900">Импорт локальной сметы из PDF</h2>
+        <button type="button" class="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" data-close-pdf-modal aria-label="Закрыть">✕</button>
+      </div>
+      <div class="p-4 space-y-3 overflow-y-auto flex-1">
+        <p class="text-sm text-slate-600">Загружается только блок «Локальная смета / локальный сметный расчёт» — без ресурсов и цен. Убедитесь, что в PDF присутствуют эти заголовки.</p>
+        <div class="flex flex-wrap items-center gap-3">
+          <input type="file" id="estimate-pdf-file" accept="application/pdf,.pdf" class="text-sm text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700" />
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700 select-none">
+            <input type="checkbox" id="estimate-pdf-local-only" class="h-4 w-4 rounded border-slate-300 text-indigo-600" checked disabled />
+            <span>Только локальная смета (без ресурсов)</span>
+          </label>
+        </div>
+        <p id="estimate-pdf-status" class="text-sm text-slate-500 min-h-[1.25rem]"></p>
+        <div id="estimate-pdf-preview-wrap" class="hidden rounded-lg border border-slate-200 overflow-hidden">
+          <div class="overflow-x-auto max-h-64">
+            <table class="min-w-full divide-y divide-slate-200 text-sm">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-2 py-2 text-left text-slate-700">Раздел</th>
+                  <th class="px-2 py-2 text-left text-slate-700">Работа</th>
+                  <th class="px-2 py-2 text-left text-slate-700 w-20">Ед.</th>
+                  <th class="px-2 py-2 text-right text-slate-700 w-24">Кол-во</th>
+                </tr>
+              </thead>
+              <tbody id="estimate-pdf-preview-body" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="px-4 py-3 border-t border-slate-200 flex flex-wrap justify-end gap-2 bg-slate-50/80">
+        <button type="button" class="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" data-close-pdf-modal>Отмена</button>
+        <button type="button" id="estimate-pdf-upload-btn" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Разобрать PDF</button>
+        <button type="button" id="estimate-pdf-apply-btn" class="hidden rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700" disabled>Импортировать</button>
+      </div>
     </div>
   </div>
 </div>
@@ -562,6 +605,162 @@
         });
     });
   });
+})();
+</script>
+<script>
+(function () {
+  var projectId = {{ project.pk }};
+  var urlPreview = "{% url 'api_estimate_import_pdf' %}";
+  var urlApply = "{% url 'api_estimate_import_pdf_apply' %}";
+  var urlApplyFile = "{% url 'api_estimate_import_pdf_apply_file' %}";
+  function getCookie(name) {
+    var m = document.cookie.match("(^|;) ?" + name + "=([^;]*)(;|$)");
+    return m ? decodeURIComponent(m[2]) : "";
+  }
+  var modal = document.getElementById("modal-estimate-pdf");
+  var fileInp = document.getElementById("estimate-pdf-file");
+  var statusEl = document.getElementById("estimate-pdf-status");
+  var previewWrap = document.getElementById("estimate-pdf-preview-body");
+  var previewBox = document.getElementById("estimate-pdf-preview-wrap");
+  var btnOpen = document.getElementById("btn-estimate-pdf-import");
+  var btnParse = document.getElementById("estimate-pdf-upload-btn");
+  var btnApply = document.getElementById("estimate-pdf-apply-btn");
+  var lastRows = null;
+
+  function openModal() {
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
+  }
+  function closeModal() {
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+    lastRows = null;
+    if (previewBox) previewBox.classList.add("hidden");
+    if (previewWrap) previewWrap.innerHTML = "";
+    if (statusEl) statusEl.textContent = "";
+    if (btnApply) {
+      btnApply.classList.add("hidden");
+      btnApply.disabled = true;
+    }
+    if (fileInp) fileInp.value = "";
+  }
+  if (btnOpen) btnOpen.addEventListener("click", openModal);
+  if (modal) {
+    modal.querySelectorAll("[data-close-pdf-modal]").forEach(function (el) {
+      el.addEventListener("click", closeModal);
+    });
+  }
+
+  function rowText(s) {
+    if (s === null || s === undefined) return "";
+    var t = document.createElement("span");
+    t.textContent = String(s);
+    return t.textContent;
+  }
+
+  if (btnParse) {
+    btnParse.addEventListener("click", function () {
+      var f = fileInp && fileInp.files && fileInp.files[0];
+      if (!f) {
+        if (statusEl) statusEl.textContent = "Выберите PDF.";
+        return;
+      }
+      var fd = new FormData();
+      fd.append("file", f);
+      fd.append("project_id", String(projectId));
+      if (statusEl) statusEl.textContent = "Разбор…";
+      fetch(urlPreview, {
+        method: "POST",
+        headers: { "X-CSRFToken": getCookie("csrftoken") || "" },
+        body: fd,
+        credentials: "same-origin",
+      })
+        .then(function (r) {
+          return r.json().then(function (j) {
+            return { ok: r.ok, j: j, status: r.status };
+          });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.j || !x.j.ok) {
+            if (statusEl) statusEl.textContent = (x.j && (x.j.error || x.j.detail)) || "Ошибка разбора";
+            return;
+          }
+          lastRows = x.j.rows || [];
+          if (statusEl) statusEl.textContent = "Найдено позиций: " + (Number(x.j.count) || 0) + ".";
+          if (previewBox) previewBox.classList.remove("hidden");
+          if (previewWrap) {
+            previewWrap.innerHTML = "";
+            (lastRows || []).slice(0, 500).forEach(function (row) {
+              var tr = document.createElement("tr");
+              tr.className = "hover:bg-slate-50";
+              [row.section, row.name, row.unit, row.quantity].forEach(function (cell, i) {
+                var td = document.createElement("td");
+                td.className = "px-2 py-1.5 " + (i === 3 ? "text-right tabular-nums" : "text-slate-800");
+                td.textContent = i === 3 && typeof cell === "number" ? String(cell) : rowText(cell);
+                tr.appendChild(td);
+              });
+              previewWrap.appendChild(tr);
+            });
+          }
+          if (lastRows && lastRows.length) {
+            btnApply.classList.remove("hidden");
+            btnApply.disabled = false;
+          }
+        })
+        .catch(function () {
+          if (statusEl) statusEl.textContent = "Сеть или сервер недоступен.";
+        });
+    });
+  }
+
+  if (btnApply) {
+    btnApply.addEventListener("click", function () {
+      if (!lastRows || !lastRows.length) return;
+      var f = fileInp && fileInp.files && fileInp.files[0];
+      if (!f) {
+        if (statusEl) statusEl.textContent = "Файл PDF не выбран — нажмите «Разобрать» снова.";
+        return;
+      }
+      if (statusEl) statusEl.textContent = "Импорт…";
+      btnApply.disabled = true;
+      var fd = new FormData();
+      fd.append("file", f);
+      fd.append("project_id", String(projectId));
+      fetch(urlApplyFile, {
+        method: "POST",
+        headers: { "X-CSRFToken": getCookie("csrftoken") || "" },
+        body: fd,
+        credentials: "same-origin",
+      })
+        .then(function (r) {
+          return r.json().then(function (j) {
+            return { ok: r.ok, j: j };
+          });
+        })
+        .then(function (x) {
+          if (!x.ok || !x.j || !x.j.ok) {
+            if (statusEl) statusEl.textContent = (x.j && x.j.error) || "Ошибка импорта";
+            btnApply.disabled = false;
+            return;
+          }
+          if (statusEl) {
+            statusEl.textContent =
+              "Добавлено позиций: " +
+              (Number(x.j.items_created) || 0) +
+              (x.j.count_parsed ? " (всего разобрано: " + x.j.count_parsed + ")." : ".");
+          }
+          window.setTimeout(function () {
+            window.location.reload();
+          }, 600);
+        })
+        .catch(function () {
+          if (statusEl) statusEl.textContent = "Ошибка сети.";
+          btnApply.disabled = false;
+        });
+    });
+  }
 })();
 </script>
 {% endblock %}

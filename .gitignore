@@ -40,6 +40,7 @@ npm-debug.log*
 Thumbs.db
 
 # Локальные черновики (не коммитить)
+backend/_pdf_sample.txt
 recovered_snip.txt
 _line100.txt
 _msg149.txt

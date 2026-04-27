@@ -1,7 +1,10 @@
-from django.urls import path
+from django.urls import include, path
 
 from . import ai_api
+from . import estimate_pdf_views
 from . import views
+from .urls_superadmin import api_urlpatterns as superadmin_api_urls
+from .urls_superadmin import urlpatterns as superadmin_page_urls
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
@@ -172,10 +175,43 @@ urlpatterns = [
         ai_api.api_document_apply,
         name="api_document_apply",
     ),
+    path(
+        "api/estimates/import-pdf/",
+        estimate_pdf_views.api_estimate_import_pdf,
+        name="api_estimate_import_pdf",
+    ),
+    path(
+        "api/estimates/import-pdf/apply/",
+        estimate_pdf_views.api_estimate_import_pdf_apply,
+        name="api_estimate_import_pdf_apply",
+    ),
+    path(
+        "api/estimates/import-pdf/apply-file/",
+        estimate_pdf_views.api_estimate_import_pdf_apply_file,
+        name="api_estimate_import_pdf_apply_file",
+    ),
     # Настройки → Права доступа
     path("settings/access/", views.settings_access, name="settings_access"),
     path("settings/access/add/", views.settings_access_add_user, name="settings_access_add_user"),
     path("settings/access/<int:pk>/edit/", views.settings_access_edit, name="settings_access_edit"),
     path("settings/access/<int:pk>/delete/", views.settings_access_delete, name="settings_access_delete"),
+    path(
+        "superadmin/",
+        include(
+            (
+                superadmin_page_urls,
+                "superadmin",
+            ),
+        ),
+    ),
+    path(
+        "api/superadmin/",
+        include(
+            (
+                superadmin_api_urls,
+                "api_superadmin",
+            ),
+        ),
+    ),
 ]
 

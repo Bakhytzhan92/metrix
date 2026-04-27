@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Доступ ограничен</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-lg max-w-md p-8 text-center">
+      <h1 class="text-xl font-bold text-slate-900 mb-2">Доступ к аккаунту ограничен</h1>
+      <p class="text-slate-600 mb-6">{{ reason }}</p>
+      <a href="{% url 'login' %}" class="text-violet-600 hover:text-violet-800 font-medium">На страницу входа</a>
+    </div>
+  </body>
+</html>

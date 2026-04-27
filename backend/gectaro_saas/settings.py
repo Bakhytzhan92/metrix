@@ -48,6 +48,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "core.middleware.AccessControlMiddleware",
+    "core.platform_middleware.PlatformAccountMiddleware",
 ]
 
 ROOT_URLCONF = "gectaro_saas.urls"
@@ -64,6 +65,8 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "core.context_processors.company_context",
+                "core.context_processors.impersonation_context",
+                "core.context_processors.saas_superadmin_context",
             ],
         },
     },

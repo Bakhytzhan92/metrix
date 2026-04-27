@@ -1,0 +1,24 @@
+{% extends "superadmin/base.html" %}
+{% block title %}Обзор — супер-админ{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold text-slate-800 mb-6">Панель платформы</h1>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+  <div class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <p class="text-sm text-slate-500">Компании</p>
+    <p class="text-3xl font-semibold text-slate-900">{{ stats.total_companies }}</p>
+  </div>
+  <div class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <p class="text-sm text-slate-500">Активные аккаунты</p>
+    <p class="text-3xl font-semibold text-emerald-700">{{ stats.active_companies }}</p>
+  </div>
+  <div class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <p class="text-sm text-slate-500">Пользователи (активн.)</p>
+    <p class="text-3xl font-semibold text-slate-900">{{ stats.total_users }}</p>
+  </div>
+  <div class="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+    <p class="text-sm text-slate-500">Проекты</p>
+    <p class="text-3xl font-semibold text-slate-900">{{ stats.total_projects }}</p>
+  </div>
+</div>
+<p class="text-slate-600 text-sm">Используйте разделы в меню для управления компаниями, пользователями и тарифами. Все действия пишутся в журнал.</p>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "superadmin/base.html" %}
+{% block title %}Журнал{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Журнал активности</h1>
+<div class="overflow-x-auto bg-white rounded-lg border border-slate-200 shadow-sm">
+  <table class="min-w-full text-sm">
+    <thead class="bg-slate-50 text-left text-slate-600">
+      <tr>
+        <th class="px-3 py-2">Когда</th>
+        <th class="px-3 py-2">Кто</th>
+        <th class="px-3 py-2">Действие</th>
+        <th class="px-3 py-2">Сущность</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const rows = document.getElementById('rows');
+  async function load() {
+    const r = await fetch('/api/superadmin/logs/', { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+    const d = await r.json();
+    rows.innerHTML = '';
+    for (const l of d.logs || []) {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-slate-100';
+      tr.innerHTML = `<td class="px-3 py-2 whitespace-nowrap">${l.created_at?.replace('T',' ').slice(0,19)}</td><td class="px-3 py-2">${l.user}</td><td class="px-3 py-2">${l.action}</td><td class="px-3 py-2">${l.entity} ${l.entity_id || ''}</td>`;
+      rows.appendChild(tr);
+    }
+  }
+  load();
+</script>
+{% endblock %}

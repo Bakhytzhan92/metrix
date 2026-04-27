@@ -1,8 +1,14 @@
 from decimal import Decimal
 
 from django import forms
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.forms import PasswordChangeForm, UserCreationForm
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+
+from .account_email import (
+    is_registration_email_taken,
+    normalize_email,
+)
 
 from .models import (
     Company,
@@ -40,6 +46,61 @@ class RegisterForm(UserCreationForm):
     class Meta:
         model = User
         fields = ("username", "email", "password1", "password2")
+
+    def clean_email(
+        self,
+    ):
+        email = normalize_email(
+            self.cleaned_data.get(
+                "email",
+            ),
+        )
+        if not email:
+            raise ValidationError(
+                "Укажите email.",
+            )
+        if is_registration_email_taken(
+            email,
+        ):
+            raise ValidationError(
+                "Пользователь с таким email уже зарегистрирован. "
+                "Войдите в систему или используйте другой адрес.",
+            )
+        return email
+
+    def save(
+        self,
+        commit=True,
+    ):
+        user = super().save(
+            commit=False,
+        )
+        user.email = normalize_email(
+            self.cleaned_data.get(
+                "email",
+            ),
+        )
+        if commit:
+            user.save()
+            if hasattr(
+                self,
+                "save_m2m",
+            ):
+                self.save_m2m()
+        return user
+
+
+class StyledPasswordChangeForm(PasswordChangeForm):
+    """Смена пароля со стилями под Metrix."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        css = (
+            "w-full rounded-md border border-slate-300 px-3 py-2 text-sm "
+            "focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+        )
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", css)
 
 
 class CompanyForm(forms.ModelForm):
