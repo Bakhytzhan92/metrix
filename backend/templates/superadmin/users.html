@@ -2,6 +2,7 @@
 {% block title %}Пользователи{% endblock %}
 {% block content %}
 <h1 class="text-2xl font-bold mb-4">Пользователи</h1>
+<p class="text-sm text-slate-600 mb-2">Удаление необратимо. Владельца компаний удалить нельзя — сначала удалите компании. Нельзя удалить себя и последнего супер-админа платформы.</p>
 <div class="flex flex-wrap gap-2 mb-4">
   <label class="text-sm text-slate-600">Компания (id): <input type="number" id="fcompany" class="border rounded px-2 py-1 w-24" placeholder="все" /></label>
   <button type="button" id="filter" class="px-3 py-1 rounded bg-slate-800 text-white text-sm">Фильтр</button>
@@ -39,9 +40,10 @@
       const tr = document.createElement('tr');
       tr.className = 'border-t border-slate-100';
       tr.innerHTML = `<td class="px-3 py-2">${u.username}</td><td class="px-3 py-2">${u.email}</td><td class="px-3 py-2">${u.company_name || '—'}</td><td class="px-3 py-2">${u.role || '—'}</td>
-        <td class="px-3 py-2 space-x-1">
+        <td class="px-3 py-2 flex flex-wrap gap-2 items-center">
           <button type="button" data-rp="${u.id}" class="text-xs text-violet-700 underline">Сброс пароля</button>
           <button type="button" data-li="${u.id}" class="text-xs text-slate-700 underline">Войти как</button>
+          <button type="button" data-du="${u.id}" data-du-name="${encodeURIComponent(u.username)}" class="text-xs px-2 py-0.5 rounded bg-red-600 text-white border border-red-700">Удалить</button>
         </td>`;
       rows.appendChild(tr);
     }
@@ -57,6 +59,28 @@
       const x = await apiPost('/api/superadmin/login-as-user/' + id + '/');
       if (!x.ok) msg.textContent = x.error || 'Ошибка';
       else window.location.href = x.redirect || '/';
+    }));
+    rows.querySelectorAll('[data-du]').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.getAttribute('data-du');
+      let nm = '';
+      try { nm = decodeURIComponent(b.getAttribute('data-du-name') || ''); } catch (e) { nm = b.getAttribute('data-du-name') || ''; }
+      nm = (nm || '').replace(/\u00a0/g, ' ').trim();
+      const typedRaw = window.prompt('Удалить пользователя «' + nm + '»? Введите логин для подтверждения:', nm);
+      if (typedRaw === null) return;
+      if ((typedRaw || '').replace(/\u00a0/g, ' ').trim() !== nm) {
+        msg.textContent = 'Логин не совпал — удаление отменено';
+        msg.className = 'text-sm text-red-600 mb-4';
+        return;
+      }
+      if (!window.confirm('Окончательно удалить пользователя id ' + id + '?')) return;
+      try {
+        const x = await apiPost('/api/superadmin/users/' + id + '/delete/');
+        if (!x.ok) { msg.textContent = x.error || 'Ошибка'; msg.className = 'text-sm text-red-600 mb-4'; }
+        else { msg.textContent = 'Пользователь удалён'; msg.className = 'text-sm text-emerald-700 mb-4'; load(); }
+      } catch (e) {
+        msg.textContent = String(e);
+        msg.className = 'text-sm text-red-600 mb-4';
+      }
     }));
   }
   document.getElementById('filter').addEventListener('click', load);

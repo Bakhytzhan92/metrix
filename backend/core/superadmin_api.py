@@ -20,6 +20,7 @@ from .models import (
     CompanyUser,
     Project,
     Tariff,
+    UserProfile,
 )
 from .superadmin_utils import (
     log_saas_activity,
@@ -394,6 +395,102 @@ def api_user_reset_password(
     return _json_ok(
         user_id=u.id,
         temporary_password=new_pw,
+    )
+
+
+@require_POST
+@super_admin_required
+def api_user_delete(
+    request,
+    pk: int,
+):
+    """
+    Удаление учётной записи пользователя (сессии, членства, профиль SaaS и т.д.
+    каскадно). Не удаляет владельца компаний — сначала компании или смена владельца.
+    """
+    if int(
+        pk,
+    ) == int(
+        request.user.pk,
+    ):
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Нельзя удалить свою текущую учётную запись.",
+            },
+            status=400,
+        )
+    u = get_object_or_404(
+        User,
+        pk=pk,
+    )
+    if u.owned_companies.exists():
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Пользователь — владелец одной или нескольких компаний. "
+                "Сначала удалите эти компании в разделе «Компании» или назначьте другого владельца.",
+            },
+            status=409,
+        )
+    if UserProfile.objects.filter(
+        user=u,
+        is_super_admin=True,
+    ).exists():
+        other = (
+            UserProfile.objects.filter(
+                is_super_admin=True,
+            )
+            .exclude(
+                user_id=u.pk,
+            )
+            .count()
+        )
+        if other < 1:
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Нельзя удалить последнего супер-администратора платформы.",
+                },
+                status=400,
+            )
+    label = u.get_username()
+    uid = u.pk
+    log_saas_activity(
+        request,
+        f"Удаление пользователя «{label}»",
+        "user",
+        str(
+            uid,
+        ),
+    )
+    try:
+        with transaction.atomic():
+            u.delete()
+    except ProtectedError as exc:
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Нельзя удалить: "
+                + str(
+                    exc,
+                )[:500],
+            },
+            status=409,
+        )
+    except Exception as exc:
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": str(
+                    exc,
+                )[:500],
+            },
+            status=500,
+        )
+    return _json_ok(
+        deleted_id=uid,
+        deleted_username=label,
     )
 
 

@@ -87,6 +87,11 @@ api_urlpatterns = [
         name="api_superadmin_user_reset_password",
     ),
     path(
+        "users/<int:pk>/delete/",
+        superadmin_api.api_user_delete,
+        name="api_superadmin_user_delete",
+    ),
+    path(
         "projects/",
         superadmin_api.api_projects,
         name="api_superadmin_projects",
