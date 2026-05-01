@@ -832,7 +832,16 @@ class EditCompanyUserForm(forms.ModelForm):
             if pwd:
                 u = company_user.user
                 u.set_password(pwd)
-                u.save(update_fields=["password"])
+                email_norm = (u.email or "").strip().lower()
+                update_fields = ["password"]
+                if email_norm:
+                    u.email = email_norm
+                    update_fields.append("email")
+                    uname = email_norm[:150]
+                    if not User.objects.exclude(pk=u.pk).filter(username=uname).exists():
+                        u.username = uname
+                        update_fields.append("username")
+                u.save(update_fields=update_fields)
         return company_user
 
 

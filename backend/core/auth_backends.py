@@ -26,6 +26,10 @@ class EmailOrUsernameModelBackend(ModelBackend):
         user = UserModel._default_manager.filter(
             **{UserModel.USERNAME_FIELD: username_clean}
         ).first()
+        if user is None:
+            user = UserModel._default_manager.filter(
+                username__iexact=username_clean,
+            ).first()
         if user is None and "@" in username_clean:
             user = UserModel._default_manager.filter(
                 email__iexact=username_clean,
