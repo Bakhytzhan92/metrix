@@ -9,11 +9,11 @@
   .sched-pinned { flex: 0 0 auto; min-width: 260px; max-width: min(96vw, 1600px); display: flex; flex-direction: column; border-right: 1px solid var(--sched-border); background: #fafafa; }
   .sched-pinned-scroll { overflow: auto; flex: 1; }
   .sched-table { table-layout: fixed; width: auto; min-width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
-  .sched-table th { position: sticky; top: 0; z-index: 2; background: #f1f5f9; text-align: left; padding: 0.5rem 0.35rem; font-weight: 600; color: #334155; border-bottom: 1px solid var(--sched-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+  .sched-table th { position: sticky; top: 0; z-index: 2; background: #f1f5f9; text-align: left; height: 36px; padding: 4px 0.35rem; font-weight: 600; color: #334155; border-bottom: 1px solid var(--sched-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; vertical-align: middle; }
   .sched-table th .sched-col-resizer { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; margin-right: -4px; cursor: col-resize; z-index: 5; user-select: none; }
   .sched-table th .sched-col-resizer:hover,
   .sched-table th .sched-col-resizer-active { background: rgba(99, 102, 241, 0.35); }
-  .sched-table td { padding: 0.35rem 0.35rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; height: var(--sched-row-h); box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; }
+  .sched-table td { padding: 0.35rem 0.35rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; box-sizing: border-box; }
   .sched-table tr.sched-sec td { background: #f1f5f9; font-weight: 600; color: #0f172a; }
   .sched-table tr:hover td { background: #f8fafc; }
   .sched-table tr.sched-sec:hover td { background: #e2e8f0; }
@@ -23,9 +23,9 @@
   .sched-timeline-head-cell { flex-shrink: 0; border-right: 1px solid #e2e8f0; padding: 4px 2px; text-align: center; box-sizing: border-box; }
   .sched-timeline-body { flex: 1; overflow: auto; position: relative; }
   .sched-timeline-canvas { position: relative; min-height: 100%; }
-  .sched-gantt-row { height: var(--sched-row-h); box-sizing: border-box; border-bottom: 1px solid #f1f5f9; position: relative; }
+  .sched-gantt-row { min-height: var(--sched-row-h); box-sizing: border-box; border-bottom: 1px solid #f1f5f9; position: relative; }
   .sched-gantt-row:nth-child(even) { background: #fafafa; }
-  .sched-bar { position: absolute; top: 7px; height: 30px; border-radius: 6px; cursor: grab; min-width: 8px; box-sizing: border-box; border: 2px solid rgba(0,0,0,.12); display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: #0f172a; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; z-index: 1; transition: box-shadow .15s, filter .15s; }
+  .sched-bar { position: absolute; top: 50%; height: 30px; transform: translateY(-50%); border-radius: 6px; cursor: grab; min-width: 8px; box-sizing: border-box; border: 2px solid rgba(0,0,0,.12); display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: #0f172a; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; z-index: 1; transition: box-shadow .15s, filter .15s; }
   .sched-bar:hover { box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); filter: brightness(1.03); z-index: 2; }
   .sched-bar:active { cursor: grabbing; }
   .sched-bar.sched-status-planned { background: #94a3b8; }
@@ -35,40 +35,12 @@
   .sched-bar-resize { position: absolute; right: -4px; top: 0; width: 10px; height: 100%; cursor: ew-resize; z-index: 3; }
   .sched-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; z-index: 4; pointer-events: none; box-shadow: 0 0 0 1px rgba(239,68,68,.3); }
   .sched-today-caret { position: absolute; top: 0; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #ef4444; transform: translateX(-4px); z-index: 4; pointer-events: none; }
-  .sched-dep-svg { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; overflow: visible; }
+  .sched-dep-svg { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 4; overflow: visible; }
   .sched-zoom-active { border-color: #6366f1 !important; background: #eef2ff !important; }
   .sched-input-xs { width: 100%; max-width: none; min-width: 0; box-sizing: border-box; font-size: 0.75rem; padding: 0.2rem 0.35rem; border: 1px solid #cbd5e1; border-radius: 0.25rem; background: #fff; }
   .sched-input-days { max-width: none; text-align: right; }
   .sched-table select.sched-input-xs { width: 100%; min-width: 0; max-width: none; }
-  /* «Начало»: без цифр в поле — только вызов календаря (как «Show date picker» в Chrome) */
-  .sched-table input[type="date"].sched-date-icon-only {
-    width: 2.35rem;
-    min-width: 2.35rem;
-    max-width: 2.35rem;
-    margin-left: auto;
-    margin-right: auto;
-    padding: 0.2rem 0.05rem;
-    display: block;
-    cursor: pointer;
-    color: transparent;
-    text-shadow: 0 0 0 transparent;
-  }
-  .sched-table input[type="date"].sched-date-icon-only::-webkit-calendar-picker-indicator {
-    opacity: 1;
-    cursor: pointer;
-    margin: 0;
-    width: 1.35rem;
-    height: 1.35rem;
-  }
-  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit,
-  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-fields-wrapper,
-  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-text,
-  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-month-field,
-  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-day-field,
-  .sched-table input[type="date"].sched-date-icon-only::-webkit-datetime-edit-year-field {
-    display: none;
-  }
-  .sched-table input[type="date"].sched-date-icon-only::-moz-focus-inner { border: 0; }
+  .sched-table input[type="date"].sched-input-xs { min-width: 6.75rem; cursor: pointer; }
   .sched-sec-toggle { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; border: none; background: transparent; cursor: pointer; color: #64748b; margin-right: 2px; }
 </style>
 
@@ -151,11 +123,15 @@
     </div>
   </form>
 
-  <div class="flex flex-wrap items-center gap-3 text-xs text-slate-600 px-1">
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600 px-1">
     <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-slate-400"></span> План</span>
     <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-blue-500"></span> В работе</span>
     <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-green-500"></span> Завершено</span>
     <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-blue-700"></span> Сводка по разделу</span>
+    <span class="inline-flex items-center gap-1.5 border-l border-slate-200 pl-4 text-slate-700" title="Стрелка на графике: от текущей работы (A) к той, что выбрана в «После» (B) — B идёт следом за A.">
+      <span class="text-slate-500 font-medium tabular-nums" aria-hidden="true">A → B</span>
+      «После»: после работы&nbsp;A идёт&nbsp;B (на графике стрелка A&nbsp;→&nbsp;B)
+    </span>
   </div>
 
   {% if not schedule_rows %}
@@ -164,7 +140,8 @@
   </div>
   {% else %}
 
-  {{ schedule_rows|json_script:"schedule-rows-data" }}
+  {{ schedule_rows_json|json_script:"schedule-rows-data" }}
+  {{ assignee_choices_json|json_script:"schedule-assignees-data" }}
 
   <div class="sched-split" id="sched-split">
     <div class="sched-pinned">
@@ -189,7 +166,7 @@
               <th>Дни<span class="sched-col-resizer" data-col-index="4" title="Потянуть для ширины столбца"></span></th>
               <th>Статус<span class="sched-col-resizer" data-col-index="5" title="Потянуть для ширины столбца"></span></th>
               <th>Отв.<span class="sched-col-resizer" data-col-index="6" title="Потянуть для ширины столбца"></span></th>
-              <th>После<span class="sched-col-resizer" data-col-index="7" title="Потянуть для ширины столбца"></span></th>
+              <th>После <span class="text-[10px] font-normal text-slate-500" title="Какая позиция пойдёт следом за этой: связь сохраняется на следующей строке; стрелка на графике от этой работы к выбранной (±15 позиций в списке).">±15</span><span class="sched-col-resizer" data-col-index="7" title="Потянуть для ширины столбца"></span></th>
             </tr>
           </thead>
           <tbody id="sched-left-tbody">
@@ -210,7 +187,7 @@
               </td>
               <td class="text-center align-middle">
                 {% if row.kind == 'item' %}
-                <input type="date" class="sched-input-xs js-sched-start sched-date-icon-only" data-item="{{ row.item_id }}"
+                <input type="date" class="sched-input-xs js-sched-start" data-item="{{ row.item_id }}"
                   value="{% if row.schedule_start %}{{ row.schedule_start }}{% endif %}"
                   title="{% if row.schedule_start %}Начало: {{ row.schedule_start }}{% else %}Выбрать дату начала{% endif %}" />
                 {% endif %}
@@ -232,22 +209,18 @@
               </td>
               <td>
                 {% if row.kind == 'item' %}
-                <select class="sched-input-xs js-sched-assignee" data-item="{{ row.item_id }}" style="font-size:10px;padding:2px">
+                <select class="sched-input-xs js-sched-assignee" data-item="{{ row.item_id }}" data-selected="{% if row.assignee_id %}{{ row.assignee_id }}{% endif %}" style="font-size:10px;padding:2px">
                   <option value="">—</option>
-                  {% for u in assignee_choices %}
-                  <option value="{{ u.pk }}" {% if row.assignee_id == u.pk %}selected{% endif %}>{{ u.get_username }}</option>
-                  {% endfor %}
                 </select>
                 {% endif %}
               </td>
               <td>
                 {% if row.kind == 'item' %}
-                <select class="sched-input-xs js-sched-pred" data-item="{{ row.item_id }}" style="font-size:10px;padding:2px">
+                <select class="sched-input-xs js-sched-succ" data-item="{{ row.item_id }}" style="font-size:10px;padding:2px"
+                  title="Какая работа идёт после этой; на графике стрелка от этой строки к выбранной.">
                   <option value="">—</option>
-                  {% for po in pred_options %}
-                    {% if po.id != row.item_id %}
-                    <option value="{{ po.id }}" {% if row.predecessor_id == po.id %}selected{% endif %}>{{ po.label }}</option>
-                    {% endif %}
+                  {% for po in row.succ_choices %}
+                  <option value="{{ po.id }}" {% if row.successor_id == po.id %}selected{% endif %}>{{ po.label }}</option>
                   {% endfor %}
                 </select>
                 {% endif %}
@@ -293,27 +266,60 @@
 
   const el = document.getElementById("schedule-rows-data");
   const rows = el ? JSON.parse(el.textContent) : [];
+  const assigneesEl = document.getElementById("schedule-assignees-data");
+  const ASSIGNEES = assigneesEl ? JSON.parse(assigneesEl.textContent) : [];
   let zoom = "day";
+  function fillAssigneeSelects() {
+    document.querySelectorAll(".js-sched-assignee").forEach(function (sel) {
+      var cur = sel.getAttribute("data-selected") || "";
+      sel.textContent = "";
+      var o0 = document.createElement("option");
+      o0.value = "";
+      o0.textContent = "—";
+      sel.appendChild(o0);
+      ASSIGNEES.forEach(function (u) {
+        var o = document.createElement("option");
+        o.value = String(u.id);
+        o.textContent = u.username;
+        if (String(u.id) === String(cur)) o.selected = true;
+        sel.appendChild(o);
+      });
+    });
+  }
+
+  var depRedrawTimer = null;
+  function scheduleDrawDeps() {
+    if (depRedrawTimer) return;
+    depRedrawTimer = requestAnimationFrame(function () {
+      depRedrawTimer = null;
+      drawDeps();
+    });
+  }
+
   const pxPerDayMap = { day: 28, week: 10, month: 4 };
 
+  /** Календарная дата YYYY-MM-D без сдвига из-за локальной TZ / DST */
   function parseYMD(s) {
     if (!s) return null;
-    var p = s.split("-");
+    var p = String(s).split("-");
     if (p.length !== 3) return null;
-    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    var y = Number(p[0]), m = Number(p[1]), d = Number(p[2]);
+    if (!y || !m || !d) return null;
+    return new Date(Date.UTC(y, m - 1, d));
   }
   function formatYMD(d) {
     if (!d || isNaN(d.getTime())) return "";
-    var y = d.getFullYear(), mo = String(d.getMonth() + 1).padStart(2, "0"), da = String(d.getDate()).padStart(2, "0");
-    return y + "-" + mo + "-" + da;
+    return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
   }
   function addDays(d, n) {
-    var x = new Date(d.getTime());
-    x.setDate(x.getDate() + n);
-    return x;
+    return new Date(d.getTime() + n * 86400000);
   }
   function daysBetween(a, b) {
-    return Math.round((b - a) / 864e5);
+    return Math.round((b.getTime() - a.getTime()) / 86400000);
+  }
+  function cmpTime(a, b) {
+    if (!a || !b) return 0;
+    return a.getTime() - b.getTime();
   }
 
   function computeRange() {
@@ -321,8 +327,12 @@
     rows.forEach(function (r) {
       var s = r.schedule_start ? parseYMD(r.schedule_start) : null;
       var e = r.schedule_end ? parseYMD(r.schedule_end) : null;
-      if (s) { minD = minD ? (s < minD ? s : minD) : s; }
-      if (e) { maxD = maxD ? (e > maxD ? e : maxD) : e; }
+      if (s) {
+        minD = minD ? (cmpTime(s, minD) < 0 ? s : minD) : s;
+      }
+      if (e) {
+        maxD = maxD ? (cmpTime(e, maxD) > 0 ? e : maxD) : e;
+      }
     });
     if (!minD || !maxD) {
       minD = addDays(t, -7);
@@ -348,33 +358,34 @@
     if (!inner) return;
     inner.innerHTML = "";
     inner.style.width = timelineWidth() + "px";
-    var d = new Date(range.start);
+    var d = new Date(range.start.getTime());
     var end = range.end;
     if (zoom === "month") {
-      d = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
-      while (d <= end) {
+      d = new Date(Date.UTC(range.start.getUTCFullYear(), range.start.getUTCMonth(), 1));
+      while (d.getTime() <= end.getTime()) {
         var cell = document.createElement("div");
         cell.className = "sched-timeline-head-cell";
-        var daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-        var monthStart = new Date(d);
-        var monthEnd = new Date(d.getFullYear(), d.getMonth(), daysInMonth);
-        if (monthStart < range.start) monthStart = new Date(range.start);
-        if (monthEnd > range.end) monthEnd = new Date(range.end);
+        var y = d.getUTCFullYear(), mo = d.getUTCMonth();
+        var daysInMonth = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+        var monthStart = new Date(Date.UTC(y, mo, 1));
+        var monthEnd = new Date(Date.UTC(y, mo, daysInMonth));
+        if (monthStart.getTime() < range.start.getTime()) monthStart = new Date(range.start.getTime());
+        if (monthEnd.getTime() > range.end.getTime()) monthEnd = new Date(range.end.getTime());
         var w = (daysBetween(monthStart, monthEnd) + 1) * pxPerDay();
         cell.style.width = w + "px";
         cell.style.flexShrink = "0";
-        cell.textContent = d.toLocaleString("ru", { month: "short", year: "2-digit" });
+        cell.textContent = d.toLocaleString("ru", { month: "short", year: "2-digit", timeZone: "UTC" });
         inner.appendChild(cell);
-        d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+        d = new Date(Date.UTC(y, mo + 1, 1));
       }
       return;
     }
     if (zoom === "week") {
-      while (d <= end) {
+      while (d.getTime() <= end.getTime()) {
         var cellW = document.createElement("div");
         cellW.className = "sched-timeline-head-cell";
         var weekEnd = addDays(d, 6);
-        if (weekEnd > end) weekEnd = new Date(end);
+        if (weekEnd.getTime() > end.getTime()) weekEnd = new Date(end.getTime());
         var ws = new Date(Math.max(d.getTime(), range.start.getTime()));
         var we = new Date(weekEnd.getTime());
         var ww = (daysBetween(ws, we) + 1) * pxPerDay();
@@ -386,12 +397,12 @@
       }
       return;
     }
-    while (d <= end) {
+    while (d.getTime() <= end.getTime()) {
       var c = document.createElement("div");
       c.className = "sched-timeline-head-cell";
       c.style.width = pxPerDay() + "px";
       c.style.flexShrink = "0";
-      c.textContent = String(d.getDate());
+      c.textContent = String(d.getUTCDate());
       inner.appendChild(c);
       d = addDays(d, 1);
     }
@@ -436,6 +447,40 @@
     });
   }
 
+  /** Высота строки справа = строке таблицы слева (перенос текста в «Этап»). */
+  function syncGanttRowHeights() {
+    var tbody = document.getElementById("sched-left-tbody");
+    var host = document.getElementById("sched-gantt-rows");
+    var canvas = document.getElementById("sched-canvas");
+    var svg = document.getElementById("sched-dep-svg");
+    if (!tbody || !host) return;
+    tbody.querySelectorAll("tr.sched-tr[data-row-index]").forEach(function (tr) {
+      var idx = tr.getAttribute("data-row-index");
+      var grow = host.querySelector(".sched-gantt-row[data-row-index=\"" + idx + "\"]");
+      if (!grow) return;
+      var h = tr.offsetHeight;
+      if (h < ROW_H) h = ROW_H;
+      grow.style.height = h + "px";
+      grow.style.minHeight = h + "px";
+    });
+    var total = host.scrollHeight;
+    if (canvas) canvas.style.minHeight = Math.max(ROW_H, total) + "px";
+    if (svg) svg.setAttribute("height", String(Math.max(ROW_H, total)));
+    scheduleDrawDeps();
+    requestAnimationFrame(function () {
+      drawDeps();
+    });
+  }
+
+  var syncHeightsQueued = null;
+  function scheduleSyncHeights() {
+    if (syncHeightsQueued) return;
+    syncHeightsQueued = requestAnimationFrame(function () {
+      syncHeightsQueued = null;
+      syncGanttRowHeights();
+    });
+  }
+
   function rebuildGanttRows() {
     var host = document.getElementById("sched-gantt-rows");
     var canvas = document.getElementById("sched-canvas");
@@ -443,17 +488,12 @@
     if (!host || !canvas) return;
     host.innerHTML = "";
     host.style.width = timelineWidth() + "px";
-    var totalH = rows.length * ROW_H;
-    canvas.style.minHeight = totalH + "px";
-    if (svg) {
-      svg.setAttribute("width", timelineWidth());
-      svg.setAttribute("height", totalH);
-    }
+    if (svg) svg.setAttribute("width", timelineWidth());
 
     var todayLine = document.createElement("div");
     todayLine.className = "sched-today-line";
     var td = parseYMD(TODAY);
-    if (td && td >= range.start && td <= range.end) {
+    if (td && cmpTime(td, range.start) >= 0 && cmpTime(td, range.end) <= 0) {
       todayLine.style.left = (dayOffset(td) * pxPerDay() + pxPerDay() / 2) + "px";
       host.appendChild(todayLine);
       var caret = document.createElement("div");
@@ -497,13 +537,34 @@
       host.appendChild(rowEl);
     });
     applyCollapseVisibility();
-    drawDeps();
+    requestAnimationFrame(function () {
+      scheduleSyncHeights();
+      requestAnimationFrame(scheduleSyncHeights);
+    });
   }
 
   function drawDeps() {
     var svg = document.getElementById("sched-dep-svg");
     if (!svg) return;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    var marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+    marker.setAttribute("id", "sched-dep-arrow");
+    marker.setAttribute("markerWidth", "10");
+    marker.setAttribute("markerHeight", "10");
+    marker.setAttribute("refX", "9");
+    marker.setAttribute("refY", "3");
+    marker.setAttribute("orient", "auto");
+    marker.setAttribute("markerUnits", "strokeWidth");
+    var arrowHead = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    arrowHead.setAttribute("d", "M0,0 L0,6 L9,3 z");
+    arrowHead.setAttribute("fill", "#475569");
+    marker.appendChild(arrowHead);
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+
+    var svgBox = svg.getBoundingClientRect();
+
     var itemToRow = {};
     rows.forEach(function (r) {
       if (r.kind === "item" && r.item_id) itemToRow[r.item_id] = r.row_index;
@@ -513,23 +574,33 @@
       var fi = itemToRow[r.item_id];
       var pi = itemToRow[r.predecessor_id];
       if (fi === undefined || pi === undefined) return;
-      var fromEl = document.querySelector(".sched-gantt-row[data-row-index=\"" + pi + "\"] .sched-bar");
-      var toEl = document.querySelector(".sched-gantt-row[data-row-index=\"" + fi + "\"] .sched-bar");
-      if (!fromEl || !toEl) return;
-      var host = document.getElementById("sched-gantt-rows");
-      if (!host) return;
-      var fx = fromEl.offsetLeft + fromEl.offsetWidth;
-      var fy = fromEl.offsetParent.offsetTop + fromEl.offsetTop + fromEl.offsetHeight / 2;
-      var tx = toEl.offsetLeft;
-      var ty = toEl.offsetParent.offsetTop + toEl.offsetTop + toEl.offsetHeight / 2;
+      var fromRow = document.querySelector(".sched-gantt-row[data-row-index=\"" + pi + "\"]");
+      var toRow = document.querySelector(".sched-gantt-row[data-row-index=\"" + fi + "\"]");
+      if (!fromRow || !toRow) return;
+      if (fromRow.offsetParent == null || toRow.offsetParent == null) return;
+      var fromBar = fromRow.querySelector(".sched-bar");
+      var toBar = toRow.querySelector(".sched-bar");
+      if (!fromBar || !toBar) return;
+      var fr = fromBar.getBoundingClientRect();
+      var tr = toBar.getBoundingClientRect();
+      if (fr.width < 1 || tr.width < 1) return;
+      var fx = fr.right - svgBox.left;
+      var fy = fr.top + fr.height / 2 - svgBox.top;
+      var tx = tr.left - svgBox.left;
+      var ty = tr.top + tr.height / 2 - svgBox.top;
       var line = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      var mx = (fx + tx) / 2;
-      var d = "M " + fx + " " + fy + " C " + mx + " " + fy + ", " + mx + " " + ty + ", " + tx + " " + ty;
+      var midx = fx + Math.max(28, Math.min(80, (tx - fx) / 2));
+      if (tx <= fx + 4) midx = fx + 36;
+      var tipX = Math.max(tx + 1, tx - 3);
+      var d = "M " + fx + " " + fy + " L " + midx + " " + fy + " L " + midx + " " + ty + " L " + tipX + " " + ty;
       line.setAttribute("d", d);
       line.setAttribute("fill", "none");
-      line.setAttribute("stroke", "#94a3b8");
-      line.setAttribute("stroke-width", "1.5");
-      line.setAttribute("stroke-dasharray", "4 3");
+      line.setAttribute("stroke", "#475569");
+      line.setAttribute("stroke-width", "2");
+      line.setAttribute("stroke-linecap", "square");
+      line.setAttribute("stroke-linejoin", "round");
+      line.setAttribute("marker-end", "url(#sched-dep-arrow)");
+      line.setAttribute("opacity", "0.92");
       svg.appendChild(line);
     });
   }
@@ -539,13 +610,20 @@
     var body = document.getElementById("sched-body-scroll");
     var head = document.getElementById("sched-head-scroll");
     if (!left || !body) return;
-    left.addEventListener("scroll", function () { body.scrollTop = left.scrollTop; });
+    left.addEventListener("scroll", function () {
+      body.scrollTop = left.scrollTop;
+      scheduleDrawDeps();
+    });
     body.addEventListener("scroll", function () {
       left.scrollTop = body.scrollTop;
       if (head) head.scrollLeft = body.scrollLeft;
+      scheduleDrawDeps();
     });
     if (head) {
-      head.addEventListener("scroll", function () { body.scrollLeft = head.scrollLeft; });
+      head.addEventListener("scroll", function () {
+        body.scrollLeft = head.scrollLeft;
+        scheduleDrawDeps();
+      });
     }
   }
 
@@ -562,17 +640,50 @@
     });
   }
 
-  function applyItemPayload(itemId, payload) {
+  function recomputeSuccessorIds() {
+    var firstByPred = {};
+    rows.forEach(function (r) {
+      if (r.kind === "item" && r.predecessor_id) {
+        var p = r.predecessor_id;
+        if (firstByPred[p] == null) {
+          firstByPred[p] = r.item_id;
+        }
+      }
+    });
+    rows.forEach(function (r) {
+      if (r.kind === "item") {
+        var sid = firstByPred[r.item_id];
+        r.successor_id = sid != null ? sid : null;
+      }
+    });
+  }
+
+  function syncSuccSelectorsFromRows() {
+    recomputeSuccessorIds();
+    document.querySelectorAll(".js-sched-succ").forEach(function (sel) {
+      var id = Number(sel.dataset.item);
+      var row = rows.find(function (r) { return r.kind === "item" && r.item_id === id; });
+      if (row) {
+        sel.value = row.successor_id != null ? String(row.successor_id) : "";
+      }
+    });
+  }
+
+  function mergeItemPayloadIntoRows(payload) {
+    var itemId = payload.id;
     rows.forEach(function (r) {
       if (r.kind === "item" && r.item_id === itemId) {
         if (payload.schedule_start !== undefined) r.schedule_start = payload.schedule_start;
         if (payload.schedule_end !== undefined) r.schedule_end = payload.schedule_end;
-        if (payload.duration_days != null) r.duration_days = payload.duration_days;
+        if (payload.duration_days !== undefined) r.duration_days = payload.duration_days;
         if (payload.schedule_status) r.status = payload.schedule_status;
         if (payload.schedule_assignee_id !== undefined) r.assignee_id = payload.schedule_assignee_id;
         if (payload.schedule_predecessor_id !== undefined) r.predecessor_id = payload.schedule_predecessor_id;
       }
     });
+  }
+
+  function syncDomForItemFields(itemId, payload) {
     var inpS = document.querySelector(".js-sched-start[data-item=\"" + itemId + "\"]");
     var inpD = document.querySelector(".js-sched-dur[data-item=\"" + itemId + "\"]");
     if (inpS && payload.schedule_start !== undefined) {
@@ -581,8 +692,17 @@
         ? "Начало: " + payload.schedule_start
         : "Выбрать дату начала";
     }
-    if (inpD && payload.duration_days != null) inpD.value = payload.duration_days || "";
+    if (inpD && payload.duration_days !== undefined) {
+      inpD.value = payload.duration_days != null && payload.duration_days >= 1
+        ? String(payload.duration_days)
+        : "";
+    }
+  }
+
+  function finishScheduleUiRefresh() {
     refreshSectionAggregates();
+    recomputeSuccessorIds();
+    syncSuccSelectorsFromRows();
     range = computeRange();
     buildHeader();
     rebuildGanttRows();
@@ -597,7 +717,17 @@
         alert(err);
         return;
       }
-      if (x.j.item) applyItemPayload(itemId, x.j.item);
+      if (x.j.item) mergeItemPayloadIntoRows(x.j.item);
+      if (x.j.schedule_links_updated) {
+        x.j.schedule_links_updated.forEach(mergeItemPayloadIntoRows);
+      }
+      if (x.j.item) syncDomForItemFields(x.j.item.id, x.j.item);
+      if (x.j.schedule_links_updated) {
+        x.j.schedule_links_updated.forEach(function (p) {
+          syncDomForItemFields(p.id, p);
+        });
+      }
+      finishScheduleUiRefresh();
       if (done) done();
     }).catch(function () { alert("Сеть"); });
   }
@@ -608,10 +738,15 @@
         inp.title = inp.value ? "Начало: " + inp.value : "Выбрать дату начала";
         var id = Number(inp.dataset.item);
         var durInp = document.querySelector(".js-sched-dur[data-item=\"" + id + "\"]");
-        var dur = durInp && durInp.value ? parseInt(durInp.value, 10) : null;
         var body = { schedule_start: inp.value || null };
-        if (dur && dur >= 1) body.duration_days = dur;
-        else body.schedule_end = null;
+        if (inp.value) {
+          var dur = durInp && durInp.value ? parseInt(durInp.value, 10) : NaN;
+          body.duration_days = dur >= 1 ? dur : 1;
+          if (durInp) durInp.value = String(body.duration_days);
+        } else {
+          if (durInp) durInp.value = "";
+          body.schedule_end = null;
+        }
         saveItem(id, body);
       });
     });
@@ -619,7 +754,8 @@
       inp.addEventListener("change", function () {
         var id = Number(inp.dataset.item);
         var d = parseInt(inp.value, 10);
-        if (!d || d < 1) return;
+        if (!d || d < 1) d = 1;
+        inp.value = String(d);
         saveItem(id, { duration_days: d });
       });
     });
@@ -634,10 +770,10 @@
         saveItem(Number(sel.dataset.item), { schedule_assignee_id: v === "" ? null : v });
       });
     });
-    document.querySelectorAll(".js-sched-pred").forEach(function (sel) {
+    document.querySelectorAll(".js-sched-succ").forEach(function (sel) {
       sel.addEventListener("change", function () {
         var v = sel.value;
-        saveItem(Number(sel.dataset.item), { schedule_predecessor_id: v === "" ? null : v });
+        saveItem(Number(sel.dataset.item), { schedule_successor_id: v === "" ? null : v });
       });
     });
   }
@@ -657,7 +793,7 @@
       if (!row || !row.schedule_start || !row.schedule_end) {
         if (!rz) {
           var t = parseYMD(TODAY);
-          var dur = 5;
+          var dur = 1;
           saveItem(itemId, { schedule_start: formatYMD(t), duration_days: dur });
         }
         return;
@@ -679,14 +815,14 @@
       if (dragState.mode === "drag") {
         var ns = addDays(dragState.origStart, dd);
         var ne = addDays(dragState.origEnd, dd);
-        if (ns < range.start || ne > range.end) return;
+        if (ns.getTime() < range.start.getTime() || ne.getTime() > range.end.getTime()) return;
         var bar = document.querySelector(".sched-bar[data-item-id=\"" + dragState.itemId + "\"]");
         if (bar) {
           bar.style.left = (dayOffset(ns) * pxPerDay()) + "px";
         }
       } else {
         var ne2 = addDays(dragState.origEnd, dd);
-        if (ne2 < dragState.origStart) ne2 = new Date(dragState.origStart);
+        if (cmpTime(ne2, dragState.origStart) < 0) ne2 = new Date(dragState.origStart.getTime());
         var bar = document.querySelector(".sched-bar[data-item-id=\"" + dragState.itemId + "\"]");
         if (bar) {
           var s = dragState.origStart;
@@ -707,7 +843,7 @@
         saveItem(id, { schedule_start: formatYMD(ns), schedule_end: formatYMD(ne) });
       } else {
         var ne3 = addDays(dragState.origEnd, dd);
-        if (ne3 < dragState.origStart) ne3 = new Date(dragState.origStart);
+        if (cmpTime(ne3, dragState.origStart) < 0) ne3 = new Date(dragState.origStart.getTime());
         saveItem(id, { schedule_end: formatYMD(ne3) });
       }
       dragState = null;
@@ -736,7 +872,10 @@
         localStorage.setItem(storageKey, JSON.stringify(collapsed));
         applyCollapseVisibility();
         syncToggleIcons();
-        drawDeps();
+        requestAnimationFrame(function () {
+          scheduleSyncHeights();
+          requestAnimationFrame(scheduleSyncHeights);
+        });
       });
     });
     syncToggleIcons();
@@ -817,6 +956,7 @@
         function onMove(e) {
           var nw = Math.max(mins[idx], Math.round(startW + (e.clientX - startX)));
           colEls[idx].style.width = nw + "px";
+          scheduleSyncHeights();
         }
         function onUp() {
           handle.classList.remove("sched-col-resizer-active");
@@ -831,6 +971,7 @@
           try {
             localStorage.setItem(storageKey, JSON.stringify(widths));
           } catch (e2) {}
+          scheduleSyncHeights();
         }
         document.addEventListener("mousemove", onMove);
         document.addEventListener("mouseup", onUp);
@@ -839,12 +980,19 @@
   }
 
   wireScheduleColumnResize();
+  fillAssigneeSelects();
   buildHeader();
   rebuildGanttRows();
   syncScroll();
   wireInputs();
   wireDragResize();
   wireSectionToggle();
+  window.addEventListener("resize", scheduleSyncHeights);
+  var schedLeftTbl = document.getElementById("sched-left-table");
+  if (schedLeftTbl && typeof ResizeObserver !== "undefined") {
+    var schedRo = new ResizeObserver(function () { scheduleSyncHeights(); });
+    schedRo.observe(schedLeftTbl);
+  }
 })();
 </script>
 {% endif %}

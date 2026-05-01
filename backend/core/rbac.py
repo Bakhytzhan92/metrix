@@ -78,7 +78,13 @@ def codes_required_for_path(path: str) -> list[str] | None:
         if "/estimate/" in path:
             return ["view_estimates", "edit_estimates"]
         if "/schedule/" in path:
-            return ["view_schedule", "edit_schedule"]
+            # График привязан к смете: достаточно прав на смету или на сам график
+            return [
+                "view_schedule",
+                "edit_schedule",
+                "view_estimates",
+                "edit_estimates",
+            ]
         if "/supply/" in path:
             return ["view_supply", "edit_supply"]
         if "/finance/" in path:

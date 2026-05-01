@@ -628,23 +628,37 @@ def _schedule_item_passes_filters(
     return True
 
 
-def _schedule_item_api_response(item: EstimateItem) -> dict:
+def _schedule_item_api_payload(item: EstimateItem) -> dict:
     return {
-        "ok": True,
-        "item": {
-            "id": item.pk,
-            "schedule_start": item.schedule_start.isoformat()
-            if item.schedule_start
-            else None,
-            "schedule_end": item.schedule_end.isoformat()
-            if item.schedule_end
-            else None,
-            "duration_days": _item_schedule_duration_days(item),
-            "schedule_status": item.schedule_status,
-            "schedule_assignee_id": item.schedule_assignee_id,
-            "schedule_predecessor_id": item.schedule_predecessor_id,
-        },
+        "id": item.pk,
+        "schedule_start": item.schedule_start.isoformat()
+        if item.schedule_start
+        else None,
+        "schedule_end": item.schedule_end.isoformat()
+        if item.schedule_end
+        else None,
+        "duration_days": _item_schedule_duration_days(item),
+        "schedule_status": item.schedule_status,
+        "schedule_assignee_id": item.schedule_assignee_id,
+        "schedule_predecessor_id": item.schedule_predecessor_id,
     }
+
+
+def _schedule_item_api_response_dict(
+    item: EstimateItem,
+    *,
+    link_updates: list[EstimateItem] | None = None,
+) -> dict:
+    out: dict = {"ok": True, "item": _schedule_item_api_payload(item)}
+    if link_updates:
+        out["schedule_links_updated"] = [
+            _schedule_item_api_payload(x) for x in link_updates
+        ]
+    return out
+
+
+def _schedule_item_api_response(item: EstimateItem) -> dict:
+    return _schedule_item_api_response_dict(item)
 
 
 @login_required
@@ -652,6 +666,8 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
     project, err = _get_project_or_403(request, pk)
     if err:
         return err
+
+    sched_pred_radius = 15
 
     show_materials = request.GET.get("materials", "1") != "0"
     st = request.GET.get("status", "").strip()
@@ -674,28 +690,7 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
         .order_by("order", "id")
     )
 
-    all_items_qs = (
-        EstimateItem.objects.filter(section__project=project)
-        .select_related("section")
-        .order_by("section__order", "order", "id")
-    )
-    pred_options = [
-        {"id": i.pk, "label": f"{i.section.name}: {i.name or '—'}"}
-        for i in all_items_qs
-    ]
-
-    assignee_choices = (
-        get_user_model()
-        .objects.filter(company_users__company=project.company)
-        .distinct()
-        .order_by("username")
-    )
-
-    schedule_rows: list[dict] = []
-    row_idx = 0
-    project_starts: list[date] = []
-    project_ends: list[date] = []
-
+    section_blocks: list[tuple[EstimateSection, list[EstimateItem]]] = []
     for section in sections:
         visible_items = [
             it
@@ -709,9 +704,36 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
                 show_materials=show_materials,
             )
         ]
-        if not visible_items:
-            continue
+        if visible_items:
+            section_blocks.append((section, visible_items))
 
+    item_seq: list[EstimateItem] = []
+    for _sec, vis in section_blocks:
+        item_seq.extend(vis)
+
+    item_flat_index = {it.pk: idx for idx, it in enumerate(item_seq)}
+    pred_label_cache: dict[int, str] = {
+        it.pk: f"{sec.name}: {(it.name or '—')[:120]}"
+        for sec, vis in section_blocks
+        for it in vis
+    }
+
+    assignee_users = list(
+        get_user_model()
+        .objects.filter(company_users__company=project.company)
+        .distinct()
+        .order_by("username")
+    )
+    assignee_choices_json = [
+        {"id": u.pk, "username": u.get_username()} for u in assignee_users
+    ]
+
+    schedule_rows: list[dict] = []
+    row_idx = 0
+    project_starts: list[date] = []
+    project_ends: list[date] = []
+
+    for section, visible_items in section_blocks:
         dated = [
             it
             for it in visible_items
@@ -744,6 +766,7 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
                 "status": "",
                 "assignee_id": None,
                 "predecessor_id": None,
+                "successor_id": None,
             }
         )
         row_idx += 1
@@ -753,6 +776,42 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
                 project_starts.append(it.schedule_start)
                 project_ends.append(it.schedule_end)
             dur = _item_schedule_duration_days(it)
+
+            flat_i = item_flat_index[it.pk]
+            lo = max(0, flat_i - sched_pred_radius)
+            hi = min(len(item_seq), flat_i + sched_pred_radius + 1)
+            succ_choices: list[dict] = []
+            for j in range(lo, hi):
+                oit = item_seq[j]
+                if oit.pk == it.pk:
+                    continue
+                succ_choices.append(
+                    {"id": oit.pk, "label": pred_label_cache[oit.pk]},
+                )
+
+            succ_id: int | None = None
+            for j in range(lo, hi):
+                oit = item_seq[j]
+                if oit.pk != it.pk and oit.schedule_predecessor_id == it.pk:
+                    succ_id = oit.pk
+                    break
+            if succ_id is None:
+                for oit in item_seq:
+                    if oit.pk != it.pk and oit.schedule_predecessor_id == it.pk:
+                        succ_id = oit.pk
+                        break
+
+            if succ_id and succ_id != it.pk:
+                if not any(c["id"] == succ_id for c in succ_choices):
+                    lbl = pred_label_cache.get(succ_id)
+                    if lbl:
+                        succ_choices.insert(
+                            0,
+                            {"id": succ_id, "label": f"{lbl} · …"},
+                        )
+                    else:
+                        succ_choices.insert(0, {"id": succ_id, "label": f"#{succ_id}"})
+
             schedule_rows.append(
                 {
                     "kind": "item",
@@ -777,6 +836,8 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
                     "status": it.schedule_status,
                     "assignee_id": it.schedule_assignee_id,
                     "predecessor_id": it.schedule_predecessor_id,
+                    "successor_id": succ_id,
+                    "succ_choices": succ_choices,
                 }
             )
             row_idx += 1
@@ -791,6 +852,11 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
         sched_start = sched_end = None
         sched_days = None
 
+    schedule_rows_json = [
+        {k: v for k, v in row.items() if k != "succ_choices"}
+        for row in schedule_rows
+    ]
+
     return render(
         request,
         "core/project/schedule.html",
@@ -798,9 +864,10 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
             "project": project,
             "active_tab": "schedule",
             "schedule_rows": schedule_rows,
+            "schedule_rows_json": schedule_rows_json,
             "status_choices": EstimateItem.SCHEDULE_STATUS_CHOICES,
-            "assignee_choices": assignee_choices,
-            "pred_options": pred_options,
+            "assignee_choices": assignee_users,
+            "assignee_choices_json": assignee_choices_json,
             "filter_status": st,
             "filter_assignee_id": filter_assignee_id,
             "filter_date_from": df,
@@ -837,6 +904,12 @@ def schedule_item_api(request: HttpRequest, pk: int, item_id: int) -> HttpRespon
         v = data.get("schedule_start")
         item.schedule_start = parse_date(v) if v else None
         touched.add("schedule_start")
+        if not item.schedule_start:
+            item.schedule_end = None
+            touched.add("schedule_end")
+        elif "duration_days" not in data and "schedule_end" not in data:
+            item.schedule_end = item.schedule_start
+            touched.add("schedule_end")
 
     if "schedule_end" in data:
         v = data.get("schedule_end")
@@ -902,20 +975,82 @@ def schedule_item_api(request: HttpRequest, pk: int, item_id: int) -> HttpRespon
             item.schedule_predecessor_id = pidi
         touched.add("schedule_predecessor")
 
-    if not touched:
-        return JsonResponse(_schedule_item_api_response(item))
+    link_updates: list[EstimateItem] = []
 
-    try:
-        item.full_clean()
-    except ValidationError as e:
-        return JsonResponse(
-            {"ok": False, "errors": e.message_dict or {"__all__": e.messages}},
-            status=400,
+    if touched:
+        try:
+            item.full_clean()
+        except ValidationError as e:
+            return JsonResponse(
+                {"ok": False, "errors": e.message_dict or {"__all__": e.messages}},
+                status=400,
+            )
+        item.save(update_fields=list(touched))
+
+    if "schedule_successor_id" in data:
+        sid_raw = data.get("schedule_successor_id")
+        try:
+            with transaction.atomic():
+                if sid_raw in (None, "", "null"):
+                    qs = EstimateItem.objects.filter(
+                        section__project=project,
+                        schedule_predecessor_id=item.pk,
+                    ).select_related("section")
+                    for dep in qs:
+                        dep.schedule_predecessor_id = None
+                        dep.full_clean()
+                        dep.save(update_fields=["schedule_predecessor"])
+                        link_updates.append(dep)
+                else:
+                    try:
+                        sid = int(sid_raw)
+                    except (TypeError, ValueError):
+                        return JsonResponse(
+                            {"ok": False, "error": "successor"}, status=400
+                        )
+                    succ = (
+                        EstimateItem.objects.filter(
+                            pk=sid, section__project=project
+                        )
+                        .exclude(pk=item.pk)
+                        .select_related("section")
+                        .first()
+                    )
+                    if not succ:
+                        return JsonResponse(
+                            {"ok": False, "error": "successor"}, status=400
+                        )
+                    others = (
+                        EstimateItem.objects.filter(
+                            section__project=project,
+                            schedule_predecessor_id=item.pk,
+                        )
+                        .exclude(pk=succ.pk)
+                        .select_related("section")
+                    )
+                    for dep in others:
+                        dep.schedule_predecessor_id = None
+                        dep.full_clean()
+                        dep.save(update_fields=["schedule_predecessor"])
+                        link_updates.append(dep)
+                    succ.schedule_predecessor_id = item.pk
+                    succ.full_clean()
+                    succ.save(update_fields=["schedule_predecessor"])
+                    link_updates.append(succ)
+        except ValidationError as e:
+            return JsonResponse(
+                {"ok": False, "errors": e.message_dict or {"__all__": e.messages}},
+                status=400,
+            )
+
+    if not touched and "schedule_successor_id" not in data:
+        return JsonResponse(_schedule_item_api_response_dict(item))
+
+    return JsonResponse(
+        _schedule_item_api_response_dict(
+            item, link_updates=link_updates if link_updates else None
         )
-
-    uf = list(touched)
-    item.save(update_fields=uf)
-    return JsonResponse(_schedule_item_api_response(item))
+    )
 
 
 @login_required
@@ -966,6 +1101,8 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
 
     req_initial = {}
     pre_ei = request.GET.get("estimate_item", "").strip()
+    supply_selected_item_id = None
+    supply_first_selectable_item_pk = None
     if pre_ei.isdigit():
         ei = (
             EstimateItem.objects.filter(pk=int(pre_ei), section__project=project)
@@ -975,9 +1112,44 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
             req_initial = {
                 "estimate_item": ei,
                 "quantity": ei.quantity,
-                "price_plan": ei.cost_price or 0,
                 "required_date": date.today(),
             }
+            supply_selected_item_id = ei.pk
+
+    supply_estimate_sections: list = []
+    supply_first_selectable_item_pk = None
+    if tab == "requests":
+        from decimal import Decimal
+
+        purchased_map = supply_services.purchased_qty_by_estimate_item(project)
+        sections_qs = (
+            EstimateSection.objects.filter(project=project)
+            .prefetch_related(
+                Prefetch(
+                    "items",
+                    queryset=EstimateItem.objects.order_by("order", "id"),
+                )
+            )
+            .order_by("order", "id")
+        )
+        for sec in sections_qs:
+            rows = []
+            for item in sec.items.all():
+                rows.append(
+                    {
+                        "item": item,
+                        "purchased_qty": purchased_map.get(item.pk, Decimal("0")),
+                    }
+                )
+            supply_estimate_sections.append({"section": sec, "rows": rows})
+
+        if not supply_selected_item_id:
+            for block in supply_estimate_sections:
+                for row in block["rows"]:
+                    supply_first_selectable_item_pk = row["item"].pk
+                    break
+                if supply_first_selectable_item_pk:
+                    break
 
     req_form = ProjectSupplyRequestForm(project=project, initial=req_initial)
     ord_form = ProjectSupplyOrderCreateForm(company=company, project=project)
@@ -1003,8 +1175,10 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
             "filter_date_to": dt_to,
             "filter_resource_type": rtype,
             "filter_q": q,
-            "today": date.today(),
             "preselect_estimate_item": pre_ei if req_initial else "",
+            "supply_estimate_sections": supply_estimate_sections,
+            "supply_selected_item_id": supply_selected_item_id,
+            "supply_first_selectable_item_pk": supply_first_selectable_item_pk,
         },
     )
 
@@ -1027,11 +1201,9 @@ def project_supply_request_create(
 
     item = form.cleaned_data["estimate_item"]
     resource = supply_services.get_or_create_resource_for_estimate_item(company, item)
-    price = form.cleaned_data.get("price_plan")
-    if price is None or price == 0:
-        from decimal import Decimal
+    from decimal import Decimal
 
-        price = item.sell_price or item.cost_price or Decimal("0")
+    price = item.sell_price or item.cost_price or Decimal("0")
 
     sr = SupplyRequest.objects.create(
         company=company,
@@ -1039,10 +1211,9 @@ def project_supply_request_create(
         resource=resource,
         estimate_item=item,
         required_date=form.cleaned_data["required_date"],
-        delivery_date=form.cleaned_data.get("delivery_date"),
         quantity=form.cleaned_data["quantity"],
         price_plan=price,
-        supplier_name=form.cleaned_data.get("supplier_name") or "",
+        supplier_name="",
         status=SupplyRequest.STATUS_PENDING,
         created_by=request.user,
     )

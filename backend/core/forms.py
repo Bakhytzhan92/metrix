@@ -305,31 +305,12 @@ class ProjectSupplyRequestForm(forms.Form):
         label="Требуется к дате",
         widget=forms.DateInput(attrs={"type": "date", "class": _input_class()}),
     )
-    delivery_date = forms.DateField(
-        label="Срок доставки",
-        required=False,
-        widget=forms.DateInput(attrs={"type": "date", "class": _input_class()}),
-    )
     quantity = forms.DecimalField(
         label="Количество",
         min_value=0,
         max_digits=14,
         decimal_places=4,
         widget=forms.NumberInput(attrs={"class": _input_class(), "step": "0.0001"}),
-    )
-    price_plan = forms.DecimalField(
-        label="Цена за ед., план",
-        min_value=0,
-        max_digits=14,
-        decimal_places=2,
-        required=False,
-        widget=forms.NumberInput(attrs={"class": _input_class(), "step": "0.01"}),
-    )
-    supplier_name = forms.CharField(
-        label="Поставщик (необязательно)",
-        max_length=255,
-        required=False,
-        widget=forms.TextInput(attrs={"class": _input_class()}),
     )
 
     def __init__(self, *args, project=None, **kwargs):

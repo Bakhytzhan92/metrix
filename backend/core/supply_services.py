@@ -49,6 +49,32 @@ def get_or_create_resource_for_estimate_item(company, item: EstimateItem) -> Res
     )
 
 
+def purchased_qty_by_estimate_item(project) -> dict[int, Decimal]:
+    """
+    Накопленное количество «закуплено» по позиции сметы: сумма quantity_received
+    по заявкам; если факт закупки не внесён, но есть заказ — берётся кол-во из заказа.
+    """
+    from collections import defaultdict
+
+    out: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    qs = (
+        SupplyRequest.objects.filter(project=project, estimate_item_id__isnull=False)
+        .exclude(status=SupplyRequest.STATUS_CANCELLED)
+        .select_related("order_item")
+    )
+    for sr in qs:
+        eid = sr.estimate_item_id
+        if eid is None:
+            continue
+        q = _as_decimal(sr.quantity_received)
+        if q <= 0:
+            oi = getattr(sr, "order_item", None)
+            if oi:
+                q = _as_decimal(oi.quantity)
+        out[eid] += q
+    return dict(out)
+
+
 def compute_project_supply_kpis(project) -> dict:
     """
     KPI для шапки снабжения проекта (как в Gectaro, упрощённо):
