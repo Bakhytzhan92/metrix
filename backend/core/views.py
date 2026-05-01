@@ -2491,6 +2491,10 @@ def settings_access(request: HttpRequest) -> HttpResponse:
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden("<h1>403</h1><p>Недостаточно прав.</p>")
 
+    from .company_roles import ensure_company_default_roles
+
+    ensure_company_default_roles(company)
+
     active_tab = request.GET.get("tab", "users")
     if active_tab not in ("users", "roles"):
         active_tab = "users"
@@ -2531,6 +2535,10 @@ def settings_access_add_user(request: HttpRequest) -> HttpResponse:
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
 
+    from .company_roles import ensure_company_default_roles
+
+    ensure_company_default_roles(company)
+
     form = AddCompanyUserForm(request.POST, company=company)
     if not form.is_valid():
         messages.error(request, "Исправьте ошибки в форме.")
@@ -2551,17 +2559,15 @@ def settings_access_add_user(request: HttpRequest) -> HttpResponse:
 
     user = User.objects.filter(email__iexact=email).first()
     if not user:
-        username = email[:150] if len(email) <= 150 else email[:147] + "..."
-        if User.objects.filter(username=username).exists():
-            username = email.replace("@", "_")[:150]
-        user = User.objects.create_user(
-            username=username,
-            email=email,
-            password=User.objects.make_random_password(length=32),
-            is_active=True,
-        )
-        # Заглушка: отправить письмо-приглашение (не реализовано)
-        # send_mail_invite(user, company)
+        username = email[:150]
+        n = 0
+        while User.objects.filter(username=username).exists():
+            n += 1
+            suffix = f"_{n}"
+            username = f"{email[: max(0, 150 - len(suffix))]}{suffix}"
+        user = User(username=username, email=email, is_active=True)
+        user.set_unusable_password()
+        user.save()
 
     if CompanyUser.objects.filter(user=user, company=company).exists():
         messages.error(request, "Пользователь с таким email уже добавлен в компанию.")
@@ -2600,7 +2606,11 @@ def settings_access_add_user(request: HttpRequest) -> HttpResponse:
         except (ValueError, Project.DoesNotExist):
             pass
 
-    messages.success(request, "Пользователь добавлен.")
+    messages.success(
+        request,
+        "Пользователь добавлен. Откройте «Изменить» и задайте пароль — "
+        "сотрудник войдёт с email как логином.",
+    )
     return redirect("settings_access")
 
 
@@ -2613,8 +2623,19 @@ def settings_access_edit(request: HttpRequest, pk: int) -> HttpResponse:
         return HttpResponseForbidden()
 
     company_user = get_object_or_404(CompanyUser, pk=pk, company=company)
+
+    from .company_roles import ensure_company_default_roles
+
+    ensure_company_default_roles(company)
+
+    allow_set_password = company_user.user_id != request.user.id
     if request.method == "POST":
-        form = EditCompanyUserForm(request.POST, instance=company_user, company=company)
+        form = EditCompanyUserForm(
+            request.POST,
+            instance=company_user,
+            company=company,
+            allow_set_password=allow_set_password,
+        )
         if form.is_valid():
             new_role = form.cleaned_data["role"]
             if new_role and new_role.slug == CompanyRole.SLUG_OWNER and company.owner_id != request.user.id:
@@ -2624,11 +2645,16 @@ def settings_access_edit(request: HttpRequest, pk: int) -> HttpResponse:
             messages.success(request, "Изменения сохранены.")
             return redirect("settings_access")
     else:
-        form = EditCompanyUserForm(instance=company_user, company=company)
+        form = EditCompanyUserForm(
+            instance=company_user,
+            company=company,
+            allow_set_password=allow_set_password,
+        )
     return render(request, "core/settings_access_edit.html", {
         "form": form,
         "company_user": company_user,
         "company": company,
+        "allow_set_password": allow_set_password,
     })
 
 

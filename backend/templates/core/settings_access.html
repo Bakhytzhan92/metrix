@@ -70,6 +70,7 @@
       <div class="relative z-10 w-full max-w-lg rounded-xl bg-white shadow-xl">
         <div class="p-6">
           <h2 id="modal-title" class="text-lg font-semibold text-slate-900 mb-4">Добавить пользователя</h2>
+          <p class="text-xs text-slate-600 mb-4">После добавления откройте «Изменить» у пользователя и задайте пароль. Вход: указанный email и этот пароль.</p>
           <form method="post" action="{% url 'settings_access_add_user' %}" id="form-add-user">
             {% csrf_token %}
             {{ add_form.non_field_errors }}

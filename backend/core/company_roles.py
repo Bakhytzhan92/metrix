@@ -36,17 +36,17 @@ def ensure_company_default_roles(company: Company) -> None:
         ),
         (
             CompanyRole.SLUG_SUPPLY,
-            "Снабженец",
+            "Снабжение",
             "Снабжение и склады",
         ),
         (
             CompanyRole.SLUG_ACCOUNTANT,
-            "Бухгалтер",
+            "Бухгалтерия",
             "Финансы и отчёты",
         ),
     ]
     for slug, name, description in roles_to_create:
-        CompanyRole.objects.get_or_create(
+        obj, _created = CompanyRole.objects.get_or_create(
             company=company,
             slug=slug,
             defaults={
@@ -55,6 +55,10 @@ def ensure_company_default_roles(company: Company) -> None:
                 "is_system": True,
             },
         )
+        if obj.name != name or obj.description != description:
+            obj.name = name
+            obj.description = description
+            obj.save(update_fields=["name", "description"])
 
     sync_all_roles_permissions_for_company(company)
 

@@ -1,14 +1,17 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path, reverse_lazy
 
-from .forms import StyledPasswordChangeForm
+from .forms import EmailAuthenticationForm, StyledPasswordChangeForm
 from . import views
 
 urlpatterns = [
     path("register/", views.register, name="register"),
     path(
         "login/",
-        auth_views.LoginView.as_view(template_name="registration/login.html"),
+        auth_views.LoginView.as_view(
+            template_name="registration/login.html",
+            form_class=EmailAuthenticationForm,
+        ),
         name="login",
     ),
     path(

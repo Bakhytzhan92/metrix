@@ -243,8 +243,8 @@ class ProjectAccess(models.Model):
     ROLE_VIEWER = "viewer"
     ROLE_CHOICES = [
         (ROLE_MANAGER, "Руководитель проекта"),
-        (ROLE_WORKER, "Исполнитель (прораб)"),
-        (ROLE_VIEWER, "Наблюдатель (только просмотр)"),
+        (ROLE_WORKER, "Исполнитель"),
+        (ROLE_VIEWER, "Наблюдатель"),
     ]
 
     company_user = models.ForeignKey(

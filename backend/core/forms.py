@@ -1,7 +1,12 @@
 from decimal import Decimal
 
 from django import forms
-from django.contrib.auth.forms import PasswordChangeForm, UserCreationForm
+from django.contrib.auth.forms import (
+    AuthenticationForm,
+    PasswordChangeForm,
+    UserCreationForm,
+)
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 
@@ -88,6 +93,22 @@ class RegisterForm(UserCreationForm):
             ):
                 self.save_m2m()
         return user
+
+
+class EmailAuthenticationForm(AuthenticationForm):
+    """Форма входа: можно указать email или имя пользователя."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["username"].label = "Email или логин"
+        css = (
+            "w-full rounded-md border border-slate-300 px-3 py-2 text-sm "
+            "focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+        )
+        self.fields["username"].widget.attrs.setdefault("class", css)
+        self.fields["username"].widget.attrs.setdefault("autocomplete", "username")
+        self.fields["password"].widget.attrs.setdefault("class", css)
+        self.fields["password"].widget.attrs.setdefault("autocomplete", "current-password")
 
 
 class StyledPasswordChangeForm(PasswordChangeForm):
@@ -716,8 +737,8 @@ class AddCompanyUserForm(forms.Form):
     )
     role_in_project = forms.ChoiceField(
         label="Роль в проекте",
-        choices=ProjectAccess.ROLE_CHOICES,
-        initial=ProjectAccess.ROLE_VIEWER,
+        choices=[],
+        initial=ProjectAccess.ROLE_WORKER,
         widget=forms.Select(attrs={"class": _input_class()}),
     )
     auto_add_to_new_projects = forms.BooleanField(
@@ -729,10 +750,16 @@ class AddCompanyUserForm(forms.Form):
     def __init__(self, *args, company=None, **kwargs):
         super().__init__(*args, **kwargs)
         if company:
-            self.fields["role"].queryset = company.roles.all().order_by("is_system", "name")
+            self.fields["role"].queryset = company.roles.exclude(slug=CompanyRole.SLUG_OWNER).order_by(
+                "is_system", "name"
+            )
             self.fields["projects"].choices = [
                 (str(p.id), p.name) for p in company.projects.all().order_by("name")
             ]
+        self.fields["role_in_project"].choices = [
+            (ProjectAccess.ROLE_VIEWER, "Наблюдатель"),
+            (ProjectAccess.ROLE_WORKER, "Исполнитель"),
+        ]
 
 
 class EditCompanyUserForm(forms.ModelForm):
@@ -745,10 +772,68 @@ class EditCompanyUserForm(forms.ModelForm):
             "role": forms.Select(attrs={"class": _input_class()}),
         }
 
-    def __init__(self, *args, company=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        company=None,
+        allow_set_password: bool = True,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         if company:
-            self.fields["role"].queryset = company.roles.all().order_by("is_system", "name")
+            qs = company.roles.all()
+            cu = getattr(self, "instance", None)
+            if (
+                cu
+                and getattr(cu, "pk", None)
+                and company.owner_id
+                and cu.user_id != company.owner_id
+            ):
+                qs = qs.exclude(slug=CompanyRole.SLUG_OWNER)
+            self.fields["role"].queryset = qs.order_by("is_system", "name")
+
+        if allow_set_password:
+            pwd_attrs = {"class": _input_class(), "autocomplete": "new-password"}
+            self.fields["new_password1"] = forms.CharField(
+                label="Новый пароль для входа",
+                required=False,
+                strip=False,
+                widget=forms.PasswordInput(attrs=pwd_attrs),
+                help_text=(
+                    "Логин сотрудника — его email. Задайте пароль здесь; "
+                    "пустые поля — не менять пароль."
+                ),
+            )
+            self.fields["new_password2"] = forms.CharField(
+                label="Повтор пароля",
+                required=False,
+                strip=False,
+                widget=forms.PasswordInput(attrs=pwd_attrs),
+            )
+
+    def clean(self):
+        data = super().clean()
+        if "new_password1" not in self.fields:
+            return data
+        p1 = data.get("new_password1") or ""
+        p2 = data.get("new_password2") or ""
+        if p1 or p2:
+            if p1 != p2:
+                raise ValidationError("Пароли не совпадают.")
+            if not p1:
+                raise ValidationError("Заполните оба поля пароля или оставьте оба пустыми.")
+            validate_password(p1, user=self.instance.user)
+        return data
+
+    def save(self, commit=True):
+        company_user = super().save(commit=commit)
+        if commit and "new_password1" in self.fields:
+            pwd = self.cleaned_data.get("new_password1")
+            if pwd:
+                u = company_user.user
+                u.set_password(pwd)
+                u.save(update_fields=["password"])
+        return company_user
 
 
 # ---------- Смета проекта ----------

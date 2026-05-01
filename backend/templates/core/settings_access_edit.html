@@ -5,6 +5,18 @@
 <div class="mx-auto max-w-lg">
   <h1 class="text-2xl font-semibold text-slate-900 mb-4">Изменить пользователя</h1>
   <p class="text-sm text-slate-600 mb-4">{{ company_user.user.get_username }} ({{ company_user.user.email|default:"" }})</p>
+  <p class="text-xs text-slate-600 mb-4 rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
+    {% if company_user.user.email %}
+      {% if allow_set_password %}
+        <strong>Вход для этого пользователя:</strong> на странице входа укажите email
+        <span class="font-mono">{{ company_user.user.email }}</span>
+        и пароль (поля ниже). Оставьте поля пароля пустыми, чтобы не менять его.
+      {% else %}
+        Это ваша учётная запись. Пароль меняется в разделе
+        <a href="{% url 'password_change' %}" class="text-indigo-600 hover:text-indigo-800">смены пароля</a>.
+      {% endif %}
+    {% endif %}
+  </p>
   <form method="post" class="space-y-4 rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
     {% csrf_token %}
     {% for field in form %}
