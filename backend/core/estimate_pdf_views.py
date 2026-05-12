@@ -179,6 +179,7 @@ def api_estimate_import_pdf_apply(
         {
             "ok": True,
             "items_created": result["items_created"],
+            "count_parsed": len(rows),
             "errors": result.get(
                 "errors", []
             ),
