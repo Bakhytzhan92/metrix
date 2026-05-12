@@ -145,6 +145,49 @@ def _norm(s: str) -> str:
     return s
 
 
+def _scrub_estimate_name(name: str) -> str:
+    """
+    Убирает хвосты колонок АВС (цены, СП, «Страниц», колонки 1 2 3…), которые
+    иногда попадают в текст при извлечении PDF.
+    """
+    n = _norm(name)
+    if not n:
+        return n
+    while True:
+        n2 = re.sub(
+            r"^--\s*[\d\s.,]+(?:\s*[–-]\s*[\d\s.,]+)?\s*--\s*",
+            "",
+            n,
+        )
+        if n2 == n:
+            break
+        n = _norm(n2)
+    n = re.sub(
+        r"(?:^|\s)СП\s*-\s*\d+\s*%\s*",
+        " ",
+        n,
+        flags=re.IGNORECASE,
+    )
+    n = re.sub(
+        r"Страниц\s*-\s*\d+",
+        "",
+        n,
+        flags=re.IGNORECASE,
+    )
+    n = re.sub(
+        r"Программный\s+комплекс\s+АВС[^\w]*[\w.()]*",
+        "",
+        n,
+        flags=re.IGNORECASE,
+    )
+    n = re.sub(
+        r"\b(?:\d{1,2}\s+){4,}\d{1,2}\b",
+        " ",
+        n,
+    )
+    return _norm(n)
+
+
 def _fnum(s: str) -> float | None:
     t = re.sub(r"\s+", "", s or "").replace(",", ".")
     if not t or t in ("--", "—", "–", "-."):
@@ -313,30 +356,68 @@ def _iter_lines(pdf) -> list[str]:
     return out
 
 
-def _iter_lines_from_bytes(data: bytes) -> list[str]:
-    """
-    Текст со всех страниц построчно. Сначала PyMuPDF (намного быстрее pdfplumber на
-    больших сметах) — иначе Railway/Gunicorn ловит WORKER TIMEOUT.
-    """
+def _iter_lines_pymupdf(data: bytes) -> list[str]:
+    """Быстрое извлечение; для АВС-таблиц хуже сохраняет колонки, чем pdfplumber."""
     try:
         import fitz  # PyMuPDF
     except ImportError:
-        fitz = None  # type: ignore[assignment, misc]
-    if fitz is not None:
+        return []
+    out: list[str] = []
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
         try:
-            doc = fitz.open(stream=data, filetype="pdf")
-            try:
-                out: list[str] = []
-                for page in doc:
-                    text = page.get_text() or ""
-                    for raw in text.splitlines():
+            for page in doc:
+                blocks = page.get_text(
+                    "blocks",
+                    sort=True,
+                )
+                if blocks:
+                    for b in blocks:
+                        if len(b) < 5:
+                            continue
+                        txt = (b[4] or "").strip()
+                        if not txt:
+                            continue
+                        for raw in txt.splitlines():
+                            t = raw.strip()
+                            if t:
+                                out.append(raw)
+                    continue
+                text = page.get_text(sort=True) or ""
+                for raw in text.splitlines():
+                    t = raw.strip()
+                    if t:
                         out.append(raw)
-                if out:
-                    return out
-            finally:
-                doc.close()
-        except Exception:
-            pass
+        finally:
+            doc.close()
+    except Exception:
+        return []
+    return out
+
+
+def _iter_lines_from_bytes(data: bytes) -> list[str]:
+    """
+    Построчный текст всех страниц.
+
+    По умолчанию pdfplumber — корректнее для таблиц АВС (колонки, шифры).
+    Если на сервере таймаут — задайте переменную окружения:
+    PDF_LOCAL_ESTIMATE_TEXT_ENGINE=pymupdf
+    """
+    engine = (
+        os.environ.get(
+            "PDF_LOCAL_ESTIMATE_TEXT_ENGINE",
+            "pdfplumber",
+        )
+        or "pdfplumber"
+    ).strip().lower()
+    if engine in (
+        "pymupdf",
+        "fitz",
+        "fast",
+    ):
+        lines = _iter_lines_pymupdf(data)
+        if lines:
+            return lines
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         return _iter_lines(pdf)
 
@@ -504,6 +585,9 @@ def _flush(
     if name.lower().count(
         "тенге"
     ) or "тыс" in name.lower()[:5]:
+        return []
+    name = _scrub_estimate_name(name)
+    if not name or len(name) < 2:
         return []
     dedup_name = (
         f"{row.shifr}\x1f{name.lower()}"
