@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
+import math
 from typing import Any
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods, require_POST
@@ -10,6 +13,8 @@ from django.views.decorators.http import require_http_methods, require_POST
 from .access_utils import get_current_company
 from .estimate_pdf_service import apply_local_estimate_rows
 from .models import Project
+
+logger = logging.getLogger(__name__)
 
 try:
     from .services.local_estimate_parser import parse_local_estimate
@@ -29,6 +34,98 @@ def _json_err(
     return JsonResponse(
         p, status=code
     )
+
+
+def _sanitize_rows_for_json(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Убираем NaN/inf у quantity — иначе JsonResponse может упасть с 500."""
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        if not isinstance(
+            r,
+            dict,
+        ):
+            continue
+        d = dict(r)
+        q = d.get("quantity")
+        if isinstance(
+            q,
+            float,
+        ):
+            if math.isnan(q) or math.isinf(q):
+                d["quantity"] = 0.0
+        elif q is not None and not isinstance(
+            q,
+            (int, float, str),
+        ):
+            try:
+                d["quantity"] = float(q)
+            except (TypeError, ValueError):
+                d["quantity"] = 0.0
+        out.append(d)
+    return out
+
+
+def _parse_pdf_safe(
+    uploaded,
+) -> tuple[list[dict[str, Any]] | None, JsonResponse | None]:
+    """Разбор PDF; любая ошибка парсера → JSON-ответ, не HTML 500."""
+    from django.core.exceptions import ValidationError
+
+    if not parse_local_estimate:
+        return None, _json_err(
+            "Парсер PDF недоступен (не установлены зависимости).",
+            500,
+        )
+    try:
+        rows = parse_local_estimate(
+            uploaded,
+        )
+    except (
+        OSError,
+        ValidationError,
+        ValueError,
+        TypeError,
+    ) as e:
+        return None, _json_err(
+            str(e) or "Ошибка чтения PDF",
+        )
+    except Exception as e:
+        logger.exception(
+            "parse_local_estimate failed",
+        )
+        if settings.DEBUG:
+            return None, _json_err(
+                f"Разбор PDF: {e}",
+                500,
+            )
+        return None, _json_err(
+            "Не удалось разобрать PDF (повреждённый или неподдерживаемый файл). "
+            "Попробуйте экспортировать PDF заново или другой файл.",
+            500,
+        )
+    if not isinstance(
+        rows,
+        list,
+    ):
+        return None, _json_err(
+            "Внутренняя ошибка: парсер вернул не список строк",
+            500,
+        )
+    try:
+        safe = _sanitize_rows_for_json(
+            rows,
+        )
+    except Exception:
+        logger.exception(
+            "sanitize rows after PDF parse",
+        )
+        return None, _json_err(
+            "Ошибка подготовки данных сметы",
+            500,
+        )
+    return safe, None
 
 
 def _get_project(
@@ -70,13 +167,6 @@ def api_estimate_import_pdf(
     POST: multipart: file, project_id
     JSON: { ok, rows: [ { section, name, unit, quantity } ] }
     """
-    if not parse_local_estimate:
-        return _json_err(
-            "Парсер PDF недоступен",
-            500,
-        )
-    from django.core.exceptions import ValidationError
-
     project_id = request.POST.get("project_id")
     f = request.FILES.get("file")
     if not f or not project_id:
@@ -104,24 +194,17 @@ def api_estimate_import_pdf(
     )
     if perr is not None:
         return perr
-    try:
-        rows = parse_local_estimate(
-            f
-        )
-    except (
-        OSError, ValidationError, ValueError
-    ) as e:  # noqa: BLE001
-        return _json_err(
-            str(
-                e
-            ) or "Ошибка чтения PDF",
-        )
+    rows, err = _parse_pdf_safe(
+        f
+    )
+    if err is not None:
+        return err
     return JsonResponse(
         {
             "ok": True,
             "rows": rows,
             "count": len(
-                rows
+                rows or [],
             ),
         }
     )
@@ -172,9 +255,23 @@ def api_estimate_import_pdf_apply(
     )
     if perr is not None:
         return perr
-    result = apply_local_estimate_rows(
-        project, rows
-    )
+    try:
+        result = apply_local_estimate_rows(
+            project, rows
+        )
+    except Exception:
+        logger.exception(
+            "apply_local_estimate_rows failed",
+        )
+        if settings.DEBUG:
+            return _json_err(
+                "Ошибка записи в смету (см. лог сервера).",
+                500,
+            )
+        return _json_err(
+            "Не удалось сохранить импорт. Попробуйте ещё раз или меньший объём данных.",
+            500,
+        )
     return JsonResponse(
         {
             "ok": True,
@@ -200,13 +297,6 @@ def api_estimate_import_pdf_apply_file(
     Один запрос: multipart file + project_id → разбор PDF и запись в смету.
     Без передачи тысяч строк JSON в браузер (обходит лимиты тела запроса).
     """
-    if not parse_local_estimate:
-        return _json_err(
-            "Парсер PDF недоступен",
-            500,
-        )
-    from django.core.exceptions import ValidationError
-
     project_id = request.POST.get(
         "project_id"
     )
@@ -238,22 +328,29 @@ def api_estimate_import_pdf_apply_file(
     )
     if perr is not None:
         return perr
-    try:
-        rows = parse_local_estimate(
-            f
-        )
-    except (
-        OSError, ValidationError, ValueError
-    ) as e:  # noqa: BLE001
-        return _json_err(
-            str(
-                e
-            )
-            or "Ошибка чтения PDF",
-        )
-    result = apply_local_estimate_rows(
-        project, rows
+    rows, parse_err = _parse_pdf_safe(
+        f
     )
+    if parse_err is not None:
+        return parse_err
+    try:
+        result = apply_local_estimate_rows(
+            project,
+            rows or [],
+        )
+    except Exception:
+        logger.exception(
+            "apply_local_estimate_rows failed (apply-file)",
+        )
+        if settings.DEBUG:
+            return _json_err(
+                "Ошибка записи в смету (см. лог сервера).",
+                500,
+            )
+        return _json_err(
+            "Не удалось сохранить импорт. Попробуйте ещё раз.",
+            500,
+        )
     return JsonResponse(
         {
             "ok": True,
