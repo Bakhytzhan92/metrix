@@ -5,7 +5,7 @@ import json
 from datetime import date, timedelta
 
 from django.contrib import messages
-from django.contrib.auth import get_user_model, login
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Max, Prefetch, Sum
@@ -20,6 +20,7 @@ from . import construction_services
 from . import finance_project_services
 from . import services as report_services
 from . import supply_services
+from .auth_utils import login_user
 from .access_utils import can_manage_access, get_current_company
 from .forms import (
     RegisterForm,
@@ -107,7 +108,7 @@ def register(request: HttpRequest) -> HttpResponse:
             user = form.save()
             # Создаём компанию по умолчанию для нового пользователя
             Company.objects.create(name=f"Компания {user.username}", owner=user)
-            login(request, user)
+            login_user(request, user)
             return redirect("dashboard")
     else:
         form = RegisterForm()

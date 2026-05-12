@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import secrets
 
-from django.contrib.auth import get_user_model, login
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Count, ProtectedError, Q
@@ -13,6 +13,8 @@ from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
+
+from .auth_utils import login_user
 
 from .models import (
     ActivityLog,
@@ -603,7 +605,7 @@ def api_login_as_user(
     request.session[
         "impersonator_username"
     ] = admin.get_username()
-    login(
+    login_user(
         request,
         target,
     )
@@ -643,7 +645,7 @@ def api_stop_impersonation(
         entity="session",
         entity_id="",
     )
-    login(
+    login_user(
         request,
         admin,
     )

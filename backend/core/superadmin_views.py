@@ -3,10 +3,12 @@ HTML-страницы панели супер-администратора (/sup
 """
 from __future__ import annotations
 
-from django.contrib.auth import get_user_model, login
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
+
+from .auth_utils import login_user
 
 from .models import ActivityLog
 from .superadmin_api import dashboard_payload
@@ -43,7 +45,7 @@ def stop_impersonation(
         entity="session",
         entity_id="",
     )
-    login(
+    login_user(
         request,
         admin,
     )
