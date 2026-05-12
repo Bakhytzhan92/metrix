@@ -207,8 +207,30 @@ def _is_noise_line(low: str) -> bool:
     return any(w in low for w in STOP_SUBSTR)
 
 
-def _is_end(ln: str, low: str) -> bool:
+# Не считать концом ЛСР строку «Материалы», если это заголовок внутри свода
+# «Всего / Стоимость …» перед таблицей АВС (ложное срабатывание до раздела 6 и т.п.).
+_FALSE_MATERIALS_END_PREV = (
+    "стоимость",
+    "заработная",
+    "оборудован",
+    "транспорт",
+    "металломонтаж",
+    "общестроительн",
+    "конструкций",
+)
+
+
+def _materials_line_likely_inside_lsr_table(prev_low: str | None) -> bool:
+    if not prev_low:
+        return False
+    pl = prev_low.strip()
+    return any(k in pl for k in _FALSE_MATERIALS_END_PREV)
+
+
+def _is_end(ln: str, low: str, prev_low: str | None = None) -> bool:
     t = low.strip()
+    if t == "материалы" and _materials_line_likely_inside_lsr_table(prev_low):
+        return False
     for ex in END_EXACT:
         if t == ex or (
             t.startswith(
@@ -223,6 +245,8 @@ def _is_end(ln: str, low: str) -> bool:
     if t.startswith("материал") and len(
         t
     ) < 35 and "тенге" not in t and "тыс" not in t:
+        if _materials_line_likely_inside_lsr_table(prev_low):
+            return False
         return True
     return False
 
@@ -633,8 +657,9 @@ def parse_lines_abc(
         if not in_lsr:
             i += 1
             continue
+        prev_low = lines[i - 1].lower() if i else None
         if _is_end(
-            raw, low
+            raw, low, prev_low
         ):
             out.extend(
                 _flush(
@@ -762,6 +787,37 @@ def parse_lines_abc(
                 )
                 auto_razdel += 1
             else:
+                sec_tail = (
+                    section.split(
+                        "|",
+                        1,
+                    )[-1].strip()
+                    if section and "|" in section
+                    else (
+                        section or ""
+                    )
+                )
+                if (
+                    section
+                    and "ДЮКЕР" in section.upper()
+                    and re.search(
+                        r"^ЗЕМЛЯНЫЕ\s+РАБОТЫ",
+                        nline.strip(),
+                        re.I,
+                    )
+                    and not re.search(
+                        r"ЗЕМЛЯНЫЕ\s+РАБОТЫ",
+                        sec_tail,
+                        re.I,
+                    )
+                ):
+                    merged = f"{sec_tail} {nline.strip()}"
+                    section = _format_section(
+                        lsr_id,
+                        merged,
+                    )[:255]
+                    i += 1
+                    continue
                 body = nline.strip()
             section = _format_section(
                 lsr_id, body
@@ -798,8 +854,9 @@ def parse_lines_abc(
                 )
                 sl = s.lower(
                 )
+                prev_in = lines[i - 1].lower() if i else None
                 if _is_end(
-                    s, sl
+                    s, sl, prev_in
                 ):
                     break
                 if RE_POS.match(
