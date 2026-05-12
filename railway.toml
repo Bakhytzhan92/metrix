@@ -3,4 +3,5 @@ buildCommand = "pip install -r requirements.txt && cd backend && python manage.p
 
 [deploy]
 preDeployCommand = "cd backend && python manage.py migrate --noinput"
-startCommand = "cd backend && python -m gunicorn gectaro_saas.wsgi:application --bind 0.0.0.0:$PORT"
+# Таймаут >30с: разбор больших PDF (pdfplumber/PyMuPDF) иначе даёт WORKER TIMEOUT.
+startCommand = "cd backend && python -m gunicorn gectaro_saas.wsgi:application --bind 0.0.0.0:$PORT --timeout 180 --graceful-timeout 60"

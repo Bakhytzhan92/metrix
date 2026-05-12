@@ -313,6 +313,34 @@ def _iter_lines(pdf) -> list[str]:
     return out
 
 
+def _iter_lines_from_bytes(data: bytes) -> list[str]:
+    """
+    Текст со всех страниц построчно. Сначала PyMuPDF (намного быстрее pdfplumber на
+    больших сметах) — иначе Railway/Gunicorn ловит WORKER TIMEOUT.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        fitz = None  # type: ignore[assignment, misc]
+    if fitz is not None:
+        try:
+            doc = fitz.open(stream=data, filetype="pdf")
+            try:
+                out: list[str] = []
+                for page in doc:
+                    text = page.get_text() or ""
+                    for raw in text.splitlines():
+                        out.append(raw)
+                if out:
+                    return out
+            finally:
+                doc.close()
+        except Exception:
+            pass
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        return _iter_lines(pdf)
+
+
 def _unit_qty_from_line(s: str) -> tuple[str, float] | None:
     """
     Одна строка АВС с единицей и количеством: берём **первое** число объёма
@@ -1017,31 +1045,19 @@ def parse_local_estimate(
     )
     dedupe: set = set(
     )
-    with pdfplumber.open(
-        io.BytesIO(
-            data
+    line_list = _iter_lines_from_bytes(
+        data
+    )
+    res = parse_lines_abc(
+        line_list, dedupe
+    )
+    if not res:
+        full = " ".join(
+            line_list
         )
-    ) as pdf:
-        line_list = _iter_lines(
-            pdf
+        res = _regex_fallback(
+            full, None, dedupe
         )
-        res = parse_lines_abc(
-            line_list, dedupe
-        )
-        if not res:
-            with pdfplumber.open(
-                io.BytesIO(
-                    data
-                )
-            ) as pdf2:
-                full = " ".join(
-                    _iter_lines(
-                        pdf2
-                    )
-                )
-            res = _regex_fallback(
-                full, None, dedupe
-            )
     for r in res:
         if r.get(
             "section"
