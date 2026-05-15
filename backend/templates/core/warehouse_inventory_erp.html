@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Инвентарь ERP — Metrix{% endblock %}
+
+{% block content %}
+<div id="inventory-erp-root"></div>
+<script type="module" src="{% static 'core/inventory_erp/board.js' %}"></script>
+{% endblock %}

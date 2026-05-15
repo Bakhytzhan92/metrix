@@ -70,6 +70,8 @@ def codes_required_for_path(path: str) -> list[str] | None:
     if path.startswith("/api/"):
         if path.startswith("/api/upload-pdf/") or path.startswith("/api/document/"):
             return ["view_ai", "edit_ai"]
+        if path.startswith("/api/inventory/"):
+            return ["view_warehouse", "edit_warehouse"]
         return None
 
     if path.startswith("/projects/"):

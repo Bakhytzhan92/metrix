@@ -17,6 +17,8 @@ def apply_incoming(
     price: Decimal,
     date,
     comment: str = "",
+    supplier: str = "",
+    user=None,
 ):
     """Поступление на склад: создаём движение, увеличиваем остаток, пересчитываем среднюю цену."""
     movement = StockMovement.objects.create(
@@ -29,6 +31,9 @@ def apply_incoming(
         price=price,
         date=date,
         comment=comment,
+        supplier=(supplier or "")[:255],
+        user=user,
+        writeoff_reason="",
     )
     stock, _ = Stock.objects.select_for_update().get_or_create(
         warehouse=warehouse,
@@ -44,16 +49,18 @@ def apply_incoming(
 
 
 @transaction.atomic
-def apply_writeoff(
+def apply_outgoing_consumption(
     *,
     material: Material,
     warehouse: Warehouse,
     quantity: Decimal,
     date,
+    project: Project,
+    schedule_phase=None,
     comment: str = "",
-    project: Project | None = None,
+    user=None,
 ):
-    """Списание со склада (или списание на объект с project)."""
+    """Расход материала на объект (уменьшение остатка, история)."""
     stock = Stock.objects.select_for_update().get(
         warehouse=warehouse, material=material
     )
@@ -67,11 +74,61 @@ def apply_writeoff(
         warehouse_from=warehouse,
         warehouse_to=None,
         project=project,
-        movement_type=StockMovement.TYPE_OUTGOING if project else StockMovement.TYPE_WRITEOFF,
+        schedule_phase=schedule_phase,
+        movement_type=StockMovement.TYPE_OUTGOING,
         quantity=quantity,
         price=price,
         date=date,
         comment=comment,
+        user=user,
+        writeoff_reason="",
+        supplier="",
+    )
+    stock.quantity -= quantity
+    stock.save()
+    return movement
+
+
+@transaction.atomic
+def apply_writeoff(
+    *,
+    material: Material,
+    warehouse: Warehouse,
+    quantity: Decimal,
+    date,
+    comment: str = "",
+    project: Project | None = None,
+    writeoff_reason: str = "",
+    user=None,
+):
+    """Списание со склада (расход на объект с project) или административное списание с причиной."""
+    stock = Stock.objects.select_for_update().get(
+        warehouse=warehouse, material=material
+    )
+    if stock.quantity < quantity:
+        raise ValueError(
+            f"Недостаточно на складе «{warehouse.name}». Остаток: {stock.quantity} {material.unit}"
+        )
+    price = stock.price_avg
+    if project:
+        mtype = StockMovement.TYPE_OUTGOING
+        reason = ""
+    else:
+        mtype = StockMovement.TYPE_WRITEOFF
+        reason = (writeoff_reason or StockMovement.REASON_USED)[:20]
+    movement = StockMovement.objects.create(
+        material=material,
+        warehouse_from=warehouse,
+        warehouse_to=None,
+        project=project,
+        movement_type=mtype,
+        quantity=quantity,
+        price=price,
+        date=date,
+        comment=comment,
+        writeoff_reason=reason,
+        user=user,
+        supplier="",
     )
     stock.quantity -= quantity
     stock.save()
@@ -87,6 +144,7 @@ def apply_transfer(
     quantity: Decimal,
     date,
     comment: str = "",
+    user=None,
 ):
     """Перемещение между складами."""
     if warehouse_from.id == warehouse_to.id:
@@ -109,6 +167,9 @@ def apply_transfer(
         price=price,
         date=date,
         comment=comment,
+        user=user,
+        writeoff_reason="",
+        supplier="",
     )
     out_stock.quantity -= quantity
     out_stock.save()

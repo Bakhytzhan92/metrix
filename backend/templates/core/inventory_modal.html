@@ -21,7 +21,7 @@
       <a href="{% url 'project_warehouses' project.pk %}" class="flex-shrink-0 p-2 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="Закрыть">✕</a>
     </div>
 
-    <form method="post" enctype="multipart/form-data" class="p-6 space-y-4">
+    <form id="inventory-edit-form" method="post" enctype="multipart/form-data" class="p-6 space-y-4">
       {% csrf_token %}
       {% if form.non_field_errors %}<ul class="text-sm text-red-600 mb-2">{{ form.non_field_errors }}</ul>{% endif %}
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -41,24 +41,26 @@
 
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1">Статус</label>
+        {% with s=form.status.value %}
         <div class="flex flex-wrap gap-2">
-          <label class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border cursor-pointer {% if item.status == 'in_use' %}border-blue-500 bg-blue-50 text-blue-800{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
-            <input type="radio" name="status" value="in_use" class="rounded-full border-slate-300 text-blue-600 focus:ring-blue-500" {% if form.status.value == 'in_use' or item.status == 'in_use' %}checked{% endif %} />
+          <label class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border cursor-pointer {% if s == 'in_use' %}border-blue-500 bg-blue-50 text-blue-800{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
+            <input type="radio" name="status" value="in_use" class="rounded-full border-slate-300 text-blue-600 focus:ring-blue-500" {% if s == 'in_use' %}checked{% endif %} />
             <span>В работе</span>
           </label>
-          <label class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border cursor-pointer {% if item.status == 'free' %}border-green-500 bg-green-50 text-green-800{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
-            <input type="radio" name="status" value="free" class="rounded-full border-slate-300 text-green-600 focus:ring-green-500" {% if form.status.value == 'free' or item.status == 'free' %}checked{% endif %} />
+          <label class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border cursor-pointer {% if s == 'free' %}border-green-500 bg-green-50 text-green-800{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
+            <input type="radio" name="status" value="free" class="rounded-full border-slate-300 text-green-600 focus:ring-green-500" {% if s == 'free' %}checked{% endif %} />
             <span>Свободен</span>
           </label>
-          <label class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border cursor-pointer {% if item.status == 'broken' %}border-slate-500 bg-slate-100 text-slate-800{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
-            <input type="radio" name="status" value="broken" class="rounded-full border-slate-300 text-slate-600 focus:ring-slate-500" {% if form.status.value == 'broken' or item.status == 'broken' %}checked{% endif %} />
-            <span>Сломан</span>
+          <label class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border cursor-pointer {% if s == 'repair' %}border-amber-500 bg-amber-50 text-amber-800{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
+            <input type="radio" name="status" value="repair" class="rounded-full border-slate-300 text-amber-600 focus:ring-amber-500" {% if s == 'repair' %}checked{% endif %} />
+            <span>На ремонте</span>
           </label>
-          <label class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border cursor-pointer {% if item.status == 'written_off' %}border-red-500 bg-red-50 text-red-800{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
-            <input type="radio" name="status" value="written_off" class="rounded-full border-slate-300 text-red-600 focus:ring-red-500" {% if form.status.value == 'written_off' or item.status == 'written_off' %}checked{% endif %} />
+          <label class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border cursor-pointer {% if s == 'written_off' %}border-red-500 bg-red-50 text-red-800{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
+            <input type="radio" name="status" value="written_off" class="rounded-full border-slate-300 text-red-600 focus:ring-red-500" {% if s == 'written_off' %}checked{% endif %} />
             <span>Списан</span>
           </label>
         </div>
+        {% endwith %}
       </div>
 
       <div>
@@ -75,13 +77,18 @@
         <label class="block text-sm font-medium text-slate-700 mb-1">Фото</label>
         {{ form.image }}
       </div>
-
-      <div class="flex gap-2 pt-2">
-        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить</button>
-        <a href="{% url 'project_inventory_transfer' project.pk item.id %}" class="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Переместить</a>
-        <a href="{% url 'project_warehouses' project.pk %}" class="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Отмена</a>
-      </div>
     </form>
+    <div class="flex flex-wrap items-center gap-2 border-t border-slate-100 px-6 py-4">
+      <button type="submit" form="inventory-edit-form" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить</button>
+      <a href="{% url 'project_inventory_transfer' project.pk item.id %}" class="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Переместить</a>
+      <a href="{% url 'project_warehouses' project.pk %}" class="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Отмена</a>
+      {% if can_edit_project_inventory %}
+      <form method="post" action="{% url 'project_warehouse_inventory_delete' project.pk item.id %}" class="inline" onsubmit="return confirm('Удалить эту единицу инвентаря? Действие необратимо.');">
+        {% csrf_token %}
+        <button type="submit" class="rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Удалить</button>
+      </form>
+      {% endif %}
+    </div>
 
     {# История действий #}
     <div class="border-t border-slate-200 p-6">

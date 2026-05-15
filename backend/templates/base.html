@@ -53,6 +53,9 @@
           <a href="{% url 'warehouses_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'warehouses_dashboard' or request.resolver_match.url_name == 'warehouse_detail' or request.resolver_match.url_name == 'warehouse_create' or request.resolver_match.url_name == 'stock_incoming' or request.resolver_match.url_name == 'stock_writeoff' or request.resolver_match.url_name == 'stock_transfer' or request.resolver_match.url_name == 'material_create' or request.resolver_match.url_name == 'warehouses_incoming' or request.resolver_match.url_name == 'warehouses_outgoing' or request.resolver_match.url_name == 'warehouses_transfer' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
             <span>Склады</span>
           </a>
+          <a href="{% url 'warehouse_inventory_erp' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 ml-2 text-xs {% if request.resolver_match.url_name == 'warehouse_inventory_erp' %}bg-emerald-50 font-medium text-emerald-800{% else %}text-slate-600{% endif %}">
+            <span>Инвентарь ERP</span>
+          </a>
           {% endif %}
           {% has_perm 'view_reports' as can_rep %}
           {% if can_rep %}

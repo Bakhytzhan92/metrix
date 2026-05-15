@@ -15,13 +15,14 @@ from django.urls import reverse
 from django.utils.dateparse import parse_date
 from django.core.exceptions import ValidationError
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 from . import construction_services
 from . import finance_project_services
 from . import services as report_services
 from . import supply_services
 from .auth_utils import login_user
-from .access_utils import can_manage_access, get_current_company
+from .access_utils import can_manage_access, get_current_company, has_permission
 from .forms import (
     RegisterForm,
     CompanyForm,
@@ -99,6 +100,9 @@ from .inventory_services import (
     transfer_inventory_item,
     set_inventory_status,
 )
+from .inventory_numbering import allocate_inventory_number
+from .inventory_qr import ensure_qr_image_file
+from .rbac import permission_required
 
 
 def register(request: HttpRequest) -> HttpResponse:
@@ -2057,6 +2061,7 @@ def project_construction_journal_print(request: HttpRequest, pk: int) -> HttpRes
     )
 
 
+@ensure_csrf_cookie
 @login_required
 def project_warehouses(request: HttpRequest, pk: int) -> HttpResponse:
     """Kanban инвентаря: колонки — склады проекта + «Списано», карточки — единицы инвентаря."""
@@ -2096,6 +2101,7 @@ def project_warehouses(request: HttpRequest, pk: int) -> HttpResponse:
     written_off_count = sum(1 for i in items_list if i.status == WarehouseInventoryItem.STATUS_WRITTEN_OFF)
     written_off_sum = sum((i.purchase_price or 0) for i in items_list if i.status == WarehouseInventoryItem.STATUS_WRITTEN_OFF)
     create_form = WarehouseInventoryCreateForm(company=company, project=project)
+    can_edit_project_inventory = has_permission(request.user, company, "edit_warehouse")
     return render(request, "core/project/warehouses.html", {
         "project": project,
         "active_tab": "warehouses",
@@ -2109,6 +2115,7 @@ def project_warehouses(request: HttpRequest, pk: int) -> HttpResponse:
         "written_off_count": written_off_count,
         "written_off_sum": written_off_sum,
         "create_form": create_form,
+        "can_edit_project_inventory": can_edit_project_inventory,
     })
 
 
@@ -2149,8 +2156,15 @@ def project_inventory_create(request: HttpRequest, pk: int) -> HttpResponse:
         if form.is_valid():
             item = form.save(commit=False)
             item.company = project.company
+            inv = (item.inventory_number or "").strip()
+            if not inv:
+                item.inventory_number = allocate_inventory_number(
+                    project.company,
+                    item.category or WarehouseInventoryItem.CATEGORY_OTHER,
+                )
             item.save()
             log_inventory_action(item, InventoryLog.ACTION_CREATED, request.user, "Создан инвентарь")
+            ensure_qr_image_file(item, request)
             messages.success(request, "Инвентарь добавлен.")
             return redirect("project_warehouses", pk=project.pk)
     else:
@@ -2195,12 +2209,14 @@ def project_inventory_update(request: HttpRequest, pk: int, item_id: int) -> Htt
     else:
         form = WarehouseInventoryUpdateForm(instance=item)
     logs = item.logs.select_related("user").order_by("-created_at")[:50]
+    can_edit_project_inventory = has_permission(request.user, project.company, "edit_warehouse")
     return render(request, "core/inventory_modal.html", {
         "project": project,
         "item": item,
         "form": form,
         "logs": logs,
         "active_tab": "warehouses",
+        "can_edit_project_inventory": can_edit_project_inventory,
     })
 
 
@@ -2229,6 +2245,22 @@ def project_inventory_transfer(request: HttpRequest, pk: int, item_id: int) -> H
         messages.error(request, str(e))
         return redirect("project_warehouses", pk=project.pk)
     messages.success(request, "Инвентарь перемещён.")
+    return redirect("project_warehouses", pk=project.pk)
+
+
+@login_required
+@require_POST
+def project_warehouse_inventory_delete(request: HttpRequest, pk: int, item_id: int) -> HttpResponse:
+    """Удалить единицу инвентаря проекта (карточка на доске складов)."""
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+    if not has_permission(request.user, project.company, "edit_warehouse"):
+        messages.error(request, "Недостаточно прав для удаления.")
+        return redirect("project_warehouses", pk=project.pk)
+    item = get_object_or_404(WarehouseInventoryItem, pk=item_id, company=project.company)
+    item.delete()
+    messages.success(request, "Инвентарь удалён.")
     return redirect("project_warehouses", pk=project.pk)
 
 
@@ -3250,6 +3282,17 @@ def warehouses_transfer(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
+@ensure_csrf_cookie
+@permission_required("view_warehouse")
+def warehouse_inventory_erp(request: HttpRequest) -> HttpResponse:
+    """ERP-интерфейс учёта инвентаря (React + API)."""
+    company = _get_warehouse_company(request)
+    if not company:
+        return redirect("dashboard")
+    return render(request, "core/warehouse_inventory_erp.html", {"company": company})
+
+
+@login_required
 def warehouse_list(request: HttpRequest) -> HttpResponse:
     """Список складов: название, локация, кол-во материалов, общая стоимость. Кнопки: Создать, Переместить, Отчёт."""
     company = _get_warehouse_company(request)
@@ -3340,6 +3383,7 @@ def stock_incoming(request: HttpRequest) -> HttpResponse:
                 price=cd["price"],
                 date=cd["date"],
                 comment=cd.get("comment", ""),
+                user=request.user,
             )
             messages.success(request, "Поступление проведено.")
             return redirect("warehouse_detail", pk=cd["warehouse"].pk)
@@ -3371,6 +3415,7 @@ def stock_writeoff(request: HttpRequest) -> HttpResponse:
                     date=cd["date"],
                     comment=cd.get("comment", ""),
                     project=cd.get("project"),
+                    user=request.user,
                 )
             except ValueError as e:
                 messages.error(request, str(e))
@@ -3410,6 +3455,7 @@ def stock_transfer(request: HttpRequest) -> HttpResponse:
                     quantity=cd["quantity"],
                     date=cd["date"],
                     comment=cd.get("comment", ""),
+                    user=request.user,
                 )
             except ValueError as e:
                 messages.error(request, str(e))

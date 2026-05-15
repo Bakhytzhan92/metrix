@@ -1,95 +1,138 @@
 {% extends "core/project/project_layout.html" %}
+{% load static %}
 
 {% block project_content %}
 <div class="space-y-4">
-  {# Заголовок и статистика #}
-  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    <h2 class="text-lg font-semibold text-slate-900">Инвентарь</h2>
-    <p class="text-sm text-slate-600">
-      {{ total_count }} единиц на сумму {{ total_sum|floatformat:0 }} ₸
-      {% if written_off_count %}| Списано {{ written_off_count }} единиц на сумму {{ written_off_sum|floatformat:0 }} ₸{% endif %}
-    </p>
-  </div>
-
-  {# Фильтры #}
-  <form method="get" class="flex flex-wrap items-center gap-2">
-    <input type="text" name="q" value="{{ search_q }}" placeholder="Поиск по названию" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-    <select name="warehouse" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500">
-      <option value="">Все склады</option>
-      {% for w in warehouses %}
-      <option value="{{ w.id }}" {% if warehouse_filter == w.id|stringformat:"d" %}selected{% endif %}>{{ w.name }}</option>
-      {% endfor %}
-    </select>
-    <select name="search_status" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500">
-      <option value="">Все статусы</option>
-      <option value="free" {% if status_filter == 'free' %}selected{% endif %}>Свободен</option>
-      <option value="in_use" {% if status_filter == 'in_use' %}selected{% endif %}>В работе</option>
-      <option value="broken" {% if status_filter == 'broken' %}selected{% endif %}>Сломан</option>
-      <option value="written_off" {% if status_filter == 'written_off' %}selected{% endif %}>Списан</option>
-    </select>
-    <button type="submit" class="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">Применить</button>
-  </form>
-
-  {# Кнопка «Создать склад» — открывает модалку #}
   <div>
-    <button type="button" id="btn-create-warehouse" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать склад</button>
+    <h2 class="text-lg font-semibold text-slate-900">Склады</h2>
+    <p class="text-sm text-slate-500">Инвентарь (оборудование) и материалы учитываются отдельно.</p>
   </div>
 
-  {# Kanban: колонки складов #}
-  <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
-    {% for warehouse, items in warehouse_columns %}
-    <div class="warehouse-column flex-shrink-0 w-72 rounded-xl border border-slate-200 bg-slate-50/50 p-3 shadow-sm" data-warehouse-id="{{ warehouse.id }}">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="font-medium text-slate-900 flex items-center gap-1">
-          <span class="text-slate-400">⌂</span> {{ warehouse.name }}
-        </h3>
-        <div class="relative warehouse-menu">
-          <button type="button" class="warehouse-menu-btn p-1 rounded hover:bg-slate-200 text-slate-500" aria-label="Меню склада">⋮</button>
-          <div class="warehouse-menu-dropdown hidden absolute right-0 top-full mt-1 py-1 w-40 rounded-lg bg-white shadow-lg border border-slate-200 z-10">
-            <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" class="block px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">+ Инвентарь</a>
+  <nav class="flex flex-wrap gap-1 border-b border-slate-200" aria-label="Склады: подразделы">
+    <button
+      type="button"
+      data-wh-main="inventory"
+      class="wh-main-tab -mb-px inline-flex rounded-t-md border border-b-0 border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-indigo-700"
+    >
+      Инвентарь
+    </button>
+    <button
+      type="button"
+      data-wh-main="materials"
+      class="wh-main-tab -mb-px inline-flex rounded-t-md border border-transparent px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-200 hover:bg-slate-50"
+    >
+      Материалы
+    </button>
+    <button
+      type="button"
+      data-wh-main="history"
+      class="wh-main-tab -mb-px inline-flex rounded-t-md border border-transparent px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-200 hover:bg-slate-50"
+    >
+      История
+    </button>
+  </nav>
+
+  {# ——— Инвентарь (Kanban, без изменений логики) ——— #}
+  <div id="wh-panel-inventory" class="wh-main-panel space-y-4">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <h3 class="text-base font-semibold text-slate-900">Инвентарь проекта</h3>
+      <p class="text-sm text-slate-600">
+        {{ total_count }} единиц на сумму {{ total_sum|floatformat:0 }} ₸
+        {% if written_off_count %}| Списано {{ written_off_count }} единиц на сумму {{ written_off_sum|floatformat:0 }} ₸{% endif %}
+      </p>
+    </div>
+
+    <form method="get" class="flex flex-wrap items-center gap-2">
+      <input type="text" name="q" value="{{ search_q }}" placeholder="Поиск по названию" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+      <select name="warehouse" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500">
+        <option value="">Все склады</option>
+        {% for w in warehouses %}
+        <option value="{{ w.id }}" {% if warehouse_filter == w.id|stringformat:"d" %}selected{% endif %}>{{ w.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="search_status" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500">
+        <option value="">Все статусы</option>
+        <option value="free" {% if status_filter == 'free' %}selected{% endif %}>Свободен</option>
+        <option value="in_use" {% if status_filter == 'in_use' %}selected{% endif %}>В работе</option>
+        <option value="repair" {% if status_filter == 'repair' %}selected{% endif %}>На ремонте</option>
+        <option value="written_off" {% if status_filter == 'written_off' %}selected{% endif %}>Списан</option>
+      </select>
+      <button type="submit" class="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">Применить</button>
+    </form>
+
+    <div>
+      <button type="button" id="btn-create-warehouse" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать склад</button>
+    </div>
+
+    <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
+      {% for warehouse, items in warehouse_columns %}
+      <div class="warehouse-column flex-shrink-0 w-72 rounded-xl border border-slate-200 bg-slate-50/50 p-3 shadow-sm{% if can_edit_project_inventory %} warehouse-column-drop{% endif %}" data-warehouse-id="{{ warehouse.id }}">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-medium text-slate-900 flex items-center gap-1">
+            <span class="text-slate-400">⌂</span> {{ warehouse.name }}
+          </h3>
+          <div class="relative warehouse-menu">
+            <button type="button" class="warehouse-menu-btn p-1 rounded hover:bg-slate-200 text-slate-500" aria-label="Меню склада">⋮</button>
+            <div class="warehouse-menu-dropdown hidden absolute right-0 top-full mt-1 py-1 w-40 rounded-lg bg-white shadow-lg border border-slate-200 z-10">
+              <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" class="block px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">+ Инвентарь</a>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="space-y-2 inventory-cards">
-        {% for item in items %}
-        {% with status=item.status %}
-        <a href="{% url 'project_inventory_update' project.pk item.id %}" class="inventory-card block rounded-lg bg-white p-3 shadow border border-slate-100 hover:shadow-md transition-shadow text-left {% if status == 'free' %}border-l-4 border-l-green-500{% elif status == 'in_use' %}border-l-4 border-l-blue-500{% elif status == 'broken' %}border-l-4 border-l-slate-400{% elif status == 'written_off' %}border-l-4 border-l-red-600{% endif %}">
-          <div class="flex gap-2">
-            <div class="flex-shrink-0 w-12 h-12 rounded bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden">
-              {% if item.image %}
-              <img src="{{ item.image.url }}" alt="" class="w-full h-full object-cover" />
-              {% else %}
-              <span class="text-lg">🔧</span>
-              {% endif %}
-            </div>
-            <div class="min-w-0 flex-1">
-              <p class="font-medium text-slate-900 truncate">{{ item.name }}</p>
-              <p class="text-xs {% if status == 'free' %}text-green-600{% elif status == 'in_use' %}text-blue-600{% elif status == 'broken' %}text-slate-500{% else %}text-red-600{% endif %}">
-                {% if status == 'free' %}Свободен
-                {% elif status == 'in_use' %}{% if item.available_from %}Доступен {{ item.available_from|date:"d.m.Y" }}{% else %}В работе{% endif %}
-                {% elif status == 'broken' %}Сломан
-                {% else %}Списан{% endif %}
-              </p>
+        <div class="space-y-2 inventory-cards">
+          {% for item in items %}
+          {% with status=item.status %}
+          <div
+            class="inventory-card rounded-lg bg-white p-3 shadow border border-slate-100 transition-shadow text-left {% if can_edit_project_inventory %}cursor-grab active:cursor-grabbing hover:shadow-md{% else %}cursor-pointer hover:shadow-md{% endif %} {% if status == 'free' %}border-l-4 border-l-green-500{% elif status == 'in_use' %}border-l-4 border-l-blue-500{% elif status == 'issued' %}border-l-4 border-l-violet-500{% elif status == 'repair' %}border-l-4 border-l-amber-500{% elif status == 'lost' %}border-l-4 border-l-rose-900{% elif status == 'written_off' %}border-l-4 border-l-red-600{% endif %}"
+            data-edit-url="{% url 'project_inventory_update' project.pk item.id %}"
+            {% if can_edit_project_inventory %}draggable="true" data-item-id="{{ item.id }}"{% endif %}
+          >
+            <div class="flex gap-2">
+              <div class="flex-shrink-0 w-12 h-12 rounded bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden">
+                {% if item.image %}
+                <img src="{{ item.image.url }}" alt="" class="w-full h-full object-cover" draggable="false" />
+                {% else %}
+                <span class="text-lg">🔧</span>
+                {% endif %}
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium text-slate-900 truncate">{{ item.name }}</p>
+                <p class="text-xs {% if status == 'free' %}text-green-600{% elif status == 'in_use' %}text-blue-600{% elif status == 'issued' %}text-violet-600{% elif status == 'repair' %}text-amber-600{% elif status == 'lost' %}text-rose-900{% else %}text-red-600{% endif %}">
+                  {% if status == 'free' %}Свободен
+                  {% elif status == 'in_use' %}{% if item.available_from %}Доступен {{ item.available_from|date:"d.m.Y" }}{% else %}В работе{% endif %}
+                  {% elif status == 'issued' %}Выдан
+                  {% elif status == 'repair' %}На ремонте
+                  {% elif status == 'lost' %}Потерян
+                  {% else %}Списан{% endif %}
+                </p>
+              </div>
             </div>
           </div>
-        </a>
-        {% endwith %}
-        {% empty %}
-        <p class="text-sm text-slate-500 py-2">Нет единиц</p>
-        {% endfor %}
+          {% endwith %}
+          {% empty %}
+          <p class="text-sm text-slate-500 py-2">Нет единиц</p>
+          {% endfor %}
+        </div>
+        <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" draggable="false" class="mt-3 flex w-full items-center justify-center rounded-lg border-2 border-dashed border-slate-200 py-3 text-sm text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">+ инвентарь</a>
       </div>
-      <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" class="mt-3 flex w-full items-center justify-center rounded-lg border-2 border-dashed border-slate-200 py-3 text-sm text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">+ инвентарь</a>
+      {% empty %}
+      <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center text-slate-500">
+        <p>Нет складов.</p>
+        <button type="button" id="btn-create-warehouse-empty" class="mt-2 text-indigo-600 hover:text-indigo-800 font-medium">Создать склад</button>
+      </div>
+      {% endfor %}
     </div>
-    {% empty %}
-    <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center text-slate-500">
-      <p>Нет складов.</p>
-      <button type="button" id="btn-create-warehouse-empty" class="mt-2 text-indigo-600 hover:text-indigo-800 font-medium">Создать склад</button>
-    </div>
-    {% endfor %}
+  </div>
+
+  {# Материалы + история операций (React) #}
+  <div id="wh-panel-react" class="wh-main-panel hidden">
+    <div id="project-materials-root" data-project-id="{{ project.pk }}"></div>
   </div>
 </div>
 
-{# Модальное окно: Создать склад #}
+{% if can_edit_project_inventory %}
+<form id="inv-dnd-csrf-holder" class="hidden">{% csrf_token %}</form>
+{% endif %}
+
 <div id="modal-create-warehouse" class="fixed inset-0 z-50 hidden" aria-hidden="true">
   <div class="fixed inset-0 bg-slate-900/50" id="modal-warehouse-backdrop"></div>
   <div class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-xl">
@@ -105,8 +148,37 @@
   </div>
 </div>
 
+<script type="module" src="{% static 'core/project_materials/board.js' %}"></script>
 <script>
 (function() {
+  var inv = document.getElementById('wh-panel-inventory');
+  var react = document.getElementById('wh-panel-react');
+  var tabs = document.querySelectorAll('.wh-main-tab');
+  function styleTabs(active) {
+    tabs.forEach(function(btn) {
+      var on = btn.getAttribute('data-wh-main') === active;
+      btn.classList.toggle('border-slate-200', on);
+      btn.classList.toggle('border-transparent', !on);
+      btn.classList.toggle('bg-white', on);
+      btn.classList.toggle('text-indigo-700', on);
+      btn.classList.toggle('font-semibold', on);
+      btn.classList.toggle('text-slate-600', !on);
+      btn.classList.toggle('font-medium', !on);
+    });
+  }
+  function setMain(tab) {
+    if (inv) inv.classList.toggle('hidden', tab !== 'inventory');
+    if (react) react.classList.toggle('hidden', tab === 'inventory');
+    styleTabs(tab);
+    document.dispatchEvent(new CustomEvent('warehouse-main-tab', { detail: tab }));
+  }
+  tabs.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      setMain(btn.getAttribute('data-wh-main'));
+    });
+  });
+  setMain('inventory');
+
   var modal = document.getElementById('modal-create-warehouse');
   var btn = document.getElementById('btn-create-warehouse');
   var btnEmpty = document.getElementById('btn-create-warehouse-empty');
@@ -132,6 +204,87 @@
   document.addEventListener('click', function() {
     document.querySelectorAll('.warehouse-menu-dropdown').forEach(function(d) { d.classList.add('hidden'); });
   });
+
+  document.querySelectorAll('.inventory-card[data-edit-url]').forEach(function(card) {
+    var url = card.getAttribute('data-edit-url');
+    card.addEventListener('click', function(e) {
+      if (card.getAttribute('data-suppress-nav') === '1') {
+        e.preventDefault();
+        return;
+      }
+      if (url) window.location.href = url;
+    });
+    if (card.getAttribute('draggable') !== 'true') return;
+    card.addEventListener('dragstart', function(e) {
+      card.removeAttribute('data-suppress-nav');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.getAttribute('data-item-id') || '');
+      try {
+        e.dataTransfer.setData('application/x-inventory-item', card.getAttribute('data-item-id') || '');
+      } catch (err) {}
+      card.classList.add('opacity-60');
+    });
+    card.addEventListener('dragend', function(ev) {
+      card.classList.remove('opacity-60');
+      if (ev.dataTransfer && ev.dataTransfer.dropEffect === 'move') {
+        card.setAttribute('data-suppress-nav', '1');
+        setTimeout(function() { card.removeAttribute('data-suppress-nav'); }, 200);
+      }
+    });
+  });
+
+  {% if can_edit_project_inventory %}
+  (function() {
+    function csrfToken() {
+      var el = document.querySelector('#inv-dnd-csrf-holder input[name="csrfmiddlewaretoken"]');
+      if (el && el.value) return el.value;
+      var m = document.cookie.match(/csrftoken=([^;]+)/);
+      return m ? decodeURIComponent(m[1]) : '';
+    }
+    var cols = document.querySelectorAll('.warehouse-column-drop');
+    cols.forEach(function(col) {
+      col.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      }, true);
+      col.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var itemId = (e.dataTransfer && e.dataTransfer.getData('text/plain')) || '';
+        if (!itemId && e.dataTransfer) {
+          try { itemId = e.dataTransfer.getData('application/x-inventory-item'); } catch (err) {}
+        }
+        var toWh = col.getAttribute('data-warehouse-id');
+        if (!itemId || !toWh) return;
+        var token = csrfToken();
+        fetch('/api/inventory/items/' + encodeURIComponent(itemId) + '/move/', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': token,
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({ to_warehouse_id: parseInt(toWh, 10), comment: 'Перетаскивание на доске проекта' })
+        }).then(function(r) {
+          if (r.ok) {
+            window.location.reload();
+            return;
+          }
+          return r.json().then(function(body) {
+            var msg = (body && body.error) ? String(body.error) : ('HTTP ' + r.status);
+            window.alert('Не удалось переместить: ' + msg);
+          }).catch(function() {
+            window.alert('Не удалось переместить (код ' + r.status + '). Проверьте права на редактирование складов.');
+          });
+        }).catch(function() {
+          window.alert('Ошибка сети при перемещении.');
+        });
+      }, true);
+    });
+  })();
+  {% endif %}
 })();
 </script>
 {% endblock %}

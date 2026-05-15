@@ -2,6 +2,8 @@ from django.urls import include, path
 
 from . import ai_api
 from . import estimate_pdf_views
+from . import inventory_api
+from . import materials_project_api
 from . import views
 from .urls_superadmin import api_urlpatterns as superadmin_api_urls
 from .urls_superadmin import urlpatterns as superadmin_page_urls
@@ -122,6 +124,56 @@ urlpatterns = [
     path("projects/<int:pk>/warehouses/inventory/create/", views.project_inventory_create, name="project_inventory_create"),
     path("projects/<int:pk>/warehouses/inventory/<int:item_id>/update/", views.project_inventory_update, name="project_inventory_update"),
     path("projects/<int:pk>/warehouses/inventory/<int:item_id>/transfer/", views.project_inventory_transfer, name="project_inventory_transfer"),
+    path(
+        "projects/<int:pk>/warehouses/inventory/<int:item_id>/delete/",
+        views.project_warehouse_inventory_delete,
+        name="project_warehouse_inventory_delete",
+    ),
+    path(
+        "api/project/<int:pk>/materials/meta/",
+        materials_project_api.api_project_materials_meta,
+        name="api_project_materials_meta",
+    ),
+    path(
+        "api/project/<int:pk>/materials/catalog/",
+        materials_project_api.api_project_materials_catalog,
+        name="api_project_materials_catalog",
+    ),
+    path(
+        "api/project/<int:pk>/materials/stocks/",
+        materials_project_api.api_project_materials_stocks,
+        name="api_project_materials_stocks",
+    ),
+    path(
+        "api/project/<int:pk>/materials/history/",
+        materials_project_api.api_project_materials_history,
+        name="api_project_materials_history",
+    ),
+    path(
+        "api/project/<int:pk>/materials/create/",
+        materials_project_api.api_project_materials_create,
+        name="api_project_materials_create",
+    ),
+    path(
+        "api/project/<int:pk>/materials/incoming/",
+        materials_project_api.api_project_materials_incoming,
+        name="api_project_materials_incoming",
+    ),
+    path(
+        "api/project/<int:pk>/materials/outgoing/",
+        materials_project_api.api_project_materials_outgoing,
+        name="api_project_materials_outgoing",
+    ),
+    path(
+        "api/project/<int:pk>/materials/transfer/",
+        materials_project_api.api_project_materials_transfer,
+        name="api_project_materials_transfer",
+    ),
+    path(
+        "api/project/<int:pk>/materials/writeoff/",
+        materials_project_api.api_project_materials_writeoff,
+        name="api_project_materials_writeoff",
+    ),
     path("projects/<int:pk>/documents/", views.project_documents, name="project_documents"),
     path("projects/<int:pk>/ai/", ai_api.project_ai_import, name="project_ai_import"),
     path("projects/<int:pk>/legacy/", views.project_detail, name="project_legacy"),
@@ -156,6 +208,21 @@ urlpatterns = [
     path("warehouses/materials/create/", views.material_create, name="material_create"),
     path("warehouses/outgoing/", views.warehouses_outgoing, name="warehouses_outgoing"),
     path("warehouses/transfer/", views.warehouses_transfer, name="warehouses_transfer"),
+    path("warehouses/inventory/", views.warehouse_inventory_erp, name="warehouse_inventory_erp"),
+    path("api/inventory/meta/", inventory_api.api_inventory_meta),
+    path("api/inventory/warehouses/summary/", inventory_api.api_inventory_warehouse_summary),
+    path("api/inventory/warehouses/", inventory_api.api_inventory_warehouses),
+    path("api/inventory/warehouses/<int:pk>/", inventory_api.api_inventory_warehouse_detail),
+    path("api/inventory/items/", inventory_api.api_inventory_items),
+    path("api/inventory/items/<int:pk>/", inventory_api.api_inventory_item_detail),
+    path("api/inventory/items/<int:pk>/move/", inventory_api.api_inventory_item_move),
+    path("api/inventory/items/<int:pk>/issue/", inventory_api.api_inventory_item_issue),
+    path("api/inventory/items/<int:pk>/return/", inventory_api.api_inventory_item_return),
+    path("api/inventory/items/<int:pk>/repair/", inventory_api.api_inventory_item_repair),
+    path("api/inventory/items/<int:pk>/lost/", inventory_api.api_inventory_item_lost),
+    path("api/inventory/items/<int:pk>/writeoff/", inventory_api.api_inventory_item_writeoff),
+    path("api/inventory/items/<int:pk>/qr/", inventory_api.api_inventory_item_qr),
+    path("api/inventory/history/", inventory_api.api_inventory_history),
     # Модуль «Отчёты»
     path("reports/", views.reports_index, name="reports_index"),
     path("reports/pnl/", views.reports_pnl, name="reports_pnl"),

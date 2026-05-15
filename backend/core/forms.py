@@ -564,26 +564,47 @@ class WarehouseCreateForm(forms.ModelForm):
 class WarehouseInventoryCreateForm(forms.ModelForm):
     """Добавление инвентаря (название, инв. номер, стоимость, дата, склад, статус, описание, фото)."""
 
+    _ALLOWED_STATUS = frozenset(
+        {
+            WarehouseInventoryItem.STATUS_FREE,
+            WarehouseInventoryItem.STATUS_IN_USE,
+            WarehouseInventoryItem.STATUS_REPAIR,
+            WarehouseInventoryItem.STATUS_WRITTEN_OFF,
+        }
+    )
+
     class Meta:
         model = WarehouseInventoryItem
         fields = (
             "name",
+            "category",
             "inventory_number",
+            "serial_number",
             "purchase_price",
             "purchase_date",
+            "warranty_until",
             "warehouse",
+            "project",
+            "responsible_user",
             "status",
             "description",
+            "comment",
             "image",
         )
         widgets = {
             "name": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Название"}),
-            "inventory_number": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Инвентарный номер"}),
+            "category": forms.Select(attrs={"class": _input_class()}),
+            "inventory_number": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Авто, если пусто"}),
+            "serial_number": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Серийный номер"}),
             "purchase_price": forms.NumberInput(attrs={"class": _input_class(), "step": "0.01", "min": "0"}),
             "purchase_date": forms.DateInput(attrs={"class": _input_class(), "type": "date"}),
+            "warranty_until": forms.DateInput(attrs={"class": _input_class(), "type": "date"}),
             "warehouse": forms.Select(attrs={"class": _input_class()}),
+            "project": forms.Select(attrs={"class": _input_class()}),
+            "responsible_user": forms.Select(attrs={"class": _input_class()}),
             "status": forms.Select(attrs={"class": _input_class()}),
             "description": forms.Textarea(attrs={"class": _input_class(), "rows": 3, "placeholder": "Описание"}),
+            "comment": forms.Textarea(attrs={"class": _input_class(), "rows": 2, "placeholder": "Комментарий"}),
             "image": forms.FileInput(attrs={"class": _input_class(), "accept": "image/*"}),
         }
 
@@ -591,19 +612,46 @@ class WarehouseInventoryCreateForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if company:
             from django.db.models import Q
+
             qs = Warehouse.objects.filter(company=company, is_deleted=False).filter(
                 Q(project=project) | Q(project__isnull=True, name="Списано")
             ).order_by("name")
             self.fields["warehouse"].queryset = qs
+            self.fields["project"].queryset = Project.objects.filter(company=company).order_by("-created_at")
+            self.fields["responsible_user"].queryset = User.objects.filter(
+                company_users__company=company,
+                company_users__is_active=True,
+            ).distinct().order_by("username")
+            self.fields["project"].required = False
+            self.fields["responsible_user"].required = False
         if default_warehouse:
             self.initial["warehouse"] = default_warehouse
         from datetime import date as d
+
         if not self.initial.get("purchase_date"):
             self.initial.setdefault("purchase_date", d.today())
+        self.fields["status"].choices = [
+            c for c in WarehouseInventoryItem.STATUS_CHOICES if c[0] in self._ALLOWED_STATUS
+        ]
+
+    def clean_status(self):
+        s = self.cleaned_data.get("status")
+        if s not in self._ALLOWED_STATUS:
+            raise ValidationError("Недопустимый статус.")
+        return s
 
 
 class WarehouseInventoryUpdateForm(forms.ModelForm):
     """Редактирование инвентаря: название, стоимость, дата покупки, статус, будет свободен, описание, фото."""
+
+    _ALLOWED_STATUS = frozenset(
+        {
+            WarehouseInventoryItem.STATUS_FREE,
+            WarehouseInventoryItem.STATUS_IN_USE,
+            WarehouseInventoryItem.STATUS_REPAIR,
+            WarehouseInventoryItem.STATUS_WRITTEN_OFF,
+        }
+    )
 
     class Meta:
         model = WarehouseInventoryItem
@@ -625,6 +673,20 @@ class WarehouseInventoryUpdateForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"class": _input_class(), "rows": 3}),
             "image": forms.FileInput(attrs={"class": _input_class(), "accept": "image/*"}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["status"].choices = [
+            c for c in WarehouseInventoryItem.STATUS_CHOICES if c[0] in self._ALLOWED_STATUS
+        ]
+        if self.instance.pk and self.instance.status not in self._ALLOWED_STATUS:
+            self.initial["status"] = WarehouseInventoryItem.STATUS_FREE
+
+    def clean_status(self):
+        s = self.cleaned_data.get("status")
+        if s not in self._ALLOWED_STATUS:
+            raise ValidationError("Недопустимый статус.")
+        return s
 
 
 class InventoryTransferForm(forms.Form):

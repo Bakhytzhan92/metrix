@@ -92,6 +92,14 @@ class Company(models.Model):
             return self.tariff.name
         return self.subscription_plan or "—"
 
+    inventory_prefix = models.CharField(
+        "Префикс инвентарных номеров",
+        max_length=8,
+        blank=True,
+        default="",
+        help_text="Напр. BKC для формата BKC-INS-000001. Если пусто — из названия компании.",
+    )
+
 
 class UserProfile(models.Model):
     """Расширение пользователя (без смены AUTH_USER_MODEL)."""
@@ -1520,6 +1528,8 @@ class Material(models.Model):
     category = models.CharField(
         "Категория", max_length=20, choices=CATEGORY_CHOICES, default=CATEGORY_MATERIAL
     )
+    supplier = models.CharField("Поставщик", max_length=255, blank=True)
+    description = models.TextField("Описание", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1571,9 +1581,20 @@ class StockMovement(models.Model):
     TYPE_WRITEOFF = "writeoff"
     TYPE_CHOICES = [
         (TYPE_INCOMING, "Поступление"),
-        (TYPE_OUTGOING, "Списание на объект"),
+        (TYPE_OUTGOING, "Расход на объект"),
         (TYPE_TRANSFER, "Перемещение"),
         (TYPE_WRITEOFF, "Списание"),
+    ]
+
+    REASON_USED = "used"
+    REASON_DEFECT = "defect"
+    REASON_LOSS = "loss"
+    REASON_DAMAGE = "damage"
+    WRITEOFF_REASON_CHOICES = [
+        (REASON_USED, "Использовано"),
+        (REASON_DEFECT, "Брак"),
+        (REASON_LOSS, "Потеря"),
+        (REASON_DAMAGE, "Повреждение"),
     ]
 
     material = models.ForeignKey(
@@ -1615,6 +1636,29 @@ class StockMovement(models.Model):
     )
     date = models.DateField("Дата")
     comment = models.CharField("Комментарий", max_length=500, blank=True)
+    supplier = models.CharField("Поставщик", max_length=255, blank=True)
+    writeoff_reason = models.CharField(
+        "Причина списания",
+        max_length=20,
+        blank=True,
+        choices=WRITEOFF_REASON_CHOICES,
+    )
+    schedule_phase = models.ForeignKey(
+        "ProjectSchedulePhase",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="material_movements",
+        verbose_name="Этап работ",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stock_movements_recorded",
+        verbose_name="Пользователь",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1634,18 +1678,55 @@ class StockMovement(models.Model):
 # ---------- Инвентарь (оборудование, инструменты): Kanban, статусы, история ----------
 
 
+class InventoryNumberSequence(models.Model):
+    """Счётчик для уникальных инвентарных номеров по компании и префиксу."""
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="inventory_sequences"
+    )
+    key = models.CharField("Ключ (INS, TOOL, EQP, EL…)", max_length=16, db_index=True)
+    last_value = models.PositiveIntegerField("Последнее значение", default=0)
+
+    class Meta:
+        verbose_name = "Счётчик инвентарных номеров"
+        verbose_name_plural = "Счётчики инвентарных номеров"
+        constraints = [
+            models.UniqueConstraint(fields=["company", "key"], name="uniq_inventory_seq_company_key"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.company_id} {self.key}: {self.last_value}"
+
+
 class WarehouseInventoryItem(models.Model):
     """Единица инвентаря (оборудование, инструмент) на складе."""
 
     STATUS_FREE = "free"
     STATUS_IN_USE = "in_use"
-    STATUS_BROKEN = "broken"
+    STATUS_ISSUED = "issued"
+    STATUS_REPAIR = "repair"
     STATUS_WRITTEN_OFF = "written_off"
+    STATUS_LOST = "lost"
+    # legacy в БД; в коде не используем после миграции
+    STATUS_BROKEN_LEGACY = "broken"
     STATUS_CHOICES = [
         (STATUS_FREE, "Свободен"),
         (STATUS_IN_USE, "В работе"),
-        (STATUS_BROKEN, "Сломан"),
+        (STATUS_ISSUED, "Выдан"),
+        (STATUS_REPAIR, "На ремонте"),
         (STATUS_WRITTEN_OFF, "Списан"),
+        (STATUS_LOST, "Потерян"),
+    ]
+
+    CATEGORY_TOOL = "tool"
+    CATEGORY_EQUIPMENT = "equipment"
+    CATEGORY_ELECTRIC = "electric"
+    CATEGORY_OTHER = "other"
+    CATEGORY_CHOICES = [
+        (CATEGORY_TOOL, "Инструмент"),
+        (CATEGORY_EQUIPMENT, "Оборудование"),
+        (CATEGORY_ELECTRIC, "Электрика"),
+        (CATEGORY_OTHER, "Прочее"),
     ]
 
     company = models.ForeignKey(
@@ -1654,19 +1735,57 @@ class WarehouseInventoryItem(models.Model):
     warehouse = models.ForeignKey(
         Warehouse, on_delete=models.CASCADE, related_name="warehouse_inventory_items"
     )
+    project = models.ForeignKey(
+        "Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="warehouse_inventory_items",
+        verbose_name="Проект",
+    )
     name = models.CharField("Название", max_length=500)
+    category = models.CharField(
+        "Категория",
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        default=CATEGORY_OTHER,
+    )
     inventory_number = models.CharField("Инвентарный номер", max_length=100, blank=True)
+    serial_number = models.CharField("Серийный номер", max_length=128, blank=True)
     status = models.CharField(
         "Статус", max_length=20, choices=STATUS_CHOICES, default=STATUS_FREE
+    )
+    responsible_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory_responsible",
+        verbose_name="Ответственный",
+    )
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory_assigned",
+        verbose_name="Кому выдано",
     )
     purchase_price = models.DecimalField(
         "Стоимость (₽)", max_digits=14, decimal_places=2, default=0, null=True, blank=True
     )
     purchase_date = models.DateField("Дата покупки", null=True, blank=True)
+    warranty_until = models.DateField("Гарантия до", null=True, blank=True)
     description = models.TextField("Описание", blank=True)
+    comment = models.TextField("Комментарий", blank=True)
     image = models.FileField(
         "Фото", upload_to="inventory/", null=True, blank=True
     )
+    qr_image = models.ImageField(
+        "QR-код", upload_to="inventory/qr/", null=True, blank=True
+    )
+    issued_at = models.DateTimeField("Дата выдачи", null=True, blank=True)
+    return_due_at = models.DateField("Срок возврата", null=True, blank=True)
     available_from = models.DateField(
         "Будет свободен", null=True, blank=True,
         help_text="Дата освобождения при статусе «В работе»",
@@ -1678,6 +1797,13 @@ class WarehouseInventoryItem(models.Model):
         ordering = ["-updated_at"]
         verbose_name = "Инвентарь"
         verbose_name_plural = "Инвентарь"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "inventory_number"],
+                condition=~models.Q(inventory_number=""),
+                name="uniq_inventory_number_per_company_when_set",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name
@@ -1702,6 +1828,7 @@ class InventoryTransfer(models.Model):
         null=True,
         related_name="inventory_transfers",
     )
+    comment = models.CharField("Комментарий", max_length=500, blank=True)
 
     class Meta:
         ordering = ["-date"]
@@ -1719,11 +1846,21 @@ class InventoryLog(models.Model):
     ACTION_MOVED = "moved"
     ACTION_UPDATED = "updated"
     ACTION_STATUS_CHANGED = "status_changed"
+    ACTION_ISSUED = "issued"
+    ACTION_RETURNED = "returned"
+    ACTION_REPAIR = "repair"
+    ACTION_WRITEOFF = "writeoff"
+    ACTION_LOST = "lost"
     ACTION_CHOICES = [
         (ACTION_CREATED, "Создан инвентарь"),
         (ACTION_MOVED, "Перемещён"),
         (ACTION_UPDATED, "Изменён"),
         (ACTION_STATUS_CHANGED, "Изменён статус"),
+        (ACTION_ISSUED, "Выдан сотруднику"),
+        (ACTION_RETURNED, "Возврат"),
+        (ACTION_REPAIR, "На ремонте"),
+        (ACTION_WRITEOFF, "Списан"),
+        (ACTION_LOST, "Потерян"),
     ]
 
     item = models.ForeignKey(
@@ -1731,6 +1868,7 @@ class InventoryLog(models.Model):
     )
     action = models.CharField("Действие", max_length=20, choices=ACTION_CHOICES)
     description = models.CharField("Описание", max_length=500, blank=True)
+    details = models.JSONField("Детали", default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
