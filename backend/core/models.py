@@ -389,6 +389,10 @@ class EstimateSection(models.Model):
         return sum((i.total_price for i in self.items.all()), Decimal("0"))
 
 
+# Локальные сметы (PDF): наименования работ часто длинные; лимит для импорта/парсера.
+ESTIMATE_ITEM_NAME_MAX_LENGTH = 16_000
+
+
 class EstimateItem(models.Model):
     """Позиция сметы внутри раздела."""
 
@@ -406,7 +410,7 @@ class EstimateItem(models.Model):
     section = models.ForeignKey(
         EstimateSection, on_delete=models.CASCADE, related_name="items"
     )
-    name = models.CharField("Название", max_length=500, blank=True)
+    name = models.TextField("Название", blank=True)
     type = models.CharField(
         "Тип", max_length=20, choices=TYPE_CHOICES, default=TYPE_MATERIAL
     )
@@ -495,6 +499,18 @@ class EstimateItem(models.Model):
         max_length=20,
         choices=CONSTRUCTION_EXEC_STATUS_CHOICES,
         default=CONSTRUCTION_NOT_STARTED,
+    )
+    pdf_pos_no = models.CharField(
+        "Импорт PDF: № п/п",
+        max_length=16,
+        blank=True,
+        default="",
+    )
+    pdf_norm_code = models.CharField(
+        "Импорт PDF: шифр нормы",
+        max_length=64,
+        blank=True,
+        default="",
     )
 
     class Meta:

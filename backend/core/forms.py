@@ -867,7 +867,13 @@ class EstimateItemForm(forms.ModelForm):
         model = EstimateItem
         fields = ("name", "type", "unit", "quantity", "cost_price", "markup_percent", "order")
         widgets = {
-            "name": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Название"}),
+            "name": forms.Textarea(
+                attrs={
+                    "class": _input_class(),
+                    "rows": 5,
+                    "placeholder": "Наименование",
+                }
+            ),
             "type": forms.Select(attrs={"class": _input_class()}),
             "unit": forms.TextInput(attrs={"class": _input_class(), "placeholder": "ед. изм."}),
             "quantity": forms.NumberInput(attrs={"class": _input_class(), "step": "any", "min": "0"}),
