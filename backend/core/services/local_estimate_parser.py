@@ -837,6 +837,28 @@ def _lookahead_qty_unit(
     return None, ""
 
 
+def _infer_unit_from_cell_text(*parts: str) -> str:
+    """
+    Кол.4 иногда пустая при съезженной геометрии (номер/шифр попали не в те
+    колонки). Ищем м²/м³/т и т.д. в склейке строки или в наименовании.
+    """
+    blob = _norm(_collapse_m_units(" ".join(p for p in parts if p)))
+    if not blob:
+        return ""
+    checks = (
+        (r"(?i)т[\s·]*км", "т·км"),
+        (r"(?i)\bм3\b|м³", "м3"),
+        (r"(?i)\bм2\b|м²", "м2"),
+        (r"(?i)\bшт\b", "шт"),
+        (r"(?i)\bкм\b", "км"),
+        (r"(?i)(?<![а-яёa-z])т(?=\s|$|и|,|\.)", "т"),
+    )
+    for pat, u in checks:
+        if re.search(pat, blob):
+            return u
+    return ""
+
+
 def _merge_continuation_rows(rows: list[AbcGridRow]) -> list[AbcGridRow]:
     """
     Многострочное наименование АВС: до строки с двумя суммами или «НР - …%».
@@ -1102,6 +1124,14 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                 if m:
                     g3 = m.group(3) or ""
                     name_src = _strip_price_tail(_norm(g3))
+            if (not unit) and qty is not None and qty > 0:
+                gu = _infer_unit_from_cell_text(
+                    raw,
+                    row.raw_joined or "",
+                    name_src,
+                )
+                if gu:
+                    unit = gu
             name_f = _finalize_name_col3(name_src, unit, qty)
             if name_f and unit and qty is not None and qty > 0:
                 cipher_k = _pos_cipher_cell(
