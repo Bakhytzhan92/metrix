@@ -3,11 +3,49 @@
 import django.db.models.deletion
 from django.conf import settings
 from django.db import migrations, models
+from django.db.models import Count
 
 
 def fix_legacy_broken_status(apps, schema_editor):
     WarehouseInventoryItem = apps.get_model("core", "WarehouseInventoryItem")
     WarehouseInventoryItem.objects.filter(status="broken").update(status="repair")
+
+
+def dedupe_inventory_numbers_before_unique(apps, schema_editor):
+    """Перед частичным UniqueConstraint: снять дубли (company, inventory_number), иначе создание индекса падает."""
+    WarehouseInventoryItem = apps.get_model("core", "WarehouseInventoryItem")
+    dup_keys = (
+        WarehouseInventoryItem.objects.exclude(inventory_number="")
+        .values("company_id", "inventory_number")
+        .annotate(c=Count("id"))
+        .filter(c__gt=1)
+    )
+    for row in dup_keys:
+        company_id = row["company_id"]
+        base = row["inventory_number"]
+        qs = (
+            WarehouseInventoryItem.objects.filter(
+                company_id=company_id,
+                inventory_number=base,
+            )
+            .order_by("id")
+        )
+        keep_id = qs.values_list("id", flat=True).first()
+        for item in qs.exclude(id=keep_id):
+            k = 0
+            while True:
+                tail = f"__dup__{item.pk}" + (f"_{k}" if k else "")
+                # inventory_number max_length=100
+                new_val = (base + tail)[:100]
+                clash = WarehouseInventoryItem.objects.filter(
+                    company_id=company_id,
+                    inventory_number=new_val,
+                ).exclude(pk=item.pk)
+                if not clash.exists():
+                    break
+                k += 1
+            item.inventory_number = new_val
+            item.save(update_fields=["inventory_number"])
 
 
 class Migration(migrations.Migration):
@@ -106,6 +144,7 @@ class Migration(migrations.Migration):
             name='status',
             field=models.CharField(choices=[('free', 'Свободен'), ('in_use', 'В работе'), ('issued', 'Выдан'), ('repair', 'На ремонте'), ('written_off', 'Списан'), ('lost', 'Потерян')], default='free', max_length=20, verbose_name='Статус'),
         ),
+        migrations.RunPython(dedupe_inventory_numbers_before_unique, migrations.RunPython.noop),
         migrations.AddConstraint(
             model_name='warehouseinventoryitem',
             constraint=models.UniqueConstraint(condition=models.Q(('inventory_number', ''), _negated=True), fields=('company', 'inventory_number'), name='uniq_inventory_number_per_company_when_set'),
