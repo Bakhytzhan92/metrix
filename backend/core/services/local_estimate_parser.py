@@ -54,6 +54,11 @@ RE_POS = re.compile(
     r"((?:\d+-\d+-\d+)(?:'[0-9+,\s.]+'[0-9'+\s.]*)?)\s*"
     r"(.*)$"
 )
+# Второй столбец — «Прайслист» / «Прайс-лист» вместо шифра нормы
+RE_POS_PRICELIST = re.compile(
+    r"^(\d{1,4})\.?\s+(Прайслист|Прайс[\s-]*лист)\b\s*(.*)$",
+    re.IGNORECASE,
+)
 RE_NAIM_OBJ = re.compile(
     r"^Наименование\s+объекта\s*[-–—:]\s*(.+?)\s*$",
     re.IGNORECASE,
@@ -134,6 +139,14 @@ def _normalize_re_pos_line(s: str) -> str:
         s,
     )
     return s
+
+
+def _match_position_head(ph: str) -> re.Match[str] | None:
+    ph = _normalize_re_pos_line(ph)
+    m = RE_POS.match(ph)
+    if m:
+        return m
+    return RE_POS_PRICELIST.match(ph)
 
 
 def _fnum(s: str) -> float | None:
@@ -479,7 +492,7 @@ def _name_from_pos_raw_joined(raw: str) -> str:
         return ""
     s = _norm(raw)
     nps = _normalize_re_pos_line(s)
-    m = RE_POS.match(nps)
+    m = _match_position_head(nps)
     if not m:
         return ""
     tail = (m.group(3) or "").strip()
@@ -565,9 +578,7 @@ def _continuation_name_fragment(nxt: AbcGridRow) -> str:
 
 def _abc_merge_name_from_cells(r: AbcGridRow) -> str:
     ph = r.pos_head()
-    m = RE_POS.match(
-        ph,
-    )
+    m = _match_position_head(ph)
     prefix = _norm(
         m.group(3) or "",
     ) if m else ""
@@ -713,7 +724,7 @@ def _is_section_line(ln: str) -> bool:
     if re.match(r"^1\s+2\s+3", ln) or len(ln) < 8:
         return False
     st = ln.strip()
-    if RE_POS.match(_normalize_re_pos_line(st)):
+    if _match_position_head(st):
         return False
     if RE_SECTION.match(st):
         if re.match(
@@ -736,7 +747,7 @@ def _is_section_line(ln: str) -> bool:
     if len(stn) > 100:
         return False
     tail = re.sub(r"^[\d\s·.]{0,24}", "", stn, flags=re.I).strip()
-    if not RE_POS.match(_normalize_re_pos_line(st)):
+    if not _match_position_head(st):
         if re.match(r"(?i)^КОНЦЕВОЙ\s+КОЛОДЕЦ\b", tail):
             return True
         if re.match(r"(?i)^ПОВОРОТНЫЙ\s+КОЛОДЕЦ\b", tail):
@@ -748,22 +759,28 @@ def _is_section_line(ln: str) -> bool:
 
 def _is_position_start(row: AbcGridRow) -> bool:
     h = row.pos_head()
-    return bool(RE_POS.match(h))
+    return bool(_match_position_head(h))
 
 
 def _pos_cipher_cell(row: AbcGridRow) -> str:
-    """Шифр из кол.1–2 (вторая группа RE_POS), для уникальности дедупа."""
+    """Шифр из кол.1–2 (вторая группа RE_POS / Прайслист), для уникальности дедупа."""
     ph = _normalize_re_pos_line(row.pos_head())
-    m = RE_POS.match(ph)
+    m = _match_position_head(ph)
     if not m:
         return ""
-    return _norm(m.group(2) or "")
+    g2 = _norm(m.group(2) or "")
+    g2_compact = g2.replace(" ", "")
+    if re.match(r"^\d+-\d+-\d+", g2_compact):
+        return g2_compact
+    if re.search(r"(?i)прайс", g2):
+        return "Прайслист"
+    return g2_compact
 
 
 def _pos_line_no(row: AbcGridRow) -> str:
-    """№ п/п позиции (первая группа RE_POS)."""
+    """№ п/п позиции (первая группа RE_POS / Прайслист)."""
     ph = _normalize_re_pos_line(row.pos_head())
-    m = RE_POS.match(ph)
+    m = _match_position_head(ph)
     if not m:
         return ""
     return _norm(m.group(1) or "").rstrip(".")
@@ -1048,7 +1065,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                     row,
                 )
             if not name_src:
-                m = RE_POS.match(row.pos_head())
+                m = _match_position_head(row.pos_head())
                 if m:
                     g3 = m.group(3) or ""
                     name_src = _strip_price_tail(_norm(g3))
