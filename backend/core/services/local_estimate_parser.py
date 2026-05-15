@@ -67,9 +67,16 @@ RE_TABLE_COLS = re.compile(
     r"^\d{1,2}\s+\d{1,2}\s+\d{1,2}\s+\d{1,2}\s+\d{1,2}\s+\d{1,2}\s+\d{1,2}\s+"
     r"[\d-]"
 )
+# Подзаголовок между позициями («литальный» или частая опечатка «лекальный»)
+_RE_MONOLITH_CAST_BLOCK_LINE = re.compile(
+    r"^Монолитный\s+(?:литальный|л[ие]кальный)\s+блок\s*\.?\s*$",
+    re.IGNORECASE,
+)
 RE_SECTION = re.compile(
     r"^(?:КАНАЛ|П\s+КАНАЛ|ДЮКЕР|"
     r"ДЕМОНТАЖНЫЕ\s+РАБОТЫ|СТРОИТЕЛЬНЫЕ\s+РАБОТЫ|МОНТАЖНЫЕ\s+РАБОТЫ|"
+    r"ПРОЧИЕ\s+РАБОТЫ|"
+    r"(?:МОНОЛИТНЫЙ\s+ЛИТАЛЬНЫЙ|МОНОЛИТНЫЙ\s+Л[ИЕ]КАЛЬНЫЙ)\s+БЛОК|"
     r"ЗЕМЛЯНЫЕ\s+РАБОТЫ|КОНЦЕВОЙ\s+КОЛОДЕЦ|ПОВОРОТНЫЙ\s+КОЛОДЕЦ|"
     r"ЛОТКОВЫЙ\s+КАНАЛ)",
     re.IGNORECASE,
@@ -649,13 +656,32 @@ def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
         n = _norm(n2)
     n = re.sub(r"(?:^|\s)СП\s*-\s*\d+\s*%\s*", " ", n, flags=re.I)
     n = re.sub(r"Страниц\s*-\s*\d+", "", n, flags=re.I)
-    n = re.sub(r"(?i)\s*Изм\.\s*и\s*доп\.\s*вып\.?\s*", " ", n)
+    # «Изм. и доп. вып. 26» из колонки шифра — убираем вместе с номером выпуска
+    n = re.sub(r"(?i)\s*Изм\.\s*и\s*доп\.\s*вып\.?\s*\d*\s*", " ", n)
+    # Если номер выпуска оторвался и остался хвостом «... материалов. 26»
+    n = re.sub(r"(?<=\.)\s+\d{1,3}\s*$", "", n)
     n = re.sub(r"(?i)\s*РСНБ\s+РК\s*\d{4}(?:\s*г\.?)?\s*", " ", n)
     n = re.sub(r"(?i)\s*Кзтр\s+и\s+Кэм\s*=\s*[\d.,]+\s*", " ", n)
     n = re.sub(r"(?i)\s*Кзтр\s*=\s*[\d.,]+(?:\s*[;,]\s*)?", " ", n)
     n = re.sub(r"(?i)\s*Кэм\s*=\s*[\d.,]+\s*", " ", n)
     n = _strip_abc_branding_and_column_tail(n)
     n = _strip_price_tail(n)
+    n = re.sub(r"(?i)\s+ПРОЧИЕ\s+РАБОТЫ\s*$", "", n)
+    n = re.sub(
+        r"(?i)\s+Монолитный\s+(?:литальный|л[ие]кальный)\s+блок\s*\.?\s*$",
+        "",
+        n,
+    )
+    # Подзаголовок сметы оторвал «мм» от «…диаметром от A до B»
+    if re.search(r"(?i)диаметром\s+от\s+\d+\s+до\s+\d+", n) and not re.search(
+        r"(?i)диаметром\s+от\s+\d+\s+до\s+\d+.*\bмм\b",
+        n,
+    ):
+        n = re.sub(
+            r"(?i)(диаметром\s+от\s+\d+\s+до\s+)(\d+)\s*\.?\s*$",
+            r"\1\2 мм.",
+            n,
+        )
     # «т 2 264050 3» — хвост из колонок стоимости
     n = re.sub(r"(?i)(?<=[а-яё.)])\s+т\s+[\d\s,./-]+$", "", n)
     n = re.sub(
@@ -703,6 +729,8 @@ _SECTION_MARKERS_IN_MIXED_LSR_LINE = (
     r"\bДЕМОНТАЖНЫЕ\s+РАБОТЫ\b",
     r"\bСТРОИТЕЛЬНЫЕ\s+РАБОТЫ\b",
     r"\bМОНТАЖНЫЕ\s+РАБОТЫ\b",
+    r"\bПРОЧИЕ\s+РАБОТЫ\b",
+    r"\bМонолитный\s+(?:литальный|л[ие]кальный)\s+блок\b",
     r"\bЗЕМЛЯНЫЕ\s+РАБОТЫ\b",
     r"\bЛОТКОВЫЙ\s+КАНАЛ\b",
     r"\bКОНЦЕВОЙ\s+КОЛОДЕЦ\b",
@@ -786,6 +814,10 @@ def _is_section_line(ln: str) -> bool:
         if re.match(r"(?i)^ПОВОРОТНЫЙ\s+КОЛОДЕЦ\b", tail):
             return True
         if re.match(r"(?i)^ЗЕМЛЯНЫЕ\s+РАБОТЫ\b", tail):
+            return True
+        if re.match(r"(?i)^ПРОЧИЕ\s+РАБОТЫ\b", tail):
+            return True
+        if _RE_MONOLITH_CAST_BLOCK_LINE.match(tail):
             return True
     return False
 
@@ -890,7 +922,7 @@ def _merge_continuation_rows(rows: list[AbcGridRow]) -> list[AbcGridRow]:
             if _is_position_start(nxt):
                 break
             rjn = nxt.raw_joined or ""
-            if _is_section_line(rjn) and len(_norm(nxt.c3)) < 160:
+            if _is_section_line(rjn):
                 break
             if _is_abc_price_row(rjn):
                 break
@@ -934,7 +966,29 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
     object_name: str | None = None
     auto_razdel = 1
     pending_razdel: str | None = None
+    last_zemlyanye_section: str | None = None
     prev_raw_low: str | None = None
+
+    def _remember_carriageway_ctx(sec: str | None) -> None:
+        """
+        Сохраняем секцию колодца/земляных работ для строки «Проезжая часть»:
+        в PDF между позициями часто вставляют заголовок следующего объекта (Дюкер),
+        из‑за чего позиции проезжей оказываются под чужим ГР до нормального подвала сметы.
+        """
+        nonlocal last_zemlyanye_section
+        if not sec:
+            return
+        tail = sec.split("|", 1)[-1].strip() if "|" in sec else sec.strip()
+        if re.match(r"(?i)^ДЮКЕР\b", tail):
+            return
+        if _ZEMLYANYE_SECTION_SUFFIX in sec:
+            last_zemlyanye_section = sec
+            return
+        if re.search(r"(?i)ПОВОРОТНЫЙ\s+КОЛОДЕЦ", tail) or re.search(
+            r"(?i)КОНЦЕВОЙ\s+КОЛОДЕЦ",
+            tail,
+        ):
+            last_zemlyanye_section = sec
     n = len(grid)
     i = 0
     while i < n:
@@ -956,6 +1010,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
             pending_razdel = None
             object_name = None
             auto_razdel = 1
+            last_zemlyanye_section = None
             prev_raw_low = low_raw
             i += 1
             continue
@@ -997,6 +1052,16 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
             prev_raw_low = low_raw
             i += 1
             continue
+        comb_hdr = _norm(f"{raw} {probe}")
+        if re.search(r"(?i)\bПРОЕЗЖАЯ\s+ЧАСТЬ\b", comb_hdr) or re.search(
+            r"(?i)\bПРОЕЗДНАЯ\s+ЧАСТЬ\b",
+            comb_hdr,
+        ):
+            if last_zemlyanye_section:
+                section = last_zemlyanye_section
+            prev_raw_low = low_raw
+            i += 1
+            continue
         m_obj = RE_NAIM_OBJ.match(_norm(probe))
         if not m_obj and raw:
             m_obj = RE_NAIM_OBJ.match(_norm(raw))
@@ -1017,6 +1082,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
             if nid:
                 if lsr_id != nid:
                     auto_razdel = 1
+                    last_zemlyanye_section = None
                 lsr_id = nid
         nline = _norm(probe)
         m_raz = RE_RAZDEL.match(nline)
@@ -1081,6 +1147,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                         lsr_id,
                         merged,
                     )[:255]
+                    _remember_carriageway_ctx(section)
                     prev_raw_low = low_raw
                     i += 1
                     continue
@@ -1099,7 +1166,31 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                     )
                 ):
                     body = _norm(f"{sec_tail} {body}")[:220]
+                if (
+                    sec_tail
+                    and len(sec_tail) > 12
+                    and re.match(
+                        r"(?i)^ПРОЧИЕ\s+РАБОТЫ\s*$",
+                        body,
+                    )
+                    and not re.search(
+                        r"(?i)\bПРОЧИЕ\s+РАБОТЫ\b",
+                        sec_tail,
+                    )
+                ):
+                    body = _norm(f"{sec_tail} {body}")[:220]
+                if (
+                    sec_tail
+                    and len(sec_tail) > 12
+                    and _RE_MONOLITH_CAST_BLOCK_LINE.match(body)
+                    and not re.search(
+                        r"(?i)\bМонолитный\s+(?:литальный|л[ие]кальный)\s+блок\b",
+                        sec_tail,
+                    )
+                ):
+                    body = _norm(f"{sec_tail} {body}")[:220]
             section = _format_section(lsr_id, body)[:255]
+            _remember_carriageway_ctx(section)
             prev_raw_low = low_raw
             i += 1
             continue
