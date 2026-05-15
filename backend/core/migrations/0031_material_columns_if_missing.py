@@ -37,8 +37,9 @@ def _add_column_safe(cursor, table: str, ddl: str, cols: set[str], col_name: str
 def forwards(apps, schema_editor):
     with connection.cursor() as cursor:
         if connection.vendor == "postgresql":
+            # В Postgres "" — идентификатор, не строка; пустая строка только ''.
             cursor.execute(
-                'ALTER TABLE core_material ADD COLUMN IF NOT EXISTS supplier varchar(255) NOT NULL DEFAULT ""'
+                "ALTER TABLE core_material ADD COLUMN IF NOT EXISTS supplier varchar(255) NOT NULL DEFAULT ''"
             )
             cursor.execute(
                 "ALTER TABLE core_material ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT ''"
@@ -65,7 +66,7 @@ def forwards(apps, schema_editor):
         if "supplier" not in sm_cols:
             if connection.vendor == "postgresql":
                 cursor.execute(
-                    'ALTER TABLE core_stockmovement ADD COLUMN IF NOT EXISTS supplier varchar(255) NOT NULL DEFAULT ""'
+                    "ALTER TABLE core_stockmovement ADD COLUMN IF NOT EXISTS supplier varchar(255) NOT NULL DEFAULT ''"
                 )
             else:
                 cursor.execute(
