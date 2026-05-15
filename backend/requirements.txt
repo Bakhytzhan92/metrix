@@ -1,0 +1,3 @@
+# If Railway «Root Directory» = backend, pip uses this file.
+# Keeps a single dependency list at the repository root.
+-r ../requirements.txt

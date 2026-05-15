@@ -1,7 +1,8 @@
 [build]
-buildCommand = "pip install -r requirements.txt && cd backend && python manage.py collectstatic --noinput"
+# Работает при Root Directory = репозиторий (есть ./requirements.txt) или = backend (есть backend/requirements.txt → -r ../requirements.txt).
+buildCommand = "pip install -r requirements.txt && if [ -f manage.py ]; then python manage.py collectstatic --noinput; else cd backend && python manage.py collectstatic --noinput; fi"
 
 [deploy]
-preDeployCommand = "cd backend && python manage.py migrate --noinput"
+preDeployCommand = "if [ -f manage.py ]; then python manage.py migrate --noinput; else cd backend && python manage.py migrate --noinput; fi"
 # Таймаут >30с: разбор больших PDF (pdfplumber/PyMuPDF) иначе даёт WORKER TIMEOUT.
-startCommand = "cd backend && python -m gunicorn gectaro_saas.wsgi:application --bind 0.0.0.0:$PORT --timeout 180 --graceful-timeout 60"
+startCommand = "if [ -f manage.py ]; then python -m gunicorn gectaro_saas.wsgi:application --bind 0.0.0.0:$PORT --timeout 180 --graceful-timeout 60; else cd backend && python -m gunicorn gectaro_saas.wsgi:application --bind 0.0.0.0:$PORT --timeout 180 --graceful-timeout 60; fi"
