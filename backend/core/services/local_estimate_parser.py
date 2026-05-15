@@ -592,6 +592,45 @@ def _abc_merge_name_from_cells(r: AbcGridRow) -> str:
     return prefix or c3
 
 
+def _strip_abc_branding_and_column_tail(name: str) -> str:
+    """
+    Мусор из шапки/колонтитула АВС: «(Программный) комплекс АВС (редакция…)»,
+    цепочки «1 2 3 …» и короткие хвосты «2 3» после точки/скобки.
+    """
+    n = _norm(name)
+    if not n:
+        return n
+    n = re.sub(
+        r"(?i)\s*(?:программный\s+)?комплекс\s+АВС\s*(?:\([^)]{0,160}\))?",
+        " ",
+        n,
+    )
+    n = re.sub(
+        r"(?i)\s*редакция\s+[\d.]+\s*",
+        " ",
+        n,
+    )
+    n = re.sub(r"\b(?:\d{1,2}\s+){4,}\d{1,2}\b", " ", n)
+    for _ in range(6):
+        n2 = re.sub(
+            r"(?<=[\.\)а-яё»\"·])\s+(?:\d{1,2}(?:\s+\d{1,2}){1,11})\s*$",
+            "",
+            n,
+            flags=re.I,
+        )
+        n2 = re.sub(
+            r"(?<=[а-яёa-z])\.?\s+(?:\d{1,2}(?:\s+\d{1,2}){1,11})\s*$",
+            "",
+            n2,
+            flags=re.I,
+        )
+        n2 = _norm(n2)
+        if n2 == n:
+            break
+        n = n2
+    return n
+
+
 def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
     """
     Наименование — только кол.3. Убираем типичные хвосты и дубли ед./кол-ва.
@@ -610,18 +649,12 @@ def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
         n = _norm(n2)
     n = re.sub(r"(?:^|\s)СП\s*-\s*\d+\s*%\s*", " ", n, flags=re.I)
     n = re.sub(r"Страниц\s*-\s*\d+", "", n, flags=re.I)
-    n = re.sub(
-        r"Программный\s+комплекс\s+АВС[^\w]*[\w.()]*",
-        "",
-        n,
-        flags=re.I,
-    )
     n = re.sub(r"(?i)\s*Изм\.\s*и\s*доп\.\s*вып\.?\s*", " ", n)
     n = re.sub(r"(?i)\s*РСНБ\s+РК\s*\d{4}(?:\s*г\.?)?\s*", " ", n)
     n = re.sub(r"(?i)\s*Кзтр\s+и\s+Кэм\s*=\s*[\d.,]+\s*", " ", n)
     n = re.sub(r"(?i)\s*Кзтр\s*=\s*[\d.,]+(?:\s*[;,]\s*)?", " ", n)
     n = re.sub(r"(?i)\s*Кэм\s*=\s*[\d.,]+\s*", " ", n)
-    n = re.sub(r"\b(?:\d{1,2}\s+){4,}\d{1,2}\b", " ", n)
+    n = _strip_abc_branding_and_column_tail(n)
     n = _strip_price_tail(n)
     # «т 2 264050 3» — хвост из колонок стоимости
     n = re.sub(r"(?i)(?<=[а-яё.)])\s+т\s+[\d\s,./-]+$", "", n)
