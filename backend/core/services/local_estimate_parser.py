@@ -65,7 +65,8 @@ RE_TABLE_COLS = re.compile(
 RE_SECTION = re.compile(
     r"^(?:КАНАЛ|П\s+КАНАЛ|ДЮКЕР|"
     r"ДЕМОНТАЖНЫЕ\s+РАБОТЫ|СТРОИТЕЛЬНЫЕ\s+РАБОТЫ|МОНТАЖНЫЕ\s+РАБОТЫ|"
-    r"ЗЕМЛЯНЫЕ\s+РАБОТЫ|КОНЦЕВОЙ\s+КОЛОДЕЦ|ЛОТКОВЫЙ\s+КАНАЛ)",
+    r"ЗЕМЛЯНЫЕ\s+РАБОТЫ|КОНЦЕВОЙ\s+КОЛОДЕЦ|ПОВОРОТНЫЙ\s+КОЛОДЕЦ|"
+    r"ЛОТКОВЫЙ\s+КАНАЛ)",
     re.IGNORECASE,
 )
 RE_RAZDEL = re.compile(
@@ -619,6 +620,7 @@ _SECTION_MARKERS_IN_MIXED_LSR_LINE = (
     r"\bЗЕМЛЯНЫЕ\s+РАБОТЫ\b",
     r"\bЛОТКОВЫЙ\s+КАНАЛ\b",
     r"\bКОНЦЕВОЙ\s+КОЛОДЕЦ\b",
+    r"\bПОВОРОТНЫЙ\s+КОЛОДЕЦ\b",
 )
 
 
@@ -694,6 +696,8 @@ def _is_section_line(ln: str) -> bool:
     tail = re.sub(r"^[\d\s·.]{0,24}", "", stn, flags=re.I).strip()
     if not RE_POS.match(_normalize_re_pos_line(st)):
         if re.match(r"(?i)^КОНЦЕВОЙ\s+КОЛОДЕЦ\b", tail):
+            return True
+        if re.match(r"(?i)^ПОВОРОТНЫЙ\s+КОЛОДЕЦ\b", tail):
             return True
         if re.match(r"(?i)^ЗЕМЛЯНЫЕ\s+РАБОТЫ\b", tail):
             return True
