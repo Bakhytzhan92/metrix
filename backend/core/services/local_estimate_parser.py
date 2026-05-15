@@ -220,6 +220,48 @@ def _format_section(lsr: str | None, body: str) -> str:
     return t
 
 
+_ZEMLYANYE_SECTION_SUFFIX = " ЗЕМЛЯНЫЕ РАБОТЫ"
+
+
+def _normalize_zemlyanye_section_groups(items: list[dict[str, Any]]) -> None:
+    """
+    Подряд идущие позиции с секцией X и X + « ЗЕМЛЯНЫЕ РАБОТЫ» объединяют одну
+    длинную секцию — иначе при импорте получаются два EstimateSection, и демонтаж
+    «теряется» из карточки земляных работ.
+    """
+    if not items:
+        return
+    i = 0
+    n = len(items)
+    while i < n:
+        sec0 = _norm(items[i].get("section") or "")
+        if not sec0:
+            i += 1
+            continue
+        if sec0.endswith(_ZEMLYANYE_SECTION_SUFFIX):
+            base = _norm(sec0[: -len(_ZEMLYANYE_SECTION_SUFFIX)]).rstrip()
+        else:
+            base = sec0
+        long_sec = base + _ZEMLYANYE_SECTION_SUFFIX
+        j = i + 1
+        saw_long = sec0 == long_sec
+        while j < n:
+            s = _norm(items[j].get("section") or "")
+            if s == base:
+                j += 1
+                continue
+            if s == long_sec:
+                saw_long = True
+                j += 1
+                continue
+            break
+        if saw_long and base:
+            for k in range(i, j):
+                if _norm(items[k].get("section") or "") == base:
+                    items[k]["section"] = long_sec
+        i = j if j > i else i + 1
+
+
 _WORK_NAME_SAVE_SUBSTR = frozenset(
     {
         "разработк",
@@ -1121,6 +1163,7 @@ def parse_local_estimate(
         except Exception:
             full = ""
         res = _regex_fallback(full, None, dedupe)
+    _normalize_zemlyanye_section_groups(res)
     for r in res:
         if r.get("section") is None:
             r["section"] = "Локальная смета"
