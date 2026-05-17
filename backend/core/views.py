@@ -3299,7 +3299,7 @@ def warehouse_list(request: HttpRequest) -> HttpResponse:
     if not company:
         return redirect("dashboard")
     warehouses = (
-        Warehouse.objects.filter(company=company)
+        Warehouse.objects.filter(company=company, is_deleted=False)
         .prefetch_related("stocks__material")
         .order_by("name")
     )
@@ -3341,7 +3341,12 @@ def warehouse_detail(request: HttpRequest, pk: int) -> HttpResponse:
     company = _get_warehouse_company(request)
     if not company:
         return redirect("dashboard")
-    warehouse = get_object_or_404(Warehouse, pk=pk, company=company)
+    warehouse = get_object_or_404(
+        Warehouse.objects.select_related("project"),
+        pk=pk,
+        company=company,
+        is_deleted=False,
+    )
     tab = request.GET.get("tab", "stocks")
     if tab not in ("stocks", "movements", "inventory"):
         tab = "stocks"
@@ -3350,18 +3355,30 @@ def warehouse_detail(request: HttpRequest, pk: int) -> HttpResponse:
         .select_related("material")
         .order_by("material__category", "material__name")
     )
-    from django.db.models import Q
-    movements = (
-        StockMovement.objects.filter(Q(warehouse_from=warehouse) | Q(warehouse_to=warehouse))
-        .select_related("material", "warehouse_from", "warehouse_to", "project")
-        .order_by("-date", "-created_at")[:500]
+    resource_stocks = (
+        StockItem.objects.filter(warehouse=warehouse, quantity__gt=0)
+        .select_related("resource")
+        .order_by("resource__type", "resource__name")
     )
+    from django.db.models import Q
+
+    movement_base = StockMovement.objects.filter(
+        Q(warehouse_from=warehouse) | Q(warehouse_to=warehouse)
+    )
+    has_material_movements = movement_base.exists()
+    movements = movement_base.select_related(
+        "material", "warehouse_from", "warehouse_to", "project"
+    ).order_by("-date", "-created_at")[:500]
+    has_positive_material_stock = stocks.exists()
+    show_movements_without_balance_hint = has_material_movements and not has_positive_material_stock
     return render(request, "core/warehouse_detail.html", {
         "warehouse": warehouse,
         "company": company,
         "active_tab": tab,
         "stocks": stocks,
+        "resource_stocks": resource_stocks,
         "movements": movements,
+        "show_movements_without_balance_hint": show_movements_without_balance_hint,
     })
 
 

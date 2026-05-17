@@ -7,11 +7,18 @@
     <a href="{% url 'warehouses_dashboard' %}" class="text-sm text-slate-600 hover:text-slate-900">← Склады</a>
     <h1 class="text-2xl font-semibold text-slate-900 mt-1">{{ warehouse.name }}</h1>
     <p class="text-sm text-slate-500">{{ warehouse.location|default:"Локация не указана" }}</p>
+    {% if warehouse.project_id %}
+    <p class="mt-1 text-sm">
+      <span class="text-slate-500">Приобъектный склад ·</span>
+      <a href="{% url 'project_warehouses' warehouse.project_id %}" class="text-indigo-600 hover:text-indigo-800 font-medium">Открыть склад в проекте «{{ warehouse.project.name }}»</a>
+    </p>
+    {% endif %}
   </div>
   <div class="flex flex-wrap gap-2">
     <a href="{% url 'stock_incoming' %}?warehouse={{ warehouse.pk }}" class="inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Добавить поступление</a>
     <a href="{% url 'stock_writeoff' %}" class="inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">Добавить списание</a>
     <a href="{% url 'stock_transfer' %}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Перемещение</a>
+    <a href="{% url 'warehouses_incoming' %}" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50" title="Поступление по ресурсам модуля «Снабжение»">Поступление (снабжение)</a>
   </div>
 </div>
 
@@ -30,7 +37,19 @@
 </nav>
 
 {% if active_tab == "stocks" %}
-  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+  {% if show_movements_without_balance_hint %}
+  <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+    По этому складу есть <strong>движения материалов</strong>, но сейчас нет позиций с остатком больше нуля (всё выбыло или остатки не проведены). Откройте вкладку
+    <a href="?tab=movements" class="font-medium text-amber-950 underline">«Движение»</a>.
+  </div>
+  {% endif %}
+
+  <p class="mb-3 text-sm text-slate-600">
+    Здесь показаны два типа остатков, если они используются: <strong>материалы</strong> (проекты, поступления со страницы «Поступление») и <strong>ресурсы снабжения</strong> (модуль заказов).
+  </p>
+
+  <h2 class="text-base font-semibold text-slate-900 mb-2">Материалы</h2>
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-8">
     <table class="min-w-full divide-y divide-slate-200 text-sm">
       <thead class="bg-slate-50">
         <tr>
@@ -54,12 +73,43 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="6" class="px-4 py-8 text-center text-slate-500">Нет остатков. <a href="{% url 'stock_incoming' %}" class="text-indigo-600 hover:text-indigo-800">Добавить поступление</a></td>
+          <td colspan="6" class="px-4 py-6 text-center text-slate-500">Нет ненулевых остатков по материалам. <a href="{% url 'stock_incoming' %}?warehouse={{ warehouse.pk }}" class="text-indigo-600 hover:text-indigo-800">Поступление материала</a> · <a href="{% url 'warehouses_incoming' %}" class="text-indigo-600 hover:text-indigo-800">поступление ресурса (снабжение)</a></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  {% if resource_stocks %}
+  <h2 class="text-base font-semibold text-slate-900 mb-1">Ресурсы (модуль снабжения)</h2>
+  <p class="text-xs text-slate-500 mb-2">Эти позиции ведутся через «Снабжение» и операции «Поступление / Списание» в отчёте по складу — отдельно от материалов выше.</p>
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Ресурс</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Тип</th>
+          <th class="px-4 py-3 text-left font-medium text-slate-700">Ед. изм.</th>
+          <th class="px-4 py-3 text-right font-medium text-slate-700">Количество</th>
+          <th class="px-4 py-3 text-right font-medium text-slate-700">Цена</th>
+          <th class="px-4 py-3 text-right font-medium text-slate-700">Сумма</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for s in resource_stocks %}
+        <tr class="hover:bg-slate-50/50">
+          <td class="px-4 py-3 font-medium text-slate-900">{{ s.resource.name }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ s.resource.get_type_display }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ s.resource.unit }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ s.quantity|floatformat:4 }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ s.price_avg|floatformat:2 }} ₸</td>
+          <td class="px-4 py-3 text-right tabular-nums font-medium">{{ s.total_sum|floatformat:2 }} ₸</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
 {% elif active_tab == "movements" %}
   {% include "core/stock_movements.html" with movements=movements %}
