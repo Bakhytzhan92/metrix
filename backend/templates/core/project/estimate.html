@@ -2,64 +2,78 @@
 {% load estimate_extras %}
 
 {% block project_content %}
-<div class="space-y-6">
-  {# Итоги сметы — карточки #}
-  <div class="grid gap-4 sm:grid-cols-3">
-    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-      <p class="text-sm font-medium text-slate-500">Себестоимость</p>
-      <p class="mt-1 text-lg sm:text-xl font-semibold text-slate-900 min-w-0 overflow-x-auto tabular-nums tracking-tight"><span class="js-project-total-cost whitespace-nowrap">{{ totals.total_cost|floatformat:2 }}</span> ₸</p>
+{% estimate_kind_cost_totals sections as kind_totals %}
+<div class="space-y-8">
+  {# Итоги сметы — KPI #}
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <div class="group rounded-xl border border-line bg-gradient-to-br from-white to-slate-50/80 p-3.5 shadow-mx-sm hover:shadow-mx transition-all duration-300 hover:-translate-y-0.5 ring-1 ring-slate-900/5">
+      <p class="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Себестоимость</p>
+      <p class="mt-1.5 text-base font-semibold text-ink min-w-0 overflow-x-auto tabular-nums tracking-tight"><span class="js-project-total-cost whitespace-nowrap">{{ totals.total_cost|floatformat:2 }}</span> <span class="text-xs font-medium text-ink-muted">₸</span></p>
     </div>
-    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-      <p class="text-sm font-medium text-slate-500">Наценка</p>
-      <p class="mt-1 text-lg sm:text-xl font-semibold text-slate-900 min-w-0 overflow-x-auto tabular-nums tracking-tight"><span class="js-project-total-markup whitespace-nowrap">{{ totals.markup|floatformat:2 }}</span> ₸</p>
+    <div class="group rounded-xl border border-line bg-gradient-to-br from-white to-violet-50/40 p-3.5 shadow-mx-sm hover:shadow-mx transition-all duration-300 hover:-translate-y-0.5 ring-1 ring-slate-900/5">
+      <p class="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Наценка</p>
+      <p class="mt-1.5 text-base font-semibold text-ink min-w-0 overflow-x-auto tabular-nums tracking-tight"><span class="js-project-total-markup whitespace-nowrap">{{ totals.markup|floatformat:2 }}</span> <span class="text-xs font-medium text-ink-muted">₸</span></p>
     </div>
-    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+    <div class="group rounded-xl border border-line bg-gradient-to-br from-white to-emerald-50/30 p-3.5 shadow-mx-sm hover:shadow-mx transition-all duration-300 hover:-translate-y-0.5 ring-1 ring-slate-900/5">
+      <p class="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Материалы (себест.)</p>
+      <p class="mt-1.5 text-base font-semibold text-ink tabular-nums">{{ kind_totals.materials|floatformat:2 }} <span class="text-xs font-medium text-ink-muted">₸</span></p>
+    </div>
+    <div class="group rounded-xl border border-line bg-gradient-to-br from-white to-blue-50/30 p-3.5 shadow-mx-sm hover:shadow-mx transition-all duration-300 hover:-translate-y-0.5 ring-1 ring-slate-900/5">
+      <p class="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Работы (себест.)</p>
+      <p class="mt-1.5 text-base font-semibold text-ink tabular-nums">{{ kind_totals.works|floatformat:2 }} <span class="text-xs font-medium text-ink-muted">₸</span></p>
+    </div>
+    <div class="group rounded-xl border border-primary/20 bg-gradient-to-br from-primary/[0.06] to-[#8B7FFF]/10 p-3.5 shadow-mx-sm hover:shadow-mx transition-all duration-300 hover:-translate-y-0.5 ring-1 ring-primary/15 sm:col-span-2 xl:col-span-1">
       <div class="flex flex-wrap items-start justify-between gap-2">
-        <p class="text-sm font-medium text-slate-500">Итого по смете</p>
-        <label class="inline-flex items-center gap-2 shrink-0 cursor-pointer select-none text-sm font-normal text-slate-600">
-          <input type="checkbox" id="estimate-vat-checkbox" class="js-estimate-vat-checkbox h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" {% if project.estimate_vat_enabled %}checked{% endif %} data-vat-url="{% url 'estimate_vat_toggle' project.pk %}" />
+        <p class="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Итого заказчику</p>
+        <label class="inline-flex items-center gap-1.5 shrink-0 cursor-pointer select-none text-xs font-normal text-ink-muted">
+          <input type="checkbox" id="estimate-vat-checkbox" class="js-estimate-vat-checkbox h-3.5 w-3.5 rounded border-line text-primary focus:ring-2 focus:ring-primary/30" {% if project.estimate_vat_enabled %}checked{% endif %} data-vat-url="{% url 'estimate_vat_toggle' project.pk %}" />
           <span>НДС 16%</span>
         </label>
       </div>
-      <p class="mt-1 text-lg sm:text-xl font-semibold text-slate-900 min-w-0 overflow-x-auto tabular-nums tracking-tight"><span class="js-project-total-price whitespace-nowrap">{{ totals.client_total|floatformat:2 }}</span> ₸</p>
-      <p class="js-vat-hint mt-1 text-xs text-slate-500 {% if not project.estimate_vat_enabled %}hidden{% endif %}">Сумма для заказчика с учётом НДС 16%</p>
+      <p class="mt-1.5 text-base font-semibold text-primary min-w-0 overflow-x-auto tabular-nums tracking-tight"><span class="js-project-total-price whitespace-nowrap">{{ totals.client_total|floatformat:2 }}</span> <span class="text-xs font-medium text-primary/80">₸</span></p>
+      <p class="js-vat-hint mt-1 text-[11px] text-ink-muted {% if not project.estimate_vat_enabled %}hidden{% endif %}">Сумма для заказчика с учётом НДС 16%</p>
     </div>
   </div>
 
   {# Кнопки: Добавить раздел, Импорт, Экспорт #}
   <div class="flex flex-wrap items-center gap-3">
-    <a href="{% url 'estimate_section_add' project.pk %}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+    <a href="{% url 'estimate_section_add' project.pk %}" class="mx-btn-primary">
       Добавить раздел
     </a>
     {% if sections %}
     <form action="{% url 'estimate_sections_delete_all' project.pk %}" method="post" class="inline" onsubmit="return confirm('Удалить все разделы сметы и все позиции? Связь этапов графика с разделами будет сброшена. Отменить действие нельзя.');">
       {% csrf_token %}
-      <button type="submit" class="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-800 hover:bg-red-100">
+      <button type="submit" class="inline-flex items-center justify-center min-h-[42px] rounded-xl border-2 border-red-200 bg-red-50 px-4 text-sm font-medium text-red-800 hover:bg-red-100 transition-transform hover:scale-[1.02]">
         Удалить все разделы
       </button>
     </form>
     {% endif %}
     <form action="{% url 'estimate_import' project.pk %}" method="post" enctype="multipart/form-data" class="inline-flex items-center gap-2">
       {% csrf_token %}
-      <input type="file" name="file" accept=".xlsx,.xls" class="text-sm text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100" required />
-      <button type="submit" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Импорт (Excel)</button>
+      <input type="file" name="file" accept=".xlsx,.xls" class="text-sm text-ink file:mr-2 file:rounded-xl file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/15" required />
+      <button type="submit" class="mx-btn-secondary shadow-mx-sm">Импорт (Excel)</button>
     </form>
-    <a href="{% url 'estimate_export' project.pk %}" class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">Экспорт</a>
-    <button type="button" id="btn-estimate-pdf-import" class="inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-100">Импорт из PDF</button>
+    <a href="{% url 'estimate_export' project.pk %}" class="mx-btn-secondary shadow-mx-sm">Экспорт</a>
+    <button type="button" id="btn-estimate-pdf-import" class="inline-flex items-center justify-center min-h-[42px] rounded-xl border border-primary/25 bg-primary/5 px-4 text-sm font-medium text-primary hover:bg-primary/10 transition-transform hover:scale-[1.02]">Импорт из PDF</button>
   </div>
 
-  {# Разделы работ — всегда раскрыты; автосохранение строк #}
-  <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
-    <div class="border-b border-slate-200 px-4 py-3">
-      <h2 class="text-sm font-semibold text-slate-900">Разделы работ</h2>
-      <p class="text-xs text-slate-500 mt-1">Пересчёт при вводе. Новая строка — только кнопка «+ позиция». Перед уходом со страницы строки сохраняются автоматически; при сбое появится сообщение. У каждого раздела есть «Сохранить раздел» — сохраняет все строки раздела сразу.</p>
+  {# Разделы работ — сворачиваемые секции; автосохранение строк без изменений #}
+  <div class="rounded-2xl border border-line bg-surface-card shadow-mx overflow-hidden">
+    <div class="border-b border-line px-5 py-4 bg-gradient-to-r from-white to-slate-50/50">
+      <h2 class="text-base font-bold text-ink">Разделы работ</h2>
+      <p class="text-xs text-ink-muted mt-1 max-w-3xl">Пересчёт при вводе. Новая строка — кнопка «+ позиция». Перед уходом со страницы строки сохраняются автоматически. «Сохранить раздел» — сохраняет все строки раздела сразу.</p>
     </div>
-    <div class="divide-y divide-slate-100">
+    <div class="divide-y divide-line/80">
       {% for section in sections %}
-      <div class="group estimate-section" id="section-{{ section.pk }}">
-        <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-50/80 border-b border-slate-100">
-          <div class="flex items-center gap-2">
-            <span class="font-medium text-slate-900">{{ forloop.counter }}. {{ section.name }}</span>
+      {% with items=section.items.all %}
+      <details class="group estimate-section" id="section-{{ section.pk }}" open>
+        <summary class="sticky top-0 z-10 flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-4 bg-white/95 backdrop-blur-sm border-b border-line shadow-sm marker:content-none [&::-webkit-details-marker]:hidden">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold text-sm">{{ forloop.counter }}</span>
+            <div class="min-w-0">
+              <span class="font-semibold text-ink block truncate">{{ section.name }}</span>
+              <span class="text-xs text-ink-muted">{{ items|length }} поз.</span>
+            </div>
           </div>
           <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
             <span class="whitespace-nowrap tabular-nums">Себестоимость: <span class="js-section-cost">{{ section.section_total_cost|floatformat:2 }}</span> ₸</span>
@@ -70,9 +84,8 @@
               <button type="submit" class="text-red-600 hover:text-red-800">Удалить</button>
             </form>
           </div>
-        </div>
+        </summary>
         <div class="px-4 pb-4 pt-2 bg-slate-50/30">
-          {% with items=section.items.all %}
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
             <form action="{% url 'estimate_item_quick_add' project.pk section.pk %}" method="post" class="inline">
               {% csrf_token %}
@@ -161,9 +174,9 @@
               </tbody>
             </table>
           </div>
-          {% endwith %}
         </div>
-      </div>
+      </details>
+      {% endwith %}
       {% empty %}
       <div class="px-4 py-8 text-center text-sm text-slate-500">
         <p>Разделов пока нет.</p>

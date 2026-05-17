@@ -47,3 +47,23 @@ def qty_plain(value):
     if "." in s:
         s = s.rstrip("0").rstrip(".")
     return s if s not in ("", "-") else "0"
+
+
+@register.simple_tag
+def estimate_kind_cost_totals(sections):
+    """
+    Суммы себестоимости по типам позиций (материалы / работы) для KPI на странице сметы.
+    Только отображение; источник — уже переданный в шаблон queryset разделов с prefetch items.
+    """
+    mat = Decimal("0")
+    work = Decimal("0")
+    for sec in sections:
+        for item in sec.items.all():
+            c = item.total_cost or Decimal("0")
+            if not isinstance(c, Decimal):
+                c = Decimal(str(c))
+            if item.type == "material":
+                mat += c
+            elif item.type == "labor":
+                work += c
+    return {"materials": mat, "works": work}

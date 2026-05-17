@@ -4,36 +4,36 @@
 {% block project_content %}
 <div class="space-y-4">
   <div>
-    <h2 class="text-lg font-semibold text-slate-900">Склады</h2>
-    <p class="text-sm text-slate-500">Инвентарь (оборудование), материалы и ГСМ учитываются отдельно друг от друга.</p>
+    <h2 class="text-xl font-semibold text-ink tracking-tight">Склады</h2>
+    <p class="text-sm text-ink-muted mt-1 max-w-2xl">Инвентарь (оборудование), материалы и ГСМ — отдельные учётные контуры.</p>
   </div>
 
-  <nav class="flex flex-wrap gap-1 border-b border-slate-200" aria-label="Склады: подразделы">
+  <nav class="flex flex-wrap gap-2 p-1 rounded-2xl bg-white/90 border border-line shadow-mx-sm w-fit max-w-full mb-2" aria-label="Склады: подразделы">
     <button
       type="button"
       data-wh-main="inventory"
-      class="wh-main-tab -mb-px inline-flex rounded-t-md border border-b-0 border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-indigo-700"
+      class="wh-main-tab px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 bg-primary text-white shadow-md shadow-primary/20"
     >
       Инвентарь
     </button>
     <button
       type="button"
       data-wh-main="materials"
-      class="wh-main-tab -mb-px inline-flex rounded-t-md border border-transparent px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-200 hover:bg-slate-50"
+      class="wh-main-tab px-4 py-2 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-slate-50 transition-all duration-150"
     >
       Материалы
     </button>
     <button
       type="button"
       data-wh-main="gsm"
-      class="wh-main-tab -mb-px inline-flex rounded-t-md border border-transparent px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-200 hover:bg-slate-50"
+      class="wh-main-tab px-4 py-2 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-slate-50 transition-all duration-150"
     >
       ГСМ
     </button>
     <button
       type="button"
       data-wh-main="history"
-      class="wh-main-tab -mb-px inline-flex rounded-t-md border border-transparent px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-200 hover:bg-slate-50"
+      class="wh-main-tab px-4 py-2 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-slate-50 transition-all duration-150"
     >
       История
     </button>
@@ -41,48 +41,52 @@
 
   {# ——— Инвентарь (Kanban, без изменений логики) ——— #}
   <div id="wh-panel-inventory" class="wh-main-panel space-y-4">
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h3 class="text-base font-semibold text-slate-900">Инвентарь проекта (оборудование и инструмент)</h3>
-      <p class="text-sm text-slate-600">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-line bg-white/90 p-4 shadow-mx-sm">
+      <h3 class="text-base font-semibold text-ink">Инвентарь проекта</h3>
+      <p class="text-sm text-ink-muted">
         {{ total_count }} единиц на сумму {{ total_sum|floatformat:0 }} ₸
-        {% if written_off_count %}| Списано {{ written_off_count }} единиц на сумму {{ written_off_sum|floatformat:0 }} ₸{% endif %}
+        {% if written_off_count %}<span class="text-ink-muted/80"> · </span>Списано {{ written_off_count }} единиц на сумму {{ written_off_sum|floatformat:0 }} ₸{% endif %}
       </p>
     </div>
     <p class="text-xs text-slate-500 max-w-2xl">Материалы (песок, щебень, расходники и т.д.) — во вкладке «Материалы», они сюда не попадают.</p>
 
-    <form method="get" class="flex flex-wrap items-center gap-2">
-      <input type="text" name="q" value="{{ search_q }}" placeholder="Поиск по названию" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-      <select name="warehouse" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500">
+    <form method="get" class="flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-white p-3 shadow-mx-sm">
+      <input type="text" name="q" value="{{ search_q }}" placeholder="Поиск по названию" class="mx-field px-3 py-2 text-sm min-w-[10rem]" />
+      <select name="warehouse" class="mx-field px-3 py-2 text-sm">
         <option value="">Все склады</option>
         {% for w in warehouses %}
         <option value="{{ w.id }}" {% if warehouse_filter == w.id|stringformat:"d" %}selected{% endif %}>{{ w.name }}</option>
         {% endfor %}
       </select>
-      <select name="search_status" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500">
+      <select name="search_status" class="mx-field px-3 py-2 text-sm">
         <option value="">Все статусы</option>
         <option value="free" {% if status_filter == 'free' %}selected{% endif %}>Свободен</option>
         <option value="in_use" {% if status_filter == 'in_use' %}selected{% endif %}>В работе</option>
         <option value="repair" {% if status_filter == 'repair' %}selected{% endif %}>На ремонте</option>
         <option value="written_off" {% if status_filter == 'written_off' %}selected{% endif %}>Списан</option>
       </select>
-      <button type="submit" class="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-200">Применить</button>
+      <button type="submit" class="mx-btn-secondary text-sm !min-h-9">Применить</button>
     </form>
 
     <div>
-      <button type="button" id="btn-create-warehouse" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать склад</button>
+      <button type="button" id="btn-create-warehouse" class="mx-btn-primary text-sm">Создать склад</button>
     </div>
 
     <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
       {% for warehouse, items in warehouse_columns %}
-      <div class="warehouse-column flex-shrink-0 w-72 rounded-xl border border-slate-200 bg-slate-50/50 p-3 shadow-sm{% if can_edit_project_inventory %} warehouse-column-drop{% endif %}" data-warehouse-id="{{ warehouse.id }}">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="font-medium text-slate-900 flex items-center gap-1">
-            <span class="text-slate-400">⌂</span> {{ warehouse.name }}
+      <div class="warehouse-column flex-shrink-0 w-72 md:w-80 rounded-2xl border border-line bg-gradient-to-b from-white to-slate-50/90 p-4 shadow-mx-sm hover:shadow-mx transition-all duration-200{% if can_edit_project_inventory %} warehouse-column-drop{% endif %}" data-warehouse-id="{{ warehouse.id }}">
+        <div class="flex items-center justify-between mb-4 gap-2">
+          <h3 class="font-semibold text-ink flex items-center gap-2 min-w-0">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary text-sm">⌂</span>
+            <span class="truncate">{{ warehouse.name }}</span>
           </h3>
-          <div class="relative warehouse-menu">
-            <button type="button" class="warehouse-menu-btn p-1 rounded hover:bg-slate-200 text-slate-500" aria-label="Меню склада">⋮</button>
-            <div class="warehouse-menu-dropdown hidden absolute right-0 top-full mt-1 py-1 w-40 rounded-lg bg-white shadow-lg border border-slate-200 z-10">
-              <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" class="block px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">+ Инвентарь</a>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <div class="rounded-full bg-white/90 border border-line px-2.5 py-0.5 text-[11px] font-semibold text-ink-muted tabular-nums" title="Позиций">{{ items|length }}</div>
+            <div class="relative warehouse-menu">
+            <button type="button" class="warehouse-menu-btn p-2 rounded-xl hover:bg-white border border-transparent hover:border-line text-ink-muted" aria-label="Меню склада">⋮</button>
+            <div class="warehouse-menu-dropdown hidden absolute right-0 top-full mt-1 py-1 w-44 rounded-xl bg-white shadow-mx border border-line z-10">
+              <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" class="block px-3 py-2 text-sm text-ink hover:bg-primary/5">+ Инвентарь</a>
+            </div>
             </div>
           </div>
         </div>
@@ -90,12 +94,12 @@
           {% for item in items %}
           {% with status=item.status %}
           <div
-            class="inventory-card rounded-lg bg-white p-3 shadow border border-slate-100 transition-shadow text-left {% if can_edit_project_inventory %}cursor-grab active:cursor-grabbing hover:shadow-md{% else %}cursor-pointer hover:shadow-md{% endif %} {% if status == 'free' %}border-l-4 border-l-green-500{% elif status == 'in_use' %}border-l-4 border-l-blue-500{% elif status == 'issued' %}border-l-4 border-l-violet-500{% elif status == 'repair' %}border-l-4 border-l-amber-500{% elif status == 'lost' %}border-l-4 border-l-rose-900{% elif status == 'written_off' %}border-l-4 border-l-red-600{% endif %}"
+            class="inventory-card rounded-xl bg-white p-3 shadow-mx-sm border border-line transition-all duration-200 text-left {% if can_edit_project_inventory %}cursor-grab active:cursor-grabbing hover:shadow-mx hover:-translate-y-0.5{% else %}cursor-pointer hover:shadow-mx{% endif %} {% if status == 'free' %}border-l-4 border-l-emerald-500{% elif status == 'in_use' %}border-l-4 border-l-sky-600{% elif status == 'issued' %}border-l-4 border-l-violet-500{% elif status == 'repair' %}border-l-4 border-l-amber-500{% elif status == 'lost' %}border-l-4 border-l-rose-900{% elif status == 'written_off' %}border-l-4 border-l-red-600{% endif %}"
             data-edit-url="{% url 'project_inventory_update' project.pk item.id %}"
             {% if can_edit_project_inventory %}draggable="true" data-item-id="{{ item.id }}"{% endif %}
           >
             <div class="flex gap-2">
-              <div class="flex-shrink-0 w-12 h-12 rounded bg-slate-100 flex items-center justify-center text-slate-400 overflow-hidden">
+              <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 overflow-hidden border border-line">
                 {% if item.image %}
                 <img src="{{ item.image.url }}" alt="" class="w-full h-full object-cover" draggable="false" />
                 {% else %}
@@ -103,8 +107,8 @@
                 {% endif %}
               </div>
               <div class="min-w-0 flex-1">
-                <p class="font-medium text-slate-900 truncate">{{ item.name }}</p>
-                <p class="text-xs {% if status == 'free' %}text-green-600{% elif status == 'in_use' %}text-blue-600{% elif status == 'issued' %}text-violet-600{% elif status == 'repair' %}text-amber-600{% elif status == 'lost' %}text-rose-900{% else %}text-red-600{% endif %}">
+                <p class="font-medium text-ink truncate">{{ item.name }}</p>
+                <p class="text-xs {% if status == 'free' %}text-emerald-600{% elif status == 'in_use' %}text-sky-700{% elif status == 'issued' %}text-violet-600{% elif status == 'repair' %}text-amber-600{% elif status == 'lost' %}text-rose-900{% else %}text-red-600{% endif %}">
                   {% if status == 'free' %}Свободен
                   {% elif status == 'in_use' %}{% if item.available_from %}Доступен {{ item.available_from|date:"d.m.Y" }}{% else %}В работе{% endif %}
                   {% elif status == 'issued' %}Выдан
@@ -131,9 +135,9 @@
         </div>
       </div>
       {% empty %}
-      <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center text-slate-500">
+      <div class="rounded-2xl border border-dashed border-line bg-surface-page/80 p-10 text-center text-ink-muted shadow-mx-sm">
         <p>Нет складов.</p>
-        <button type="button" id="btn-create-warehouse-empty" class="mt-2 text-indigo-600 hover:text-indigo-800 font-medium">Создать склад</button>
+        <button type="button" id="btn-create-warehouse-empty" class="mt-3 text-primary font-semibold hover:opacity-90">Создать склад</button>
       </div>
       {% endfor %}
     </div>
@@ -163,15 +167,15 @@
 {% endif %}
 
 <div id="modal-create-warehouse" class="fixed inset-0 z-50 hidden" aria-hidden="true">
-  <div class="fixed inset-0 bg-slate-900/50" id="modal-warehouse-backdrop"></div>
-  <div class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-xl">
-    <h3 class="text-lg font-semibold text-slate-900 mb-4">Создать склад</h3>
+  <div class="fixed inset-0 bg-slate-900/55 backdrop-blur-[2px]" id="modal-warehouse-backdrop"></div>
+  <div class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-line bg-white p-6 shadow-mx">
+    <h3 class="text-lg font-semibold text-ink mb-4">Создать склад</h3>
     <form method="post" action="{% url 'project_warehouse_create' project.pk %}">
       {% csrf_token %}
-      <input type="text" name="name" required placeholder="Название" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+      <input type="text" name="name" required placeholder="Название" class="w-full mx-field px-3 py-2.5 text-sm bg-white" />
       <div class="mt-4 flex gap-2 justify-end">
-        <button type="button" class="modal-warehouse-cancel rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Отмена</button>
-        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать</button>
+        <button type="button" class="modal-warehouse-cancel mx-btn-secondary text-sm">Отмена</button>
+        <button type="submit" class="mx-btn-primary text-sm">Создать</button>
       </div>
     </form>
   </div>
@@ -189,13 +193,13 @@
   function styleTabs(active) {
     tabs.forEach(function(btn) {
       var on = btn.getAttribute('data-wh-main') === active;
-      btn.classList.toggle('border-slate-200', on);
-      btn.classList.toggle('border-transparent', !on);
-      btn.classList.toggle('bg-white', on);
-      btn.classList.toggle('text-indigo-700', on);
-      btn.classList.toggle('font-semibold', on);
-      btn.classList.toggle('text-slate-600', !on);
-      btn.classList.toggle('font-medium', !on);
+      btn.classList.toggle('bg-primary', on);
+      btn.classList.toggle('text-white', on);
+      btn.classList.toggle('shadow-md', on);
+      btn.classList.toggle('shadow-primary/20', on);
+      btn.classList.toggle('text-ink-muted', !on);
+      btn.classList.toggle('hover:text-ink', !on);
+      btn.classList.toggle('hover:bg-slate-50', !on);
     });
   }
   function setMain(tab) {

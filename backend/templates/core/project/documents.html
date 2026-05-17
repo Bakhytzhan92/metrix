@@ -3,79 +3,79 @@
 <div class="space-y-6" id="construction-docs-app" data-project-id="{{ project.pk }}" data-can-edit="{% if can_edit_documents %}1{% else %}0{% endif %}">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <div>
-      <h1 class="text-lg font-semibold text-slate-900">Документы</h1>
-      <p class="text-xs text-slate-500 mt-0.5">Строительная документация проекта: папки, версии, статусы. Форматы: PDF, Word, Excel, изображения.</p>
+      <h1 class="text-xl font-semibold text-ink tracking-tight">Документы</h1>
+      <p class="text-xs text-ink-muted mt-1 max-w-3xl">Строительная документация: папки, версии, статусы. PDF, Word, Excel, изображения.</p>
     </div>
-    <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="inline-flex rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50">Финансы: работы</a>
+    <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="mx-btn-secondary text-sm">Финансы: работы</a>
   </div>
 
   {# Верхние вкладки категорий #}
-  <div class="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1 text-sm shadow-sm" role="tablist" id="docs-main-tabs">
-    <button type="button" role="tab" data-tab="all" class="docs-tab rounded-lg px-3 py-2 font-medium bg-white text-indigo-700 shadow-sm">Все документы</button>
-    <button type="button" role="tab" data-tab="aosr" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">АОСР</button>
-    <button type="button" role="tab" data-tab="exec_schemes" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Исполнительные схемы</button>
-    <button type="button" role="tab" data-tab="contracts" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Договоры</button>
-    <button type="button" role="tab" data-tab="drawings" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Чертежи</button>
-    <button type="button" role="tab" data-tab="pdf" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">PDF</button>
-    <button type="button" role="tab" data-tab="word" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Word</button>
-    <button type="button" role="tab" data-tab="photos" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Фото</button>
-    <button type="button" role="tab" data-tab="archive" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Архив</button>
+  <div class="flex flex-wrap gap-1 rounded-2xl border border-line bg-white/90 p-1 text-sm shadow-mx-sm" role="tablist" id="docs-main-tabs">
+    <button type="button" role="tab" data-tab="all" class="docs-tab rounded-xl px-3 py-2 font-medium bg-primary text-white shadow-md shadow-primary/25">Все документы</button>
+    <button type="button" role="tab" data-tab="aosr" class="docs-tab rounded-xl px-3 py-2 font-medium text-ink-muted hover:text-ink hover:bg-slate-50">АОСР</button>
+    <button type="button" role="tab" data-tab="exec_schemes" class="docs-tab rounded-xl px-3 py-2 font-medium text-ink-muted hover:text-ink hover:bg-slate-50">Исполнительные схемы</button>
+    <button type="button" role="tab" data-tab="contracts" class="docs-tab rounded-xl px-3 py-2 font-medium text-ink-muted hover:text-ink hover:bg-slate-50">Договоры</button>
+    <button type="button" role="tab" data-tab="drawings" class="docs-tab rounded-xl px-3 py-2 font-medium text-ink-muted hover:text-ink hover:bg-slate-50">Чертежи</button>
+    <button type="button" role="tab" data-tab="pdf" class="docs-tab rounded-xl px-3 py-2 font-medium text-ink-muted hover:text-ink hover:bg-slate-50">PDF</button>
+    <button type="button" role="tab" data-tab="word" class="docs-tab rounded-xl px-3 py-2 font-medium text-ink-muted hover:text-ink hover:bg-slate-50">Word</button>
+    <button type="button" role="tab" data-tab="photos" class="docs-tab rounded-xl px-3 py-2 font-medium text-ink-muted hover:text-ink hover:bg-slate-50">Фото</button>
+    <button type="button" role="tab" data-tab="archive" class="docs-tab rounded-xl px-3 py-2 font-medium text-ink-muted hover:text-ink hover:bg-slate-50">Архив</button>
   </div>
 
   <div class="grid gap-4 lg:grid-cols-[minmax(200px,260px)_1fr]">
     {# Дерево папок #}
-    <aside class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm h-fit lg:sticky lg:top-4">
+    <aside class="rounded-2xl border border-line bg-white p-4 shadow-mx-sm h-fit lg:sticky lg:top-24">
       <div class="flex items-center justify-between gap-2 mb-3">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Папки</h2>
-        <button type="button" id="docs-new-folder" class="hidden rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 edit-only">+ Папка</button>
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Папки</h2>
+        <button type="button" id="docs-new-folder" class="hidden rounded-lg border border-line px-2 py-1 text-xs text-ink hover:bg-slate-50 edit-only">+ Папка</button>
       </div>
-      <button type="button" id="docs-folder-all" class="w-full text-left rounded-lg px-2 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 mb-1">Все документы</button>
-      <div id="docs-folder-tree" class="text-sm text-slate-700 space-y-0.5 max-h-[50vh] overflow-y-auto"></div>
+      <button type="button" id="docs-folder-all" class="w-full text-left rounded-xl px-3 py-2.5 text-sm font-semibold text-primary bg-primary/10 mb-1 border border-primary/15">Все документы</button>
+      <div id="docs-folder-tree" class="text-sm text-ink space-y-0.5 max-h-[50vh] overflow-y-auto"></div>
     </aside>
 
     <div class="space-y-4 min-w-0">
       {# Зона загрузки #}
-      <div id="docs-dropzone" class="edit-only hidden rounded-xl border-2 border-dashed border-slate-200 bg-white px-6 py-8 text-center shadow-sm transition-colors hover:border-indigo-300 hover:bg-slate-50/50">
-        <p class="text-sm text-slate-600">Перетащите файлы сюда или выберите на диске</p>
-        <p class="text-xs text-slate-400 mt-1">.pdf, .doc, .docx, .xlsx, .jpg, .png — можно несколько файлов</p>
+      <div id="docs-dropzone" class="edit-only hidden rounded-2xl border-2 border-dashed border-line bg-white px-6 py-8 text-center shadow-mx-sm transition-colors hover:border-primary/50 hover:bg-primary/[0.02]">
+        <p class="text-sm text-ink-muted">Перетащите файлы сюда или выберите на диске</p>
+        <p class="text-xs text-ink-muted/80 mt-1">.pdf, .doc, .docx, .xlsx, .jpg, .png — можно несколько файлов</p>
         <div class="mt-4 flex flex-wrap justify-center gap-2">
-          <label class="inline-flex cursor-pointer rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <label class="inline-flex cursor-pointer mx-btn-primary text-sm">
             Добавить документ
             <input type="file" id="docs-file-input" class="hidden" multiple accept=".pdf,.doc,.docx,.xlsx,.jpg,.jpeg,.png" />
           </label>
         </div>
         <div id="docs-upload-progress" class="mt-4 hidden max-w-md mx-auto">
-          <div class="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
-            <div id="docs-upload-bar" class="h-full bg-indigo-500 transition-all duration-200" style="width:0%"></div>
+          <div class="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+            <div id="docs-upload-bar" class="h-full bg-primary transition-all duration-200" style="width:0%"></div>
           </div>
-          <p id="docs-upload-label" class="text-xs text-slate-500 mt-1"></p>
+          <p id="docs-upload-label" class="text-xs text-ink-muted mt-1"></p>
         </div>
       </div>
 
       {# Фильтры + таблица #}
-      <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div class="flex flex-col gap-3 p-4 border-b border-slate-100 sm:flex-row sm:flex-wrap sm:items-end">
+      <div class="mx-table-card overflow-hidden">
+        <div class="flex flex-col gap-3 p-4 border-b border-line sm:flex-row sm:flex-wrap sm:items-end bg-white/60">
           <div class="flex-1 min-w-[140px]">
-            <label class="text-xs font-medium text-slate-500">Поиск</label>
-            <input type="search" id="docs-search" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="Название, файл, № акта…" />
+            <label class="text-xs font-medium text-ink-muted">Поиск</label>
+            <input type="search" id="docs-search" class="mt-1 w-full mx-field px-3 py-2 text-sm bg-white" placeholder="Название, файл, № акта…" />
           </div>
           <div class="w-full sm:w-40">
-            <label class="text-xs font-medium text-slate-500">Тип файла</label>
-            <select id="docs-filter-kind" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+            <label class="text-xs font-medium text-ink-muted">Тип файла</label>
+            <select id="docs-filter-kind" class="mt-1 w-full mx-field px-3 py-2 text-sm bg-white">
               <option value="">Все типы</option>
             </select>
           </div>
           <div class="w-full sm:w-44">
-            <label class="text-xs font-medium text-slate-500">Категория</label>
-            <select id="docs-filter-category" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+            <label class="text-xs font-medium text-ink-muted">Категория</label>
+            <select id="docs-filter-category" class="mt-1 w-full mx-field px-3 py-2 text-sm bg-white">
               <option value="">Все категории</option>
             </select>
           </div>
-          <button type="button" id="docs-apply-filters" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white h-[38px] self-end">Обновить</button>
+          <button type="button" id="docs-apply-filters" class="mx-btn-primary text-sm !min-h-[38px] self-end">Обновить</button>
         </div>
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-slate-100 text-sm" id="docs-table">
-            <thead class="bg-slate-50 text-left text-xs font-medium text-slate-600">
+          <table class="min-w-full divide-y divide-line text-sm" id="docs-table">
+            <thead class="bg-slate-50/95 text-left text-xs font-semibold text-ink sticky top-0 z-10 backdrop-blur-sm">
               <tr>
                 <th class="px-3 py-3 w-10"></th>
                 <th class="px-3 py-3">Название</th>
@@ -92,10 +92,10 @@
                 <th class="px-3 py-3 w-24">Действия</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-50" id="docs-tbody"></tbody>
+            <tbody class="divide-y divide-line" id="docs-tbody"></tbody>
           </table>
         </div>
-        <p id="docs-empty" class="hidden px-4 py-12 text-center text-slate-500 text-sm">Нет документов. Загрузите файлы или смените фильтр.</p>
+        <p id="docs-empty" class="hidden px-4 py-12 text-center text-ink-muted text-sm">Нет документов. Загрузите файлы или смените фильтр.</p>
       </div>
     </div>
   </div>
@@ -110,7 +110,7 @@
     <div id="docs-preview-body" class="flex-1 min-h-[50vh] overflow-auto bg-slate-50 p-2"></div>
     <div class="flex flex-wrap gap-2 border-t border-slate-100 px-4 py-3 bg-white">
       <a id="docs-preview-download" href="#" class="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50" download>Скачать</a>
-      <a id="docs-preview-newtab" href="#" target="_blank" rel="noopener" class="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Открыть в новой вкладке</a>
+      <a id="docs-preview-newtab" href="#" target="_blank" rel="noopener" class="mx-btn-primary text-sm">Открыть в новой вкладке</a>
     </div>
   </div>
 
@@ -135,7 +135,7 @@
           </div>
           {% endfor %}
           <div class="sm:col-span-2 lg:col-span-3">
-            <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить акт</button>
+            <button type="submit" class="mx-btn-primary text-sm">Сохранить акт</button>
           </div>
         </form>
       </div>
@@ -163,10 +163,10 @@
                 {% if a.payment_status == 'draft' %}
                 <form method="post" action="{% url 'project_work_act_submit_payment' project.pk a.pk %}" class="inline">
                   {% csrf_token %}
-                  <button type="submit" class="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">Отправить на оплату</button>
+                  <button type="submit" class="mx-btn-primary text-xs !min-h-8 px-3">Отправить на оплату</button>
                 </form>
                 {% elif a.payment_status == 'awaiting_payment' %}
-                <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="text-xs text-indigo-600 hover:text-indigo-800">В финансах →</a>
+                <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="text-xs font-medium text-primary hover:opacity-90">В финансах →</a>
                 {% elif a.payment_status == 'partial' %}
                 <span class="text-xs text-amber-700">Частично оплачено</span>
                 {% else %}
@@ -229,7 +229,7 @@
   function renderFolderRow(node, depth) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'w-full text-left rounded-lg px-2 py-1.5 hover:bg-slate-100 text-slate-700 docs-folder-btn';
+    btn.className = 'w-full text-left rounded-xl px-3 py-2 text-ink docs-folder-btn hover:bg-slate-50 transition-colors';
     btn.style.paddingLeft = (8 + depth * 12) + 'px';
     btn.dataset.folderId = String(node.id);
     btn.textContent = node.name;
@@ -260,9 +260,14 @@
     walkTree(d.tree || [], 0, container);
     container.querySelectorAll('.docs-folder-btn').forEach(function (b) {
       b.addEventListener('click', function () {
-        document.getElementById('docs-folder-all').classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium');
-        document.querySelectorAll('.docs-folder-btn').forEach(function (x) { x.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium'); });
-        b.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+        var allBtn = document.getElementById('docs-folder-all');
+        if (allBtn) {
+          allBtn.classList.remove('bg-primary/10', 'text-primary', 'font-semibold', 'border', 'border-primary/15');
+          allBtn.classList.add('text-ink-muted');
+        }
+        document.querySelectorAll('.docs-folder-btn').forEach(function (x) { x.classList.remove('bg-primary/10', 'text-primary', 'font-semibold'); });
+        b.classList.add('bg-primary/10', 'text-primary', 'font-semibold');
+        b.classList.remove('text-ink-muted');
         state.folderId = parseInt(b.dataset.folderId, 10);
         loadFiles();
       });
@@ -293,7 +298,7 @@
     empty.classList.add('hidden');
     files.forEach(function (f) {
       const tr = document.createElement('tr');
-      tr.className = 'hover:bg-slate-50/80';
+      tr.className = 'transition-colors hover:bg-primary/5';
       const statusOpts = state.statuses.map(function (s) {
         return '<option value="' + s.value + '"' + (s.value === f.workflow_status ? ' selected' : '') + '>' + s.label + '</option>';
       }).join('');
@@ -303,7 +308,7 @@
       const actDate = f.act_date ? f.act_date.slice(0, 10) : '';
       tr.innerHTML =
         '<td class="px-3 py-2 align-middle">' + fileIcon(f.file_kind) + '</td>' +
-        '<td class="px-3 py-2 font-medium text-slate-900 max-w-[200px] truncate"><button type="button" class="docs-preview-trigger text-left hover:text-indigo-700" data-id="' + f.id + '">' + escapeHtml(f.title) + '</button></td>' +
+        '<td class="px-3 py-2 font-medium text-ink max-w-[200px] truncate"><button type="button" class="docs-preview-trigger text-left hover:text-primary" data-id="' + f.id + '">' + escapeHtml(f.title) + '</button></td>' +
         '<td class="px-3 py-2 hidden md:table-cell text-slate-600">' + escapeHtml(f.file_kind_display) + '</td>' +
         '<td class="px-3 py-2 hidden lg:table-cell">' + (canEdit ? '<select class="docs-patch w-full rounded border border-slate-200 px-1 py-1 text-xs" data-id="' + f.id + '" data-field="category">' + catOpts + '</select>' : escapeHtml(f.category_display)) + '</td>' +
         '<td class="px-3 py-2 hidden sm:table-cell tabular-nums text-slate-600">' + escapeHtml(f.size_display) + '</td>' +
@@ -321,7 +326,7 @@
           : '<span class="truncate block max-w-[120px]">' + escapeHtml(f.work_section || '—') + '</span>') + '</td>' +
         '<td class="px-3 py-2">' + (canEdit ? '<select class="docs-patch rounded border border-slate-200 px-1 py-1 text-xs min-w-[8rem]" data-id="' + f.id + '" data-field="workflow_status">' + statusOpts + '</select>' : '<span class="inline-flex rounded-full px-2 py-0.5 text-xs ' + statusClass(f.workflow_status) + '">' + escapeHtml(f.workflow_status_display) + '</span>') + '</td>' +
         '<td class="px-3 py-2 text-xs space-x-1 whitespace-nowrap">' +
-        '<a href="' + escapeHtml(f.file_url) + '" download class="text-indigo-600 hover:underline">Скачать</a>' +
+        '<a href="' + escapeHtml(f.file_url) + '" download class="font-medium text-primary hover:underline">Скачать</a>' +
         '<a href="' + escapeHtml(f.file_url) + '" target="_blank" rel="noopener" class="text-slate-600 hover:underline">Откр.</a>' +
         (canEdit ? '<button type="button" class="docs-del text-red-600 hover:underline" data-id="' + f.id + '">Уд.</button>' : '') +
         '</td>';
@@ -396,16 +401,21 @@
   document.getElementById('docs-preview-backdrop').addEventListener('click', closePreview);
   document.querySelectorAll('.docs-tab').forEach(function (tabEl) {
     tabEl.addEventListener('click', function () {
-      document.querySelectorAll('.docs-tab').forEach(function (t) { t.classList.remove('bg-white', 'text-indigo-700', 'shadow-sm'); t.classList.add('text-slate-600'); });
-      tabEl.classList.add('bg-white', 'text-indigo-700', 'shadow-sm'); tabEl.classList.remove('text-slate-600');
+      document.querySelectorAll('.docs-tab').forEach(function (t) {
+        t.classList.remove('bg-primary', 'text-white', 'shadow-md', 'shadow-primary/25');
+        t.classList.add('text-ink-muted');
+      });
+      tabEl.classList.add('bg-primary', 'text-white', 'shadow-md', 'shadow-primary/25');
+      tabEl.classList.remove('text-ink-muted');
       state.tab = tabEl.dataset.tab || 'all';
       loadFiles().catch(function (e) { alert(e.message || e); });
     });
   });
   document.getElementById('docs-folder-all').addEventListener('click', function () {
     state.folderId = null;
-    document.querySelectorAll('.docs-folder-btn').forEach(function (x) { x.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium'); });
-    this.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+    document.querySelectorAll('.docs-folder-btn').forEach(function (x) { x.classList.remove('bg-primary/10', 'text-primary', 'font-semibold'); });
+    this.classList.add('bg-primary/10', 'text-primary', 'font-semibold', 'border', 'border-primary/15');
+    this.classList.remove('text-ink-muted');
     loadFiles().catch(function (e) { alert(e.message || e); });
   });
   document.getElementById('docs-apply-filters').addEventListener('click', function () { loadFiles().catch(function (e) { alert(e.message || e); }); });
@@ -443,15 +453,16 @@
     xhr.send(fd);
   }
   const dz = document.getElementById('docs-dropzone');
-  dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.classList.add('border-indigo-400', 'bg-indigo-50/30'); });
-  dz.addEventListener('dragleave', function () { dz.classList.remove('border-indigo-400', 'bg-indigo-50/30'); });
-  dz.addEventListener('drop', function (e) { e.preventDefault(); dz.classList.remove('border-indigo-400', 'bg-indigo-50/30'); if (canEdit) uploadFiles(e.dataTransfer.files); });
+  dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.classList.add('border-primary/60', 'bg-primary/10'); });
+  dz.addEventListener('dragleave', function () { dz.classList.remove('border-primary/60', 'bg-primary/10'); });
+  dz.addEventListener('drop', function (e) { e.preventDefault(); dz.classList.remove('border-primary/60', 'bg-primary/10'); if (canEdit) uploadFiles(e.dataTransfer.files); });
   document.getElementById('docs-file-input').addEventListener('change', function () { uploadFiles(this.files); this.value = ''; });
   if (canEdit) {
     document.querySelectorAll('.edit-only').forEach(function (el) { el.classList.remove('hidden'); });
   }
   loadMeta().then(loadFolders).then(function () {
-    document.getElementById('docs-folder-all').classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+    var root = document.getElementById('docs-folder-all');
+    if (root) { root.classList.add('bg-primary/10', 'text-primary', 'font-semibold', 'border', 'border-primary/15'); root.classList.remove('text-ink-muted'); }
     return loadFiles();
   }).catch(function (e) { console.error(e); alert(e.message || 'Не удалось загрузить документы'); });
 })();

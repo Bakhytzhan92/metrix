@@ -5,14 +5,14 @@
   Закрытие по клику вне меню и по Escape — в script на странице дашборда.
 {% endcomment %}
 <div
-  class="project-card relative flex flex-col justify-between rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-100 hover:shadow-md transition-shadow"
+  class="project-card group relative flex flex-col justify-between rounded-2xl bg-white p-5 md:p-6 shadow-mx-sm border border-line transition-all duration-200 hover:shadow-mx hover:-translate-y-0.5"
   data-project-id="{{ project.pk }}"
   data-project-name="{{ project.name|escapejs }}"
 >
   <div class="project-actions absolute top-3 right-3 z-10">
     <button
       type="button"
-      class="project-actions-trigger inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      class="project-actions-trigger inline-flex h-9 w-9 items-center justify-center rounded-xl text-ink-muted hover:bg-primary/8 hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/25"
       aria-label="Действия"
       aria-expanded="false"
       aria-haspopup="true"
@@ -22,22 +22,22 @@
       </svg>
     </button>
     <div
-      class="project-actions-menu absolute right-0 top-full mt-1 hidden min-w-[160px] rounded-lg bg-white py-1 shadow-lg ring-1 ring-slate-200"
+      class="project-actions-menu absolute right-0 top-full mt-1 hidden min-w-[168px] rounded-xl bg-white/95 backdrop-blur-md py-1 shadow-mx border border-line z-20"
       role="menu"
     >
-      <a href="{% url 'project_edit' project.pk %}" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" role="menuitem">Редактировать</a>
-      <span class="block px-4 py-2 text-sm text-slate-400 cursor-default" role="menuitem">Переместить</span>
-      <button type="button" class="project-action-delete block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50" role="menuitem" data-project-id="{{ project.pk }}" data-project-name="{{ project.name|escapejs }}">Удалить</button>
+      <a href="{% url 'project_edit' project.pk %}" class="block px-4 py-2.5 text-sm text-ink hover:bg-primary/[0.06]" role="menuitem">Редактировать</a>
+      <span class="block px-4 py-2.5 text-sm text-ink-muted cursor-default" role="menuitem">Переместить</span>
+      <button type="button" class="project-action-delete block w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50/80" role="menuitem" data-project-id="{{ project.pk }}" data-project-name="{{ project.name|escapejs }}">Удалить</button>
     </div>
   </div>
-  <a href="{% url 'project_detail' project.pk %}" class="block pr-10 -m-5 p-5 rounded-xl hover:bg-slate-50/50">
+  <a href="{% url 'project_detail' project.pk %}" class="block pr-10 -m-5 p-5 md:-m-6 md:p-6 rounded-2xl transition-colors hover:bg-gradient-to-br hover:from-primary/[0.04] hover:to-transparent">
     <div>
-      <h2 class="text-lg font-semibold text-slate-900 mb-1">{{ project.name }}</h2>
-      <p class="text-xs text-slate-500 mb-3">{{ project.get_status_display }}</p>
+      <h2 class="text-lg font-semibold text-ink mb-1 tracking-tight">{{ project.name }}</h2>
+      <p class="text-xs text-ink-muted mb-3 font-medium">{{ project.get_status_display }}</p>
     </div>
-    <div class="mt-2 text-xs text-slate-500 flex items-center justify-between">
-      <span>{{ project.start_date|default:"–" }} — {{ project.end_date|default:"–" }}</span>
-      <span class="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">Актуальный</span>
+    <div class="mt-3 text-xs text-ink-muted flex items-center justify-between gap-2">
+      <span class="tabular-nums">{{ project.start_date|default:"–" }} — {{ project.end_date|default:"–" }}</span>
+      <span class="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold border border-primary/15 shrink-0">Актуальный</span>
     </div>
   </a>
 </div>

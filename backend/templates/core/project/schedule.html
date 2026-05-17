@@ -1,12 +1,12 @@
 {% extends "core/project/project_layout.html" %}
 {% block project_content %}
 <style>
-  .sched-shell { --sched-row-h: 44px; --sched-border: #e2e8f0; }
+  .sched-shell { --sched-row-h: 44px; --sched-border: #e5e7eb; --sched-primary: #6d5ef8; --sched-primary-dark: #5b4cf0; }
   .sched-cards { display: grid; gap: 1rem; grid-template-columns: 1fr; }
   @media (min-width: 768px) { .sched-cards { grid-template-columns: 1fr 1fr; } }
-  .sched-card { border: 1px solid var(--sched-border); border-radius: 0.75rem; background: #fff; padding: 1rem; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); }
-  .sched-split { display: flex; border: 1px solid var(--sched-border); border-radius: 0.5rem; overflow: hidden; background: #fff; min-height: 420px; max-height: calc(100vh - 220px); }
-  .sched-pinned { flex: 0 0 auto; min-width: 260px; max-width: min(96vw, 1600px); display: flex; flex-direction: column; border-right: 1px solid var(--sched-border); background: #fafafa; }
+  .sched-card { border: 1px solid var(--sched-border); border-radius: 1rem; background: #fff; padding: 1.125rem; box-shadow: 0 4px 24px -4px rgba(109, 94, 248, 0.08), 0 8px 20px -8px rgba(15, 23, 42, 0.06); }
+  .sched-split { display: flex; border: 1px solid var(--sched-border); border-radius: 1rem; overflow: hidden; background: #fff; min-height: 420px; max-height: calc(100vh - 220px); box-shadow: 0 2px 12px -2px rgba(15, 23, 42, 0.06); }
+  .sched-pinned { flex: 0 0 auto; min-width: 260px; max-width: min(96vw, 1600px); display: flex; flex-direction: column; border-right: 1px solid var(--sched-border); background: linear-gradient(180deg, #fafbfc 0%, #f5f7fb 100%); }
   .sched-pinned-scroll { overflow: auto; flex: 1; }
   .sched-table { table-layout: fixed; width: auto; min-width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
   .sched-table th { position: sticky; top: 0; z-index: 2; background: #f1f5f9; text-align: left; height: 36px; padding: 4px 0.35rem; font-weight: 600; color: #334155; border-bottom: 1px solid var(--sched-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; vertical-align: middle; }
@@ -26,17 +26,17 @@
   .sched-gantt-row { min-height: var(--sched-row-h); box-sizing: border-box; border-bottom: 1px solid #f1f5f9; position: relative; }
   .sched-gantt-row:nth-child(even) { background: #fafafa; }
   .sched-bar { position: absolute; top: 50%; height: 30px; transform: translateY(-50%); border-radius: 6px; cursor: grab; min-width: 8px; box-sizing: border-box; border: 2px solid rgba(0,0,0,.12); display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: #0f172a; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; z-index: 1; transition: box-shadow .15s, filter .15s; }
-  .sched-bar:hover { box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); filter: brightness(1.03); z-index: 2; }
+  .sched-bar:hover { box-shadow: 0 4px 16px rgba(109, 94, 248, 0.2), 0 2px 8px rgb(0 0 0 / 0.08); filter: brightness(1.02); z-index: 2; }
   .sched-bar:active { cursor: grabbing; }
-  .sched-bar.sched-status-planned { background: #94a3b8; }
-  .sched-bar.sched-status-in_progress { background: #3b82f6; color: #fff; border-color: #1d4ed8; }
-  .sched-bar.sched-status-completed { background: #22c55e; color: #fff; border-color: #15803d; }
-  .sched-bar.sched-sec-bar { background: #2563eb; color: #fff; border-color: #1e40af; cursor: default; }
+  .sched-bar.sched-status-planned { background: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%); border-color: rgba(15, 23, 42, 0.12); }
+  .sched-bar.sched-status-in_progress { background: linear-gradient(135deg, #6d5ef8 0%, #5b4cf0 100%); color: #fff; border-color: rgba(91, 76, 240, 0.85); box-shadow: 0 2px 12px rgba(109, 94, 248, 0.35); }
+  .sched-bar.sched-status-completed { background: linear-gradient(180deg, #4ade80 0%, #22c55e 100%); color: #fff; border-color: #15803d; }
+  .sched-bar.sched-sec-bar { background: linear-gradient(135deg, #4338ca 0%, #6d5ef8 100%); color: #fff; border-color: #3730a3; cursor: default; }
   .sched-bar-resize { position: absolute; right: -4px; top: 0; width: 10px; height: 100%; cursor: ew-resize; z-index: 3; }
   .sched-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; z-index: 4; pointer-events: none; box-shadow: 0 0 0 1px rgba(239,68,68,.3); }
   .sched-today-caret { position: absolute; top: 0; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #ef4444; transform: translateX(-4px); z-index: 4; pointer-events: none; }
   .sched-dep-svg { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 4; overflow: visible; }
-  .sched-zoom-active { border-color: #6366f1 !important; background: #eef2ff !important; }
+  .sched-zoom-active { border-color: #6d5ef8 !important; background: rgba(109, 94, 248, 0.1) !important; color: #3730a3 !important; }
   .sched-input-xs { width: 100%; max-width: none; min-width: 0; box-sizing: border-box; font-size: 0.75rem; padding: 0.2rem 0.35rem; border: 1px solid #cbd5e1; border-radius: 0.25rem; background: #fff; }
   .sched-input-days { max-width: none; text-align: right; }
   .sched-table select.sched-input-xs { width: 100%; min-width: 0; max-width: none; }
@@ -51,8 +51,8 @@
       <p class="text-xs text-slate-500 mt-0.5">Этапы из сметы: разделы — группы, позиции — работы. Сроки сохраняются в позиции сметы.</p>
     </div>
     <div class="flex flex-wrap gap-2">
-      <a href="{% url 'project_estimate' project.pk %}" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Смета</a>
-      <a href="{% url 'estimate_export' project.pk %}" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Экспорт</a>
+      <a href="{% url 'project_estimate' project.pk %}" class="mx-btn-secondary text-sm">Смета</a>
+      <a href="{% url 'estimate_export' project.pk %}" class="mx-btn-secondary text-sm">Экспорт</a>
     </div>
   </div>
 
@@ -74,7 +74,7 @@
     </div>
   </div>
 
-  <form method="get" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3" id="sched-filter-form">
+  <form method="get" class="rounded-2xl border border-line bg-white p-4 md:p-5 shadow-mx-sm space-y-3" id="sched-filter-form">
     <input type="hidden" name="materials" id="sched-materials-input" value="{% if show_materials %}1{% else %}0{% endif %}">
     <div class="flex flex-wrap items-end gap-3 text-sm">
       <div>
@@ -103,8 +103,8 @@
         <label class="block text-slate-600 text-xs mb-1">По</label>
         <input type="date" name="date_to" value="{{ filter_date_to }}" class="rounded-md border border-slate-300 px-2 py-1.5" />
       </div>
-      <button type="submit" class="rounded-md bg-slate-800 px-3 py-2 text-white hover:bg-slate-900">Фильтр</button>
-      <a href="{% url 'project_schedule' project.pk %}" class="text-sm text-indigo-600 hover:text-indigo-800 py-2">Сброс</a>
+      <button type="submit" class="mx-btn-primary text-sm">Фильтр</button>
+      <a href="{% url 'project_schedule' project.pk %}" class="text-sm font-medium text-primary hover:opacity-90 py-2">Сброс</a>
     </div>
     <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100">
       <label class="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
@@ -116,18 +116,18 @@
       <button type="button" class="js-sched-zoom rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50 sched-zoom-active" data-zoom="day">День</button>
       <button type="button" class="js-sched-zoom rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50" data-zoom="week">Неделя</button>
       <button type="button" class="js-sched-zoom rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50" data-zoom="month">Месяц</button>
-      <button type="button" id="sched-goto-today" class="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-800 hover:bg-indigo-100">Вернуться к сегодня</button>
-      <a href="{% url 'project_supply' project.pk %}" class="ml-auto inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-800">
+      <button type="button" id="sched-goto-today" class="mx-btn-secondary text-xs !min-h-8">Вернуться к сегодня</button>
+      <a href="{% url 'project_supply' project.pk %}" class="ml-auto inline-flex items-center gap-1 text-sm font-medium text-primary hover:opacity-90">
         Запланировать закупки <span aria-hidden="true">→</span>
       </a>
     </div>
   </form>
 
   <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600 px-1">
-    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-slate-400"></span> План</span>
-    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-blue-500"></span> В работе</span>
-    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-green-500"></span> Завершено</span>
-    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-blue-700"></span> Сводка по разделу</span>
+    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-slate-400 shadow-sm"></span> План</span>
+    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-violet-500 shadow-sm shadow-violet-500/30"></span> В работе</span>
+    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-emerald-500 shadow-sm shadow-emerald-500/25"></span> Завершено</span>
+    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-gradient-to-r from-indigo-600 to-violet-500"></span> Сводка по разделу</span>
     <span class="inline-flex items-center gap-1.5 border-l border-slate-200 pl-4 text-slate-700" title="Стрелка на графике: от текущей работы (A) к той, что выбрана в «После» (B) — B идёт следом за A.">
       <span class="text-slate-500 font-medium tabular-nums" aria-hidden="true">A → B</span>
       «После»: после работы&nbsp;A идёт&nbsp;B (на графике стрелка A&nbsp;→&nbsp;B)

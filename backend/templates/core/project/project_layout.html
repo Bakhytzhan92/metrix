@@ -4,73 +4,75 @@
 
 {% block content %}
 {# ProjectLayout: header + tabs + content #}
-<header class="mb-6">
-  <div class="flex flex-col gap-1">
-    <a href="{% url 'dashboard' %}" class="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">
-      <span aria-hidden="true">←</span>
-      <span>{{ project.name }}</span>
+<div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+  <div>
+    <a href="{% url 'dashboard' %}" class="inline-flex items-center gap-2 text-sm font-medium text-ink-muted hover:text-primary transition-colors">
+      <i data-lucide="arrow-left" class="w-4 h-4" aria-hidden="true"></i>
+      К проектам
     </a>
-    <p class="text-xs font-medium uppercase tracking-wide text-slate-500">
+    <h1 class="mt-2 text-2xl font-bold tracking-tight text-ink">{{ project.name }}</h1>
+    <p class="mt-1 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+      <span class="inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
       {{ project.get_status_display }}
     </p>
   </div>
-</header>
+</div>
 
-{# Горизонтальная вкладочная навигация #}
-<nav class="border-b border-slate-200 mb-6" aria-label="Разделы проекта">
-  <ul class="-mb-px flex flex-wrap gap-1 text-sm">
+{# Вкладки проекта: активная — класс .mx-project-tab--active в base.html (реальный фон/color, без Tailwind CDN) #}
+<nav class="mb-8 -mx-1 px-1 overflow-x-auto pb-1" aria-label="Разделы проекта">
+  <ul class="flex w-max min-w-full flex-wrap gap-1.5 rounded-2xl bg-white p-1.5 border border-line shadow-mx-sm">
     {% has_perm 'view_projects' as p_an %}
     {% if p_an %}
     <li>
-      <a href="{% url 'project_analytics' project.pk %}" class="inline-block px-3 py-2.5 border-b-2 rounded-t-md {% if active_tab == 'analytics' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300{% endif %}">Аналитика</a>
+      <a href="{% url 'project_analytics' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'analytics' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">Аналитика</a>
     </li>
     {% endif %}
     {% has_perm 'view_estimates' as p_es %}
     {% if p_es %}
     <li>
-      <a href="{% url 'project_estimate' project.pk %}" class="inline-block px-3 py-2.5 border-b-2 rounded-t-md {% if active_tab == 'estimate' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300{% endif %}">Смета</a>
+      <a href="{% url 'project_estimate' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'estimate' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">Смета</a>
     </li>
     {% endif %}
     {% has_perm 'view_schedule' as p_sc %}
     {% if p_sc or p_es %}
     <li>
-      <a href="{% url 'project_schedule' project.pk %}" class="inline-block px-3 py-2.5 border-b-2 rounded-t-md {% if active_tab == 'schedule' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300{% endif %}">График работ</a>
+      <a href="{% url 'project_schedule' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'schedule' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">График работ</a>
     </li>
     {% endif %}
     {% has_perm 'view_supply' as p_su %}
     {% if p_su %}
     <li>
-      <a href="{% url 'project_supply' project.pk %}" class="inline-block px-3 py-2.5 border-b-2 rounded-t-md {% if active_tab == 'supply' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300{% endif %}">Снабжение</a>
+      <a href="{% url 'project_supply' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'supply' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">Снабжение</a>
     </li>
     {% endif %}
     {% has_perm 'view_finance' as p_fi %}
     {% if p_fi %}
     <li>
-      <a href="{% url 'project_finance_section' project.pk %}" class="inline-block px-3 py-2.5 border-b-2 rounded-t-md {% if active_tab == 'finance' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300{% endif %}">Финансы</a>
+      <a href="{% url 'project_finance_section' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'finance' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">Финансы</a>
     </li>
     {% endif %}
     {% has_perm 'view_construction' as p_co %}
     {% if p_co %}
     <li>
-      <a href="{% url 'project_construction' project.pk %}" class="inline-block px-3 py-2.5 border-b-2 rounded-t-md {% if active_tab == 'construction' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300{% endif %}">Стройка</a>
+      <a href="{% url 'project_construction' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'construction' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">Стройка</a>
     </li>
     {% endif %}
     {% has_perm 'view_warehouse' as p_wh %}
     {% if p_wh %}
     <li>
-      <a href="{% url 'project_warehouses' project.pk %}" class="inline-block px-3 py-2.5 border-b-2 rounded-t-md {% if active_tab == 'warehouses' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300{% endif %}">Склады</a>
+      <a href="{% url 'project_warehouses' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'warehouses' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">Склады</a>
     </li>
     {% endif %}
     {% has_perm 'view_projects' as p_doc %}
     {% if p_doc %}
     <li>
-      <a href="{% url 'project_documents' project.pk %}" class="inline-block px-3 py-2.5 border-b-2 rounded-t-md {% if active_tab == 'documents' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300{% endif %}">Документы</a>
+      <a href="{% url 'project_documents' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'documents' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">Документы</a>
     </li>
     {% endif %}
     {% has_perm 'view_ai' as p_ai %}
     {% if p_ai %}
     <li>
-      <a href="{% url 'project_ai_import' project.pk %}" class="inline-block px-3 py-2.5 border-b-2 rounded-t-md {% if active_tab == 'ai' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300{% endif %}">ИИ</a>
+      <a href="{% url 'project_ai_import' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'ai' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">ИИ</a>
     </li>
     {% endif %}
   </ul>

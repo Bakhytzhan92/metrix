@@ -4,12 +4,186 @@
     <meta charset="UTF-8" />
     <title>{% block title %}Metrix SaaS{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: { DEFAULT: "#6D5EF8", hover: "#5B4CF0", soft: "#8B7FFF" },
+              surface: { page: "#F5F7FB", card: "#FFFFFF" },
+              ink: { DEFAULT: "#1F2937", muted: "#6B7280" },
+              line: "#E5E7EB",
+            },
+            fontFamily: {
+              sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            },
+            boxShadow: {
+              mx: "0 4px 24px -4px rgba(109, 94, 248, 0.14), 0 8px 20px -8px rgba(15, 23, 42, 0.08)",
+              "mx-sm": "0 2px 12px -2px rgba(15, 23, 42, 0.06)",
+            },
+          },
+        },
+      };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js" defer></script>
+    <style>
+      :root {
+        --mx-primary: #6d5ef8;
+        --mx-primary-hover: #5b4cf0;
+        --mx-secondary: #8b7fff;
+        --mx-bg: #f5f7fb;
+        --mx-card: #ffffff;
+        --mx-text: #1f2937;
+        --mx-subtext: #6b7280;
+        --mx-success: #22c55e;
+        --mx-warning: #f59e0b;
+        --mx-danger: #ef4444;
+        --mx-border: #e5e7eb;
+      }
+      .mx-glass {
+        background: rgba(255, 255, 255, 0.72);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+      }
+      .mx-nav-item {
+        position: relative;
+        transition: background-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
+      }
+      .mx-nav-item:not(.mx-nav-active):hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .mx-nav-active {
+        background: rgba(109, 94, 248, 0.18);
+        color: #fff;
+        box-shadow: inset 3px 0 0 0 var(--mx-primary), 0 0 0 1px rgba(139, 127, 255, 0.15);
+      }
+      .mx-main-fade {
+        animation: mxMainIn 0.38s ease-out both;
+      }
+      @keyframes mxMainIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .mx-btn-primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 1.25rem;
+        border-radius: 0.75rem;
+        font-weight: 500;
+        font-size: 0.875rem;
+        background-color: var(--mx-primary);
+        color: #fff;
+        transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+        box-shadow: 0 2px 8px -2px rgba(109, 94, 248, 0.45);
+      }
+      .mx-btn-primary:hover {
+        background-color: var(--mx-primary-hover);
+        transform: scale(1.02);
+      }
+      .mx-btn-secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 1.25rem;
+        border-radius: 0.75rem;
+        font-weight: 500;
+        font-size: 0.875rem;
+        border: 1px solid var(--mx-border);
+        background: #fff;
+        color: var(--mx-text);
+        transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+      }
+      .mx-btn-secondary:hover {
+        border-color: #d1d5db;
+        background: #f9fafb;
+        transform: scale(1.02);
+      }
+      .mx-btn-danger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 1.25rem;
+        border-radius: 0.75rem;
+        font-weight: 500;
+        font-size: 0.875rem;
+        border: 1px solid rgba(239, 68, 68, 0.55);
+        background: #fff;
+        color: var(--mx-danger);
+        transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+      }
+      .mx-btn-danger:hover {
+        background: rgba(239, 68, 68, 0.06);
+        border-color: var(--mx-danger);
+        transform: scale(1.02);
+      }
+      .mx-table-card {
+        overflow: hidden;
+        border-radius: 0.75rem;
+        background: var(--mx-card);
+        border: 1px solid var(--mx-border);
+        box-shadow: 0 2px 12px -2px rgba(15, 23, 42, 0.06);
+      }
+      .mx-table-card thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: rgba(249, 250, 251, 0.95);
+        backdrop-filter: blur(6px);
+      }
+      .mx-table-card tbody tr:nth-child(even) {
+        background: rgba(245, 247, 251, 0.5);
+      }
+      .mx-table-card tbody tr:hover {
+        background: rgba(109, 94, 248, 0.06);
+      }
+      .mx-field {
+        border-radius: 0.5rem;
+        border: 1px solid #e5e7eb;
+        font-size: 0.875rem;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      .mx-field:focus {
+        outline: none;
+        border-color: var(--mx-primary);
+        box-shadow: 0 0 0 3px rgba(109, 94, 248, 0.18);
+      }
+      /* Вкладки раздела проекта: фон/цвет через CSS — Tailwind CDN часто не применяет bg-primary к ссылкам */
+      a.mx-project-tab--active {
+        background-color: var(--mx-primary) !important;
+        color: #fff !important;
+        border-color: var(--mx-primary-hover) !important;
+        -webkit-text-fill-color: #fff;
+        box-shadow: 0 1px 3px rgba(109, 94, 248, 0.35);
+      }
+      a.mx-project-tab--active:hover,
+      a.mx-project-tab--active:visited,
+      a.mx-project-tab--active:focus-visible {
+        background-color: var(--mx-primary-hover) !important;
+        color: #fff !important;
+        border-color: var(--mx-primary-hover) !important;
+        -webkit-text-fill-color: #fff;
+      }
+    </style>
+    {% block extra_head %}{% endblock %}
   </head>
-  <body class="bg-slate-50 text-slate-900">
+  <body class="min-h-screen bg-surface-page font-sans text-ink antialiased">
     {% load rbac_extras %}
     {% if impersonation_active %}
-    <div class="bg-amber-100 text-amber-950 text-center text-sm py-2 px-4 border-b border-amber-200 flex flex-wrap items-center justify-center gap-3">
+    <div class="bg-amber-50 text-amber-950 text-center text-sm py-2.5 px-4 border-b border-amber-200/80 flex flex-wrap items-center justify-center gap-3">
       <span>Режим имперсонации. Администратор платформы: <strong>{{ impersonation_admin_username }}</strong></span>
       <form method="post" action="{% url 'superadmin:superadmin_stop_impersonation' %}" class="inline">
         {% csrf_token %}
@@ -19,63 +193,77 @@
     {% endif %}
     <div class="min-h-screen flex">
       <!-- Sidebar -->
-      <aside class="hidden md:flex w-60 flex-col bg-white border-r border-slate-200">
-        <div class="h-16 flex items-center px-6 border-b border-slate-100">
-          <span class="text-lg font-semibold text-slate-800">Metrix</span>
+      <aside class="hidden md:flex w-64 xl:w-[17rem] flex-col bg-gradient-to-b from-[#1e1b4b] via-[#1a1744] to-[#13102e] text-slate-200 border-r border-white/5 shadow-mx">
+        <div class="h-16 flex items-center gap-2.5 px-5 border-b border-white/10">
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-soft text-white font-bold text-sm shadow-[0_8px_24px_rgba(109,94,248,0.35)]">
+            M
+          </div>
+          <div class="min-w-0">
+            <span class="text-[15px] font-semibold text-white tracking-tight leading-tight block">Metrix</span>
+            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Стройка · ERP</span>
+          </div>
         </div>
-        <nav class="flex-1 px-4 py-4 space-y-1 text-sm">
+        <nav class="flex-1 px-3 py-4 space-y-0.5 text-sm overflow-y-auto">
           {% has_perm 'view_projects' as can_projects %}
           {% if can_projects %}
-          <a href="{% url 'dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name|default:''|slice:':8' == 'project_' %}bg-slate-100 font-medium{% endif %}">
+          <a href="{% url 'dashboard' %}" class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 {% if request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name|default:''|slice:':8' == 'project_' %}mx-nav-active{% endif %}">
+            <i data-lucide="folder-kanban" class="w-5 h-5 shrink-0 opacity-90" aria-hidden="true"></i>
             <span>Проекты</span>
           </a>
           {% endif %}
           {% has_perm 'view_tasks' as can_tasks %}
           {% if can_tasks %}
-          <a href="{% url 'task_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'task_list' or request.resolver_match.url_name == 'task_create' or request.resolver_match.url_name == 'task_edit' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
+          <a href="{% url 'task_list' %}" class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 {% if request.resolver_match.url_name == 'task_list' or request.resolver_match.url_name == 'task_create' or request.resolver_match.url_name == 'task_edit' %}mx-nav-active{% endif %}">
+            <i data-lucide="list-todo" class="w-5 h-5 shrink-0 opacity-90" aria-hidden="true"></i>
             <span>Задачи</span>
           </a>
           {% endif %}
           {% has_perm 'view_finance' as can_fin %}
           {% if can_fin %}
-          <a href="{% url 'finance_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'finance_dashboard' or request.resolver_match.url_name == 'finance_income' or request.resolver_match.url_name == 'finance_expense' or request.resolver_match.url_name == 'finance_transfer' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
+          <a href="{% url 'finance_dashboard' %}" class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 {% if request.resolver_match.url_name == 'finance_dashboard' or request.resolver_match.url_name == 'finance_income' or request.resolver_match.url_name == 'finance_expense' or request.resolver_match.url_name == 'finance_transfer' %}mx-nav-active{% endif %}">
+            <i data-lucide="wallet" class="w-5 h-5 shrink-0 opacity-90" aria-hidden="true"></i>
             <span>Финансы</span>
           </a>
           {% endif %}
           {% has_perm 'view_supply' as can_sup %}
           {% if can_sup %}
-          <a href="{% url 'supply_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'supply_dashboard' or request.resolver_match.url_name == 'supply_request_create' or request.resolver_match.url_name == 'supply_order_create' or request.resolver_match.url_name == 'supply_order_detail' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
+          <a href="{% url 'supply_dashboard' %}" class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 {% if request.resolver_match.url_name == 'supply_dashboard' or request.resolver_match.url_name == 'supply_request_create' or request.resolver_match.url_name == 'supply_order_create' or request.resolver_match.url_name == 'supply_order_detail' %}mx-nav-active{% endif %}">
+            <i data-lucide="truck" class="w-5 h-5 shrink-0 opacity-90" aria-hidden="true"></i>
             <span>Снабжение</span>
           </a>
           {% endif %}
           {% has_perm 'view_warehouse' as can_wh %}
           {% if can_wh %}
-          <a href="{% url 'warehouses_dashboard' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'warehouses_dashboard' or request.resolver_match.url_name == 'warehouse_detail' or request.resolver_match.url_name == 'warehouse_create' or request.resolver_match.url_name == 'stock_incoming' or request.resolver_match.url_name == 'stock_writeoff' or request.resolver_match.url_name == 'stock_transfer' or request.resolver_match.url_name == 'material_create' or request.resolver_match.url_name == 'warehouses_incoming' or request.resolver_match.url_name == 'warehouses_outgoing' or request.resolver_match.url_name == 'warehouses_transfer' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
+          <a href="{% url 'warehouses_dashboard' %}" class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 {% if request.resolver_match.url_name == 'warehouses_dashboard' or request.resolver_match.url_name == 'warehouse_detail' or request.resolver_match.url_name == 'warehouse_create' or request.resolver_match.url_name == 'stock_incoming' or request.resolver_match.url_name == 'stock_writeoff' or request.resolver_match.url_name == 'stock_transfer' or request.resolver_match.url_name == 'material_create' or request.resolver_match.url_name == 'warehouses_incoming' or request.resolver_match.url_name == 'warehouses_outgoing' or request.resolver_match.url_name == 'warehouses_transfer' %}mx-nav-active{% endif %}">
+            <i data-lucide="warehouse" class="w-5 h-5 shrink-0 opacity-90" aria-hidden="true"></i>
             <span>Склады</span>
           </a>
-          <a href="{% url 'warehouse_inventory_erp' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 ml-2 text-xs {% if request.resolver_match.url_name == 'warehouse_inventory_erp' %}bg-emerald-50 font-medium text-emerald-800{% else %}text-slate-600{% endif %}">
+          <a href="{% url 'warehouse_inventory_erp' %}" class="mx-nav-item flex items-center gap-3 px-3 py-2 rounded-xl text-xs ml-2 text-slate-400 {% if request.resolver_match.url_name == 'warehouse_inventory_erp' %}mx-nav-active{% endif %}">
+            <i data-lucide="clipboard-list" class="w-4 h-4 shrink-0 opacity-80" aria-hidden="true"></i>
             <span>Инвентарь ERP</span>
           </a>
           {% endif %}
           {% has_perm 'view_reports' as can_rep %}
           {% if can_rep %}
-          <a href="{% url 'reports_index' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'reports_index' or request.resolver_match.url_name == 'reports_pnl' or request.resolver_match.url_name == 'reports_cashflow' or request.resolver_match.url_name == 'reports_project' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
+          <a href="{% url 'reports_index' %}" class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 {% if request.resolver_match.url_name == 'reports_index' or request.resolver_match.url_name == 'reports_pnl' or request.resolver_match.url_name == 'reports_cashflow' or request.resolver_match.url_name == 'reports_project' %}mx-nav-active{% endif %}">
+            <i data-lucide="chart-column" class="w-5 h-5 shrink-0 opacity-90" aria-hidden="true"></i>
             <span>Отчёты</span>
           </a>
           {% endif %}
-          <details class="group">
-            <summary class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 cursor-pointer list-none marker:content-none">
-              <span>Справочники</span>
-              <span class="text-slate-400 text-xs ml-auto group-open:rotate-180">▼</span>
+          <details class="group rounded-xl">
+            <summary class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer list-none marker:content-none text-slate-300 hover:text-white [&::-webkit-details-marker]:hidden">
+              <i data-lucide="book-marked" class="w-5 h-5 shrink-0 opacity-90" aria-hidden="true"></i>
+              <span class="flex-1 text-left">Справочники</span>
+              <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 opacity-60 transition-transform group-open:rotate-180" aria-hidden="true"></i>
             </summary>
-            <div class="mt-1 ml-2 pl-2 border-l border-slate-200 space-y-0.5 pb-2">
+            <div class="mt-1 ml-3 pl-3 border-l border-white/10 space-y-0.5 pb-2">
               {% if can_wh %}
-              <a href="{% url 'company_equipment_list' %}" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-slate-600 hover:bg-slate-50">
+              <a href="{% url 'company_equipment_list' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5">
                 Проектная техника
               </a>
               {% endif %}
               {% if can_wh %}
-              <a href="{% url 'material_create' %}" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-slate-600 hover:bg-slate-50">
+              <a href="{% url 'material_create' %}" class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-white/5">
                 Материалы (склад)
               </a>
               {% endif %}
@@ -83,65 +271,95 @@
           </details>
           {% has_perm 'manage_users' as can_set %}
           {% if can_set %}
-          <a href="{% url 'company_settings' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'company_settings' or request.resolver_match.url_name == 'settings_access' or request.resolver_match.url_name == 'settings_access_edit' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">
+          <a href="{% url 'company_settings' %}" class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 {% if request.resolver_match.url_name == 'company_settings' or request.resolver_match.url_name == 'settings_access' or request.resolver_match.url_name == 'settings_access_edit' %}mx-nav-active{% endif %}">
+            <i data-lucide="settings" class="w-5 h-5 shrink-0 opacity-90" aria-hidden="true"></i>
             <span>Настройки</span>
           </a>
           {% endif %}
           {% if is_saas_super_admin %}
-          <a href="{% url 'superadmin:superadmin_panel' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-violet-100 text-violet-800 font-medium border border-violet-200">
+          <a href="{% url 'superadmin:superadmin_panel' %}" class="mt-2 mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl border border-primary/40 bg-primary/10 text-primary-soft font-medium">
+            <i data-lucide="shield-check" class="w-5 h-5 shrink-0" aria-hidden="true"></i>
             <span>Платформа</span>
           </a>
           {% endif %}
         </nav>
-        <div class="px-4 py-4 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+        <div class="px-4 py-4 border-t border-white/10 text-xs text-slate-400 space-y-2">
           {% if user.is_authenticated %}
-            <p class="font-medium text-slate-700 truncate" title="{{ user.get_username }}">Логин: {{ user.get_username }}</p>
-            {% if user.email %}
-            <p class="truncate text-slate-500" title="{{ user.email }}">{{ user.email }}</p>
-            {% endif %}
-            <a href="{% url 'password_change' %}" class="text-indigo-600 hover:text-indigo-800 inline-block">Сменить пароль</a>
+            <div class="flex items-center gap-2.5">
+              <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-primary/90 to-primary-soft/80 flex items-center justify-center text-white text-[11px] font-bold shrink-0">
+                {{ user.username|slice:":2"|upper }}
+              </div>
+              <div class="min-w-0">
+                <p class="font-medium text-slate-200 truncate text-sm" title="{{ user.get_username }}">{{ user.get_username }}</p>
+                {% if user.email %}
+                <p class="truncate text-[11px] text-slate-500" title="{{ user.email }}">{{ user.email }}</p>
+                {% endif %}
+              </div>
+            </div>
+            <a href="{% url 'password_change' %}" class="text-primary-soft hover:text-white text-xs font-medium inline-flex items-center gap-1">
+              <i data-lucide="key-round" class="w-3.5 h-3.5"></i> Сменить пароль
+            </a>
           {% endif %}
         </div>
       </aside>
 
       <!-- Main area -->
-      <div class="flex-1 flex flex-col">
+      <div class="flex-1 flex flex-col min-w-0">
         <!-- Top bar -->
-        <header class="h-16 flex items-center justify-between px-4 md:px-8 border-b border-slate-200 bg-white">
-          <div>
-            <p class="text-sm text-slate-500">
+        <header class="sticky top-0 z-40 mx-glass flex h-14 md:h-16 items-center justify-between gap-3 border-b border-line px-4 md:px-8 shadow-mx-sm">
+          <div class="flex items-center gap-3 md:gap-5 min-w-0 flex-1">
+            <div class="min-w-0 hidden sm:block">
               {% if current_company %}
-                Компания: <span class="font-medium text-slate-800">{{ current_company.name }}</span>
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">Компания</p>
+              <p class="text-sm font-semibold text-ink truncate">{{ current_company.name }}</p>
               {% endif %}
-            </p>
+            </div>
+            <div class="hidden lg:flex flex-1 max-w-xl">
+              <label class="relative w-full">
+                <i data-lucide="search" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" aria-hidden="true"></i>
+                <input type="search" readonly placeholder="Поиск по проекту…" class="w-full rounded-xl border border-line bg-white/90 py-2.5 pl-10 pr-4 text-sm text-ink placeholder:text-ink-muted/70 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" title="Скоро" />
+              </label>
+            </div>
           </div>
-          <div class="flex items-center gap-4 text-xs md:text-sm">
+          <div class="flex items-center gap-1 sm:gap-2 shrink-0">
             {% if current_company and current_company.subscription_expires_at %}
-              <span class="text-red-500 font-medium">
-                Срок истекает: {{ current_company.subscription_expires_at|date:"d.m.Y" }}
+              <span class="hidden md:inline text-xs font-medium text-red-600 bg-red-50 px-2.5 py-1 rounded-lg border border-red-100">
+                До {{ current_company.subscription_expires_at|date:"d.m.Y" }}
               </span>
             {% endif %}
+            <button type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-white/80 text-ink-muted hover:text-ink hover:bg-white transition-colors" title="Уведомления (скоро)" aria-label="Уведомления" disabled>
+              <i data-lucide="bell" class="w-5 h-5 opacity-70"></i>
+            </button>
+            <button type="button" class="hidden sm:inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-white/80 text-ink-muted hover:text-ink transition-colors" title="Тема (скоро)" aria-label="Тема" disabled>
+              <i data-lucide="moon" class="w-5 h-5 opacity-70"></i>
+            </button>
             {% has_perm 'manage_users' as can_set_top %}
             {% if can_set_top %}
-            <a href="{% url 'company_settings' %}" class="text-slate-600 hover:text-slate-900">Настройки компании</a>
+            <a href="{% url 'company_settings' %}" class="hidden md:inline-flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-xs font-medium text-ink hover:border-primary/30 hover:shadow-mx-sm transition-all">
+              <i data-lucide="building-2" class="w-4 h-4 text-primary"></i>
+              Компания
+            </a>
             {% endif %}
             {% if user.is_authenticated %}
               <form method="post" action="{% url 'logout' %}" class="inline">
                 {% csrf_token %}
-                <button type="submit" class="text-slate-600 hover:text-slate-900 bg-transparent border-0 cursor-pointer text-xs md:text-sm p-0 font-inherit">Выйти</button>
+                <button type="submit" class="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-xs font-medium text-ink-muted hover:text-ink hover:border-primary/25 transition-all">
+                  <i data-lucide="log-out" class="w-4 h-4"></i>
+                  <span class="hidden sm:inline">Выйти</span>
+                </button>
               </form>
             {% else %}
-              <a href="{% url 'login' %}" class="text-slate-600 hover:text-slate-900">Войти</a>
+              <a href="{% url 'login' %}" class="mx-btn-primary text-xs px-4">Войти</a>
             {% endif %}
           </div>
         </header>
 
         <!-- Content -->
-        <main class="flex-1 p-4 md:p-8">
+        <main class="flex-1 p-4 md:p-8 mx-main-fade">
           {% if messages %}
-            <ul class="mb-4 space-y-1 text-sm">
+            <ul class="mb-6 space-y-2 text-sm">
               {% for message in messages %}
-                <li class="rounded-md px-3 py-2 {% if message.tags == 'success' %}bg-green-100 text-green-800{% else %}bg-slate-100 text-slate-800{% endif %}">
+                <li class="rounded-xl px-4 py-3 border shadow-mx-sm {% if message.tags == 'success' %}bg-emerald-50 text-emerald-900 border-emerald-200/80{% elif message.tags == 'error' %}bg-red-50 text-red-900 border-red-200/80{% else %}bg-white text-ink border-line{% endif %}">
                   {{ message }}
                 </li>
               {% endfor %}
@@ -154,11 +372,18 @@
       <!-- Chat button -->
       <button
         type="button"
-        class="fixed bottom-4 right-4 inline-flex items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg w-12 h-12 hover:bg-indigo-700 focus:outline-none"
+        class="fixed bottom-5 right-5 z-50 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-soft text-white shadow-mx hover:scale-105 hover:shadow-lg transition-transform duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+        title="Помощь"
+        aria-label="Помощь"
       >
-        ?
+        <i data-lucide="message-circle-question" class="w-6 h-6"></i>
       </button>
     </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+      });
+    </script>
+    {% block extra_js %}{% endblock %}
   </body>
 </html>
-
