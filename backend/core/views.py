@@ -99,6 +99,8 @@ from .inventory_services import (
     log_inventory_action,
     transfer_inventory_item,
     set_inventory_status,
+    material_names_casefold_for_company,
+    is_equipment_inventory_row,
 )
 from .inventory_numbering import allocate_inventory_number
 from .inventory_qr import ensure_qr_image_file
@@ -2082,16 +2084,20 @@ def project_warehouses(request: HttpRequest, pk: int) -> HttpResponse:
     warehouse_filter = request.GET.get("warehouse", "")
     status_filter = request.GET.get("search_status", "")
     search_q = request.GET.get("q", "").strip()
+    material_cf = material_names_casefold_for_company(company)
     items_qs = WarehouseInventoryItem.objects.filter(company=company).select_related(
         "warehouse"
-    ).prefetch_related("logs")
+    ).prefetch_related("logs").exclude(category="material")
     if warehouse_filter.isdigit():
         items_qs = items_qs.filter(warehouse_id=int(warehouse_filter))
     if status_filter:
         items_qs = items_qs.filter(status=status_filter)
     if search_q:
         items_qs = items_qs.filter(name__icontains=search_q)
-    items_list = list(items_qs)
+    items_list = [
+        i for i in items_qs
+        if is_equipment_inventory_row(i, material_cf)
+    ]
     items_by_warehouse = {}
     for w in warehouses:
         items_by_warehouse[w.id] = [i for i in items_list if i.warehouse_id == w.id]

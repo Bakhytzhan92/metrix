@@ -35,12 +35,13 @@
   {# ——— Инвентарь (Kanban, без изменений логики) ——— #}
   <div id="wh-panel-inventory" class="wh-main-panel space-y-4">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h3 class="text-base font-semibold text-slate-900">Инвентарь проекта</h3>
+      <h3 class="text-base font-semibold text-slate-900">Инвентарь проекта (оборудование и инструмент)</h3>
       <p class="text-sm text-slate-600">
         {{ total_count }} единиц на сумму {{ total_sum|floatformat:0 }} ₸
         {% if written_off_count %}| Списано {{ written_off_count }} единиц на сумму {{ written_off_sum|floatformat:0 }} ₸{% endif %}
       </p>
     </div>
+    <p class="text-xs text-slate-500 max-w-2xl">Материалы (песок, щебень, расходники и т.д.) — во вкладке «Материалы», они сюда не попадают.</p>
 
     <form method="get" class="flex flex-wrap items-center gap-2">
       <input type="text" name="q" value="{{ search_q }}" placeholder="Поиск по названию" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:ring-indigo-500" />

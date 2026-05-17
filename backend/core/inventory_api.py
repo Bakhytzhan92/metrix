@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q, Sum
+from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -26,10 +26,13 @@ from .inventory_services import (
     return_inventory_from_user,
     set_inventory_status,
     transfer_inventory_item,
+    material_names_casefold_for_company,
+    is_equipment_inventory_row,
 )
 from .models import (
     CompanyUser,
     InventoryLog,
+    Material,
     Project,
     UserProfile,
     Warehouse,
@@ -161,10 +164,7 @@ def api_inventory_meta(request: HttpRequest) -> JsonResponse:
                 for k, v in WarehouseInventoryItem.STATUS_CHOICES
                 if k not in _status_skip
             ],
-            "category_choices": [
-                {"value": k, "label": str(v)}
-                for k, v in WarehouseInventoryItem.CATEGORY_CHOICES
-            ],
+            "category_choices": [],
             "warehouses": warehouses,
             "projects": projects,
             "users": users,
@@ -179,45 +179,42 @@ def api_inventory_warehouse_summary(request: HttpRequest) -> JsonResponse:
     if not company:
         return _json({"ok": False, "error": "no_company"}, status=403)
     with_price = has_permission(request.user, company, "view_warehouse")
-    qs = (
-        Warehouse.objects.filter(company=company, is_deleted=False)
-        .annotate(
-            item_count=Count(
-                "warehouse_inventory_items",
-                filter=Q(warehouse_inventory_items__status__in=[
-                    WarehouseInventoryItem.STATUS_FREE,
-                    WarehouseInventoryItem.STATUS_IN_USE,
-                    WarehouseInventoryItem.STATUS_ISSUED,
-                    WarehouseInventoryItem.STATUS_REPAIR,
-                    WarehouseInventoryItem.STATUS_LOST,
-                ]),
-            )
-        )
-    )
-    if with_price:
-        qs = qs.annotate(
-            total_value=Sum(
-                "warehouse_inventory_items__purchase_price",
-                filter=Q(
-                    warehouse_inventory_items__status__in=[
-                        WarehouseInventoryItem.STATUS_FREE,
-                        WarehouseInventoryItem.STATUS_IN_USE,
-                        WarehouseInventoryItem.STATUS_ISSUED,
-                        WarehouseInventoryItem.STATUS_REPAIR,
-                    ]
-                ),
-            )
-        )
+    material_cf = material_names_casefold_for_company(company)
+    _count_statuses = {
+        WarehouseInventoryItem.STATUS_FREE,
+        WarehouseInventoryItem.STATUS_IN_USE,
+        WarehouseInventoryItem.STATUS_ISSUED,
+        WarehouseInventoryItem.STATUS_REPAIR,
+        WarehouseInventoryItem.STATUS_LOST,
+    }
+    _sum_statuses = {
+        WarehouseInventoryItem.STATUS_FREE,
+        WarehouseInventoryItem.STATUS_IN_USE,
+        WarehouseInventoryItem.STATUS_ISSUED,
+        WarehouseInventoryItem.STATUS_REPAIR,
+    }
+    from collections import defaultdict
+
+    count_by_wh: dict[int, int] = defaultdict(int)
+    sum_by_wh: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    for item in WarehouseInventoryItem.objects.filter(company=company).iterator(chunk_size=500):
+        if not is_equipment_inventory_row(item, material_cf):
+            continue
+        if item.status not in _count_statuses:
+            continue
+        count_by_wh[item.warehouse_id] += 1
+        if with_price and item.status in _sum_statuses:
+            sum_by_wh[item.warehouse_id] += item.purchase_price or Decimal("0")
     rows = []
-    for w in qs.order_by("name"):
+    for w in Warehouse.objects.filter(company=company, is_deleted=False).order_by("name"):
         row = {
             "id": w.id,
             "name": w.name,
             "project_id": w.project_id,
-            "item_count": w.item_count,
+            "item_count": count_by_wh.get(w.id, 0),
         }
         if with_price:
-            row["total_value"] = str(w.total_value or Decimal("0"))
+            row["total_value"] = str(sum_by_wh.get(w.id, Decimal("0")))
         rows.append(row)
     return _json({"ok": True, "warehouses": rows})
 
@@ -233,10 +230,12 @@ def api_inventory_items(request: HttpRequest) -> JsonResponse:
         q = (request.GET.get("q") or "").strip()
         wh_id = request.GET.get("warehouse")
         st = request.GET.get("status")
-        cat = request.GET.get("category")
         proj = request.GET.get("project")
-        items = WarehouseInventoryItem.objects.filter(company=company).select_related(
-            "warehouse", "project", "responsible_user", "assigned_to"
+        material_cf = material_names_casefold_for_company(company)
+        items = (
+            WarehouseInventoryItem.objects.filter(company=company)
+            .exclude(category="material")
+            .select_related("warehouse", "project", "responsible_user", "assigned_to")
         )
         if q:
             items = items.filter(
@@ -248,12 +247,14 @@ def api_inventory_items(request: HttpRequest) -> JsonResponse:
             items = items.filter(warehouse_id=int(wh_id))
         if st:
             items = items.filter(status=st)
-        if cat:
-            items = items.filter(category=cat)
         if proj and proj.isdigit():
             items = items.filter(project_id=int(proj))
-        data = [_serialize_item(i, with_price=with_price) for i in items.order_by("-updated_at")[:1000]]
-        return _json({"ok": True, "items": data})
+        out = [
+            _serialize_item(i, with_price=with_price)
+            for i in items.order_by("-updated_at")[:2000]
+            if is_equipment_inventory_row(i, material_cf)
+        ][:1000]
+        return _json({"ok": True, "items": out})
 
     if not _can_edit(request.user, company):
         return _json({"ok": False, "error": "forbidden"}, status=403)
@@ -266,11 +267,18 @@ def api_inventory_items(request: HttpRequest) -> JsonResponse:
     name = (payload.get("name") or "").strip()
     if not name:
         return _json({"ok": False, "error": "name_required"}, status=400)
+    if Material.objects.filter(company=company, name__iexact=name).exists():
+        return _json(
+            {
+                "ok": False,
+                "error": "material_name_conflict",
+                "detail": "Название совпадает со справочником материалов — учитывайте её во вкладке «Материалы» проекта.",
+            },
+            status=400,
+        )
     wh_id = payload.get("warehouse") or payload.get("warehouse_id")
     warehouse = get_object_or_404(Warehouse, pk=int(wh_id), company=company, is_deleted=False)
-    category = payload.get("category") or WarehouseInventoryItem.CATEGORY_OTHER
-    if category not in dict(WarehouseInventoryItem.CATEGORY_CHOICES):
-        category = WarehouseInventoryItem.CATEGORY_OTHER
+    category = WarehouseInventoryItem.CATEGORY_OTHER
     inv_num = (payload.get("inventory_number") or "").strip()
     if not inv_num:
         inv_num = allocate_inventory_number(company, category)
@@ -353,9 +361,21 @@ def api_inventory_item_detail(request: HttpRequest, pk: int) -> JsonResponse:
     status_new = data.get("status")
 
     if "name" in data:
-        item.name = (data["name"] or "").strip() or item.name
-    if "category" in data and data["category"] in dict(WarehouseInventoryItem.CATEGORY_CHOICES):
-        item.category = data["category"]
+        new_name = (data["name"] or "").strip() or item.name
+        if (
+            new_name
+            and (new_name.strip().casefold() != (item.name or "").strip().casefold())
+            and Material.objects.filter(company=company, name__iexact=new_name).exists()
+        ):
+            return _json(
+                {
+                    "ok": False,
+                    "error": "material_name_conflict",
+                    "detail": "Название занято в справочнике материалов.",
+                },
+                status=400,
+            )
+        item.name = new_name
     if "serial_number" in data:
         item.serial_number = (data["serial_number"] or "")[:128]
     if "description" in data:

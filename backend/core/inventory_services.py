@@ -13,6 +13,29 @@ from .models import Company, InventoryLog, InventoryTransfer, Warehouse, Warehou
 WRITTEN_OFF_WAREHOUSE_NAME = "Списано"
 
 
+def material_names_casefold_for_company(company: Company) -> frozenset[str]:
+    """Нормализованные названия материалов компании (для отделения от инвентаря оборудования)."""
+    from .models import Material
+
+    return frozenset(
+        (n or "").strip().casefold()
+        for n in Material.objects.filter(company=company).values_list("name", flat=True)
+    )
+
+
+def is_equipment_inventory_row(
+    item: WarehouseInventoryItem,
+    material_names_cf: frozenset[str],
+) -> bool:
+    """Позиция для досок/списков «инвентарь», не дубликат материала из справочника."""
+    if getattr(item, "category", None) == "material":
+        return False
+    key = (item.name or "").strip().casefold()
+    if key and key in material_names_cf:
+        return False
+    return True
+
+
 def get_written_off_warehouse(company: Company) -> Warehouse:
     wh, _ = Warehouse.objects.get_or_create(
         company=company,

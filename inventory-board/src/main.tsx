@@ -16,7 +16,6 @@ type Meta = {
   can_edit: boolean;
   show_prices: boolean;
   status_choices: { value: string; label: string }[];
-  category_choices: { value: string; label: string }[];
   warehouses: { id: number; name: string; project_id: number | null }[];
   projects: { id: number; name: string }[];
   users: { id: number; username: string; label: string }[];
@@ -188,7 +187,6 @@ function App() {
   const [q, setQ] = useState("");
   const [whFilter, setWhFilter] = useState("");
   const [stFilter, setStFilter] = useState("");
-  const [catFilter, setCatFilter] = useState("");
   const [toasts, setToasts] = useState<string[]>([]);
   const [activeDrag, setActiveDrag] = useState<Item | null>(null);
   const [modal, setModal] = useState<"add" | "detail" | null>(null);
@@ -196,7 +194,6 @@ function App() {
   const [detailHist, setDetailHist] = useState<any[]>([]);
   const [form, setForm] = useState({
     name: "",
-    category: "other",
     warehouse_id: "",
     project_id: "",
     responsible_user_id: "",
@@ -219,12 +216,11 @@ function App() {
     if (q) qs.set("q", q);
     if (whFilter) qs.set("warehouse", whFilter);
     if (stFilter) qs.set("status", stFilter);
-    if (catFilter) qs.set("category", catFilter);
     const data = await api<{ ok: boolean; items: Item[] }>(
       `/api/inventory/items/?${qs}`,
     );
     if (data.ok) setItems(data.items);
-  }, [q, whFilter, stFilter, catFilter]);
+  }, [q, whFilter, stFilter]);
 
   const reloadHistory = useCallback(async () => {
     const data = await api<{ ok: boolean; entries: any[] }>("/api/inventory/history/");
@@ -307,7 +303,6 @@ function App() {
     try {
       const body = {
         name: form.name.trim(),
-        category: form.category,
         warehouse_id: parseInt(form.warehouse_id, 10),
         project_id: form.project_id ? parseInt(form.project_id, 10) : null,
         responsible_user_id: form.responsible_user_id
@@ -331,7 +326,6 @@ function App() {
         setModal(null);
         setForm({
           name: "",
-          category: "other",
           warehouse_id: form.warehouse_id,
           project_id: "",
           responsible_user_id: "",
@@ -365,7 +359,9 @@ function App() {
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
             Инвентарь
           </h1>
-          <p className="text-sm text-slate-500">Склады, выдачи, история</p>
+          <p className="text-sm text-slate-500">
+            Оборудование и инструмент. Материалы (сыпучие, расходники) — в проекте, вкладка «Материалы».
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {meta.can_edit && (
@@ -435,18 +431,6 @@ function App() {
           {meta.status_choices.map((s) => (
             <option key={s.value} value={s.value}>
               {s.label}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          value={catFilter}
-          onChange={(e) => setCatFilter(e.target.value)}
-        >
-          <option value="">Все категории</option>
-          {meta.category_choices.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
             </option>
           ))}
         </select>
@@ -589,17 +573,6 @@ function App() {
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
-              <select
-                className="rounded-lg border px-3 py-2 text-sm"
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-              >
-                {meta.category_choices.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
               <select
                 className="rounded-lg border px-3 py-2 text-sm"
                 value={form.warehouse_id}

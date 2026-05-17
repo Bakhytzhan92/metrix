@@ -577,7 +577,6 @@ class WarehouseInventoryCreateForm(forms.ModelForm):
         model = WarehouseInventoryItem
         fields = (
             "name",
-            "category",
             "inventory_number",
             "serial_number",
             "purchase_price",
@@ -593,7 +592,6 @@ class WarehouseInventoryCreateForm(forms.ModelForm):
         )
         widgets = {
             "name": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Название"}),
-            "category": forms.Select(attrs={"class": _input_class()}),
             "inventory_number": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Авто, если пусто"}),
             "serial_number": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Серийный номер"}),
             "purchase_price": forms.NumberInput(attrs={"class": _input_class(), "step": "0.01", "min": "0"}),
@@ -610,6 +608,7 @@ class WarehouseInventoryCreateForm(forms.ModelForm):
 
     def __init__(self, *args, company=None, project=None, default_warehouse=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self._company = company
         if company:
             from django.db.models import Q
 
@@ -633,6 +632,22 @@ class WarehouseInventoryCreateForm(forms.ModelForm):
         self.fields["status"].choices = [
             c for c in WarehouseInventoryItem.STATUS_CHOICES if c[0] in self._ALLOWED_STATUS
         ]
+
+    def clean(self):
+        cleaned_data = super().clean()
+        company = getattr(self, "_company", None)
+        name = (cleaned_data.get("name") or "").strip()
+        if name and company:
+            if Material.objects.filter(company=company, name__iexact=name).exists():
+                raise ValidationError(
+                    "Такое название уже есть в справочнике материалов. Песок, щебень и т.п. "
+                    "ведите во вкладке «Материалы» на странице складов проекта, а не в инвентаре оборудования."
+                )
+        return cleaned_data
+
+    def save(self, commit=True):
+        self.instance.category = WarehouseInventoryItem.CATEGORY_OTHER
+        return super().save(commit=commit)
 
     def clean_status(self):
         s = self.cleaned_data.get("status")
