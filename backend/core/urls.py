@@ -128,6 +128,11 @@ urlpatterns = [
     ),
     path("projects/<int:pk>/warehouses/", views.project_warehouses, name="project_warehouses"),
     path("projects/<int:pk>/warehouses/create/", views.project_warehouse_create, name="project_warehouse_create"),
+    path(
+        "projects/<int:pk>/warehouses/<int:warehouse_id>/delete/",
+        views.project_warehouse_delete,
+        name="project_warehouse_delete",
+    ),
     path("projects/<int:pk>/warehouses/inventory/create/", views.project_inventory_create, name="project_inventory_create"),
     path("projects/<int:pk>/warehouses/inventory/<int:item_id>/update/", views.project_inventory_update, name="project_inventory_update"),
     path("projects/<int:pk>/warehouses/inventory/<int:item_id>/transfer/", views.project_inventory_transfer, name="project_inventory_transfer"),

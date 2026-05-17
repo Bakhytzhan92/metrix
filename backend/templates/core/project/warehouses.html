@@ -120,7 +120,15 @@
           <p class="text-sm text-slate-500 py-2">Нет единиц</p>
           {% endfor %}
         </div>
-        <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" draggable="false" class="mt-3 flex w-full items-center justify-center rounded-lg border-2 border-dashed border-slate-200 py-3 text-sm text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">+ инвентарь</a>
+        <div class="mt-3 flex gap-2">
+          <a href="{% url 'project_inventory_create' project.pk %}?warehouse={{ warehouse.id }}" draggable="false" class="flex-1 flex items-center justify-center rounded-lg border-2 border-dashed border-slate-200 py-3 text-sm text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors min-w-0">+ инвентарь</a>
+          {% if can_edit_project_inventory and warehouse.id != written_off_warehouse_id and warehouse.project_id == project.id %}
+          <form method="post" action="{% url 'project_warehouse_delete' project.pk warehouse.id %}" class="flex-1 min-w-0" onsubmit="return confirm('Удалить склад «{{ warehouse.name|escapejs }}»? Склад скроется из списка.');">
+            {% csrf_token %}
+            <button type="submit" class="w-full rounded-lg border border-red-200 bg-red-50 py-3 text-sm font-medium text-red-800 hover:bg-red-100 transition-colors" title="Удалить склад">Удалить склад</button>
+          </form>
+          {% endif %}
+        </div>
       </div>
       {% empty %}
       <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center text-slate-500">

@@ -93,6 +93,7 @@ from .models import (
     StockMovement,
     WarehouseInventoryItem,
     InventoryLog,
+    FuelStock,
     Equipment,
     EquipmentDocument,
     EquipmentAuditLog,
@@ -2138,6 +2139,7 @@ def project_warehouses(request: HttpRequest, pk: int) -> HttpResponse:
         "written_off_sum": written_off_sum,
         "create_form": create_form,
         "can_edit_project_inventory": can_edit_project_inventory,
+        "written_off_warehouse_id": written_off_wh.id,
     })
 
 
@@ -2155,6 +2157,55 @@ def project_warehouse_create(request: HttpRequest, pk: int) -> HttpResponse:
         return redirect("project_warehouses", pk=project.pk)
     Warehouse.objects.create(company=project.company, project=project, name=name)
     messages.success(request, "Склад создан.")
+    return redirect("project_warehouses", pk=project.pk)
+
+
+@login_required
+@require_POST
+def project_warehouse_delete(request: HttpRequest, pk: int, warehouse_id: int) -> HttpResponse:
+    """Мягкое удаление склада проекта (нельзя «Списано» и склад с остатками/инвентарём)."""
+    from decimal import Decimal
+
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+    if not has_permission(request.user, project.company, "edit_warehouse"):
+        messages.error(request, "Недостаточно прав для удаления склада.")
+        return redirect("project_warehouses", pk=project.pk)
+    wh = get_object_or_404(
+        Warehouse,
+        pk=warehouse_id,
+        company=project.company,
+        is_deleted=False,
+    )
+    written_off_wh = get_written_off_warehouse(project.company)
+    if wh.id == written_off_wh.id:
+        messages.error(request, "Склад «Списано» удалять нельзя.")
+        return redirect("project_warehouses", pk=project.pk)
+    if wh.project_id != project.pk:
+        messages.error(request, "Можно удалять только склады, привязанные к этому проекту.")
+        return redirect("project_warehouses", pk=project.pk)
+    if WarehouseInventoryItem.objects.filter(warehouse=wh).exists():
+        messages.error(
+            request,
+            "На складе есть инвентарь. Переместите или удалите позиции, затем повторите.",
+        )
+        return redirect("project_warehouses", pk=project.pk)
+    if Stock.objects.filter(warehouse=wh).exclude(quantity=Decimal("0")).exists():
+        messages.error(
+            request,
+            "На складе есть остатки материалов. Обнулите или переместите их.",
+        )
+        return redirect("project_warehouses", pk=project.pk)
+    if FuelStock.objects.filter(warehouse=wh).exclude(quantity=Decimal("0")).exists():
+        messages.error(
+            request,
+            "На складе учитывается ГСМ. Переместите или спишите топливо.",
+        )
+        return redirect("project_warehouses", pk=project.pk)
+    wh.is_deleted = True
+    wh.save(update_fields=["is_deleted"])
+    messages.success(request, f"Склад «{wh.name}» удалён.")
     return redirect("project_warehouses", pk=project.pk)
 
 
