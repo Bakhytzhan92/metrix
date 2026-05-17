@@ -529,7 +529,6 @@ function AddMaterialModal({
   onError: (e: Error) => void;
 }) {
   const [name, setName] = useState("");
-  const [category, setCategory] = useState(meta.categories[0]?.value || "material");
   const [unit, setUnit] = useState("шт");
   const [price, setPrice] = useState("");
   const [initialQty, setInitialQty] = useState("");
@@ -546,16 +545,6 @@ function AddMaterialModal({
           <div>
             <label className="text-xs font-medium text-slate-500">Наименование *</label>
             <input className={fieldCls()} value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500">Категория</label>
-            <select className={fieldCls()} value={category} onChange={(e) => setCategory(e.target.value)}>
-              {meta.categories.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500">Ед. измерения</label>
@@ -605,7 +594,7 @@ function AddMaterialModal({
               try {
                 await onSave({
                   name: name.trim(),
-                  category,
+                  category: "material",
                   unit: unit.trim(),
                   unit_price: price,
                   initial_quantity: initialQty || "0",

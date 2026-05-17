@@ -726,12 +726,15 @@ class MaterialCreateForm(forms.ModelForm):
 
     class Meta:
         model = Material
-        fields = ("name", "unit", "category")
+        fields = ("name", "unit")
         widgets = {
             "name": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Название"}),
             "unit": forms.TextInput(attrs={"class": _input_class(), "placeholder": "ед. изм."}),
-            "category": forms.Select(attrs={"class": _input_class()}),
         }
+
+    def save(self, commit=True):
+        self.instance.category = Material.CATEGORY_MATERIAL
+        return super().save(commit=commit)
 
 
 class StockIncomingForm(forms.Form):
