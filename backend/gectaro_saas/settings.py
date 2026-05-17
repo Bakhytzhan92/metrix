@@ -23,6 +23,12 @@ _csrf_origins = os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "")
 CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in _csrf_origins.split(",") if o.strip()
 ]
+# Railway: без этого POST (материалы, инвентарь API) может давать 403 CSRF при HTTPS.
+_railway_public = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+if _railway_public and not DEBUG:
+    for u in (f"https://{_railway_public}", f"http://{_railway_public}"):
+        if u not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(u)
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

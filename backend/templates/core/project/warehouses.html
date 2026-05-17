@@ -125,7 +125,11 @@
 
   {# Материалы + история операций (React) #}
   <div id="wh-panel-react" class="wh-main-panel hidden">
-    <div id="project-materials-root" data-project-id="{{ project.pk }}"></div>
+    <div
+      id="project-materials-root"
+      data-project-id="{{ project.pk }}"
+      data-api-base="/api/project/{{ project.pk }}/materials"
+    ></div>
   </div>
 </div>
 
@@ -148,7 +152,8 @@
   </div>
 </div>
 
-<script type="module" src="{% static 'core/project_materials/board.js' %}"></script>
+{# Бандл esbuild в формате IIFE, не ES module — иначе в проде возможны сбои загрузки/строгий разбор #}
+<script defer src="{% static 'core/project_materials/board.js' %}"></script>
 <script>
 (function() {
   var inv = document.getElementById('wh-panel-inventory');

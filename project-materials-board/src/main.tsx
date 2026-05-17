@@ -83,10 +83,11 @@ function fieldCls() {
   return "mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm";
 }
 
-function App({ projectId }: { projectId: number }) {
-  const base = `/api/project/${projectId}/materials`;
+function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
+  const base = apiBase || `/api/project/${projectId}/materials`;
   const [mainTab, setMainTab] = useState<"inventory" | "materials" | "history">("inventory");
   const [meta, setMeta] = useState<Meta | null>(null);
+  const [metaError, setMetaError] = useState(false);
   const [catalog, setCatalog] = useState<CatMaterial[]>([]);
   const [stocks, setStocks] = useState<StockRow[]>([]);
   const [history, setHistory] = useState<HistRow[]>([]);
@@ -117,10 +118,13 @@ function App({ projectId }: { projectId: number }) {
   }, []);
 
   const loadMeta = useCallback(async () => {
+    setMetaError(false);
     try {
       const m = await api<Meta>(`${base}/meta/`);
       if (m.ok) setMeta(m);
+      else setMetaError(true);
     } catch {
+      setMetaError(true);
       push("Не удалось загрузить настройки материалов");
     }
   }, [base, push]);
@@ -174,6 +178,18 @@ function App({ projectId }: { projectId: number }) {
   }, [mainTab, loadHistory]);
 
   if (mainTab === "inventory") return null;
+
+  if (metaError) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-center text-amber-900 text-sm">
+        <p className="font-medium">Материалы не загрузились</p>
+        <p className="mt-2 text-amber-800">
+          Обновите страницу. Если снова так — проверьте право «Склады: просмотр» и переменную{' '}
+          <code className="rounded bg-amber-100 px-1">DJANGO_CSRF_TRUSTED_ORIGINS</code> для вашего домена.
+        </p>
+      </div>
+    );
+  }
 
   if (!meta?.ok) {
     return (
@@ -1048,5 +1064,6 @@ function WriteoffModal({
 const el = document.getElementById("project-materials-root");
 if (el) {
   const pid = parseInt(el.dataset.projectId || "0", 10);
-  if (pid) createRoot(el).render(<App projectId={pid} />);
+  const apiBase = (el.dataset.apiBase || "").trim();
+  if (pid) createRoot(el).render(<App projectId={pid} apiBase={apiBase} />);
 }
