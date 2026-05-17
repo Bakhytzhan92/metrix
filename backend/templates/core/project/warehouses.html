@@ -5,7 +5,7 @@
 <div class="space-y-4">
   <div>
     <h2 class="text-lg font-semibold text-slate-900">Склады</h2>
-    <p class="text-sm text-slate-500">Инвентарь (оборудование) и материалы учитываются отдельно.</p>
+    <p class="text-sm text-slate-500">Инвентарь (оборудование), материалы и ГСМ учитываются отдельно друг от друга.</p>
   </div>
 
   <nav class="flex flex-wrap gap-1 border-b border-slate-200" aria-label="Склады: подразделы">
@@ -22,6 +22,13 @@
       class="wh-main-tab -mb-px inline-flex rounded-t-md border border-transparent px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-200 hover:bg-slate-50"
     >
       Материалы
+    </button>
+    <button
+      type="button"
+      data-wh-main="gsm"
+      class="wh-main-tab -mb-px inline-flex rounded-t-md border border-transparent px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-200 hover:bg-slate-50"
+    >
+      ГСМ
     </button>
     <button
       type="button"
@@ -132,6 +139,15 @@
       data-api-base="/api/project/{{ project.pk }}/materials"
     ></div>
   </div>
+
+  {# ГСМ — отдельный учёт топлива (React) #}
+  <div id="wh-panel-gsm" class="wh-main-panel hidden">
+    <div
+      id="project-gsm-root"
+      data-project-id="{{ project.pk }}"
+      data-api-base="/api/project/{{ project.pk }}/gsm"
+    ></div>
+  </div>
 </div>
 
 {% if can_edit_project_inventory %}
@@ -155,10 +171,12 @@
 
 {# Бандл esbuild в формате IIFE, не ES module — иначе в проде возможны сбои загрузки/строгий разбор #}
 <script defer src="{% static 'core/project_materials/board.js' %}"></script>
+<script defer src="{% static 'core/project_gsm/board.js' %}"></script>
 <script>
 (function() {
   var inv = document.getElementById('wh-panel-inventory');
   var react = document.getElementById('wh-panel-react');
+  var gsm = document.getElementById('wh-panel-gsm');
   var tabs = document.querySelectorAll('.wh-main-tab');
   function styleTabs(active) {
     tabs.forEach(function(btn) {
@@ -174,7 +192,8 @@
   }
   function setMain(tab) {
     if (inv) inv.classList.toggle('hidden', tab !== 'inventory');
-    if (react) react.classList.toggle('hidden', tab === 'inventory');
+    if (react) react.classList.toggle('hidden', tab !== 'materials' && tab !== 'history');
+    if (gsm) gsm.classList.toggle('hidden', tab !== 'gsm');
     styleTabs(tab);
     document.dispatchEvent(new CustomEvent('warehouse-main-tab', { detail: tab }));
   }

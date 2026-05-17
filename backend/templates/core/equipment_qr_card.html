@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Техника {{ equipment.name }} — Metrix{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto px-4 py-8">
+  <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm text-center">
+    {% if equipment.photo %}
+    <img src="{{ equipment.photo.url }}" alt="" class="mx-auto h-32 w-auto rounded-lg object-cover mb-4" />
+    {% endif %}
+    <h1 class="text-xl font-semibold text-slate-900">{{ equipment.name }}</h1>
+    {% if equipment.license_plate %}<p class="text-slate-600">{{ equipment.license_plate }}</p>{% endif %}
+    <p class="text-sm text-slate-500 mt-2">{{ equipment.get_status_display }}</p>
+    <a href="{% url 'company_equipment_detail' equipment.pk %}" class="mt-6 inline-block text-sm text-indigo-600 hover:underline">Открыть полную карточку</a>
+  </div>
+</div>
+{% endblock %}

@@ -63,9 +63,24 @@
             <span>Отчёты</span>
           </a>
           {% endif %}
-          <a href="#" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100">
-            <span>Справочники</span>
-          </a>
+          <details class="group">
+            <summary class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 cursor-pointer list-none marker:content-none">
+              <span>Справочники</span>
+              <span class="text-slate-400 text-xs ml-auto group-open:rotate-180">▼</span>
+            </summary>
+            <div class="mt-1 ml-2 pl-2 border-l border-slate-200 space-y-0.5 pb-2">
+              {% if can_wh %}
+              <a href="{% url 'company_equipment_list' %}" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-slate-600 hover:bg-slate-50">
+                Проектная техника
+              </a>
+              {% endif %}
+              {% if can_wh %}
+              <a href="{% url 'material_create' %}" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-slate-600 hover:bg-slate-50">
+                Материалы (склад)
+              </a>
+              {% endif %}
+            </div>
+          </details>
           {% has_perm 'manage_users' as can_set %}
           {% if can_set %}
           <a href="{% url 'company_settings' %}" class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-slate-100 {% if request.resolver_match.url_name == 'company_settings' or request.resolver_match.url_name == 'settings_access' or request.resolver_match.url_name == 'settings_access_edit' %}bg-indigo-50 font-medium text-indigo-700{% endif %}">

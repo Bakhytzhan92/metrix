@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+import uuid
+
 
 class Tariff(models.Model):
     """Тариф SaaS: лимиты проектов и пользователей (0 = без лимита)."""
@@ -1673,6 +1675,357 @@ class StockMovement(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_movement_type_display()} {self.material.name} {self.quantity}"
+
+
+# ---------- ГСМ (топливо): отдельный учёт, не связан с Material / Stock ----------
+
+
+class FuelType(models.Model):
+    """Вид топлива в рамках компании (АИ-92, ДТ, пользовательские и т.д.)."""
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="fuel_types"
+    )
+    code = models.CharField(
+        "Код",
+        max_length=32,
+        db_index=True,
+        help_text="Стабильный ключ, напр. ai92, diesel, custom_uuid",
+    )
+    name = models.CharField("Наименование", max_length=120)
+    unit = models.CharField("Ед. изм.", max_length=30, default="л")
+
+    class Meta:
+        verbose_name = "Вид топлива (ГСМ)"
+        verbose_name_plural = "Виды топлива (ГСМ)"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "code"], name="uniq_fueltype_company_code"
+            ),
+        ]
+        ordering = ["code"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.unit})"
+
+
+class FuelStock(models.Model):
+    """Остаток топлива на складе (как Stock, но только для ГСМ)."""
+
+    warehouse = models.ForeignKey(
+        Warehouse, on_delete=models.CASCADE, related_name="fuel_stocks"
+    )
+    fuel_type = models.ForeignKey(
+        FuelType, on_delete=models.CASCADE, related_name="stocks"
+    )
+    quantity = models.DecimalField(
+        "Количество", max_digits=14, decimal_places=4, default=0
+    )
+    price_avg = models.DecimalField(
+        "Средняя цена за ед.", max_digits=14, decimal_places=2, default=0
+    )
+
+    class Meta:
+        verbose_name = "Остаток ГСМ"
+        verbose_name_plural = "Остатки ГСМ"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["warehouse", "fuel_type"], name="uniq_fuelstock_wh_type"
+            ),
+        ]
+
+    @property
+    def total_sum(self):
+        from decimal import Decimal
+
+        return (self.quantity or Decimal("0")) * (self.price_avg or Decimal("0"))
+
+    def __str__(self) -> str:
+        return f"{self.fuel_type.name} @ {self.warehouse.name}: {self.quantity}"
+
+
+class Equipment(models.Model):
+    """Проектная техника компании (справочник для ГСМ и учёта заправок)."""
+
+    STATUS_IN_WORK = "in_work"
+    STATUS_ON_SITE = "on_site"
+    STATUS_REPAIR = "repair"
+    STATUS_FREE = "free"
+    STATUS_WRITTEN_OFF = "written_off"
+    STATUS_CHOICES = [
+        (STATUS_IN_WORK, "В работе"),
+        (STATUS_ON_SITE, "На объекте"),
+        (STATUS_REPAIR, "На ремонте"),
+        (STATUS_FREE, "Свободна"),
+        (STATUS_WRITTEN_OFF, "Списана"),
+    ]
+
+    NORM_PER_HOUR = "per_hour"
+    NORM_PER_100KM = "per_100km"
+    NORM_MODE_CHOICES = [
+        (NORM_PER_HOUR, "л / час"),
+        (NORM_PER_100KM, "л / 100 км"),
+    ]
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="equipment_units"
+    )
+    name = models.CharField("Наименование техники", max_length=255)
+    equipment_type = models.CharField("Тип техники", max_length=120, blank=True)
+    license_plate = models.CharField("Госномер", max_length=32, blank=True)
+    inventory_number = models.CharField("Инвентарный номер", max_length=64, blank=True)
+    vin = models.CharField("VIN", max_length=32, blank=True)
+    make_model = models.CharField("Марка / модель", max_length=200, blank=True)
+    year_manufactured = models.PositiveSmallIntegerField(
+        "Год выпуска", null=True, blank=True
+    )
+    responsible = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="equipment_responsible",
+        verbose_name="Ответственный",
+    )
+    project = models.ForeignKey(
+        "Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="equipment_units",
+        verbose_name="Объект / проект",
+    )
+    base_warehouse = models.ForeignKey(
+        Warehouse,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="based_equipment",
+        verbose_name="Склад базирования",
+    )
+    fuel_type = models.ForeignKey(
+        FuelType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="equipment_preferred_fuel",
+        verbose_name="Тип топлива",
+    )
+    consumption_norm_liters = models.DecimalField(
+        "Норма расхода (литры)", max_digits=10, decimal_places=3, null=True, blank=True
+    )
+    consumption_norm_mode = models.CharField(
+        "Норма: режим",
+        max_length=20,
+        choices=NORM_MODE_CHOICES,
+        default=NORM_PER_HOUR,
+    )
+    status = models.CharField(
+        "Статус", max_length=20, choices=STATUS_CHOICES, default=STATUS_FREE
+    )
+    photo = models.ImageField(
+        "Фото", upload_to="equipment/%Y/%m/", blank=True, null=True
+    )
+    odometer_km = models.DecimalField(
+        "Пробег, км", max_digits=12, decimal_places=2, null=True, blank=True
+    )
+    engine_hours = models.DecimalField(
+        "Моточасы", max_digits=12, decimal_places=2, null=True, blank=True
+    )
+    tank_capacity_liters = models.DecimalField(
+        "Объём бака, л", max_digits=12, decimal_places=2, null=True, blank=True
+    )
+    qr_token = models.UUIDField("Токен QR", default=uuid.uuid4, unique=True, editable=False)
+    notes = models.TextField("Примечания", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Техника (справочник)"
+        verbose_name_plural = "Справочник техники"
+        ordering = ["company_id", "name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class EquipmentDocument(models.Model):
+    equipment = models.ForeignKey(
+        Equipment, on_delete=models.CASCADE, related_name="documents"
+    )
+    title = models.CharField("Название", max_length=255, blank=True)
+    file = models.FileField("Файл", upload_to="equipment/docs/%Y/%m/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Документ техники"
+        verbose_name_plural = "Документы техники"
+        ordering = ["-uploaded_at"]
+
+    def __str__(self) -> str:
+        return self.title or f"Файл #{self.pk}"
+
+
+class EquipmentAuditLog(models.Model):
+    equipment = models.ForeignKey(
+        Equipment, on_delete=models.CASCADE, related_name="audit_logs"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="equipment_audit_logs",
+    )
+    message = models.TextField("Событие")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "История изменений техники"
+        verbose_name_plural = "История изменений техники"
+        ordering = ["-created_at"]
+
+
+class FuelTransaction(models.Model):
+    """Журнал операций ГСМ: приход, выдача, списание."""
+
+    TYPE_INCOMING = "incoming"
+    TYPE_ISSUE = "issue"
+    TYPE_WRITEOFF = "writeoff"
+    TYPE_CHOICES = [
+        (TYPE_INCOMING, "Приход"),
+        (TYPE_ISSUE, "Выдача"),
+        (TYPE_WRITEOFF, "Списание"),
+    ]
+
+    RECIPIENT_EQUIPMENT = "equipment"
+    RECIPIENT_EMPLOYEE = "employee"
+    RECIPIENT_PROJECT = "project"
+    RECIPIENT_CONTRACTOR = "contractor"
+    RECIPIENT_CHOICES = [
+        (RECIPIENT_EQUIPMENT, "Техника"),
+        (RECIPIENT_EMPLOYEE, "Сотрудник"),
+        (RECIPIENT_PROJECT, "Объект"),
+        (RECIPIENT_CONTRACTOR, "Подрядчик"),
+    ]
+
+    WO_MACHINERY = "machinery"
+    WO_TRANSPORT = "transport"
+    WO_GENERATOR = "generator"
+    WO_LOSS = "loss"
+    WRITEOFF_REASON_CHOICES = [
+        (WO_MACHINERY, "Работа техники"),
+        (WO_TRANSPORT, "Транспорт"),
+        (WO_GENERATOR, "Генератор"),
+        (WO_LOSS, "Потери"),
+    ]
+
+    fuel_type = models.ForeignKey(
+        FuelType, on_delete=models.CASCADE, related_name="transactions"
+    )
+    warehouse = models.ForeignKey(
+        Warehouse,
+        on_delete=models.CASCADE,
+        related_name="fuel_transactions",
+        verbose_name="Склад",
+    )
+    movement_type = models.CharField(
+        "Операция", max_length=20, choices=TYPE_CHOICES
+    )
+    quantity = models.DecimalField("Количество", max_digits=14, decimal_places=4)
+    price = models.DecimalField(
+        "Цена за ед.", max_digits=14, decimal_places=2, default=0
+    )
+    total = models.DecimalField(
+        "Сумма", max_digits=16, decimal_places=2, default=0, editable=False
+    )
+    date = models.DateField("Дата")
+    comment = models.CharField("Комментарий", max_length=500, blank=True)
+    supplier = models.CharField("Поставщик", max_length=255, blank=True)
+    document_number = models.CharField("Номер документа", max_length=120, blank=True)
+
+    recipient_type = models.CharField(
+        "Кому (тип)",
+        max_length=20,
+        blank=True,
+        choices=RECIPIENT_CHOICES,
+    )
+    issued_to_name = models.CharField(
+        "Кому выдано (текст)", max_length=255, blank=True
+    )
+    driver_name = models.CharField(
+        "Водитель / ответственный", max_length=255, blank=True
+    )
+    equipment_name = models.CharField("Техника (текст)", max_length=255, blank=True)
+    equipment = models.ForeignKey(
+        Equipment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="fuel_issue_transactions",
+        verbose_name="Техника (справочник)",
+    )
+    target_project = models.ForeignKey(
+        "Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="fuel_transactions",
+        verbose_name="Объект",
+    )
+    contractor_name = models.CharField("Подрядчик", max_length=255, blank=True)
+    writeoff_reason = models.CharField(
+        "Причина списания",
+        max_length=20,
+        blank=True,
+        choices=WRITEOFF_REASON_CHOICES,
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="fuel_transactions_recorded",
+        verbose_name="Пользователь",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date", "-created_at"]
+        verbose_name = "Операция ГСМ"
+        verbose_name_plural = "Операции ГСМ"
+
+    def save(self, *args, **kwargs):
+        from decimal import Decimal
+
+        self.total = (self.quantity or Decimal("0")) * (self.price or Decimal("0"))
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.get_movement_type_display()} {self.fuel_type.name} {self.quantity}"
+
+
+class EquipmentFuelLog(models.Model):
+    """Заправка / выдача ГСМ по единице техники (связь с проводкой)."""
+
+    equipment = models.ForeignKey(
+        Equipment, on_delete=models.CASCADE, related_name="fuel_logs"
+    )
+    transaction = models.OneToOneField(
+        FuelTransaction,
+        on_delete=models.CASCADE,
+        related_name="equipment_fuel_log",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Заправка техники (ГСМ)"
+        verbose_name_plural = "Заправки техники (ГСМ)"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.equipment_id} tx={self.transaction_id}"
 
 
 # ---------- Инвентарь (оборудование, инструменты): Kanban, статусы, история ----------

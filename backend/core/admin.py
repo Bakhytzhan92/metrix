@@ -34,6 +34,13 @@ from .models import (
     Material,
     Stock,
     StockMovement,
+    FuelType,
+    FuelStock,
+    FuelTransaction,
+    Equipment,
+    EquipmentDocument,
+    EquipmentAuditLog,
+    EquipmentFuelLog,
     WarehouseInventoryItem,
     InventoryTransfer,
     InventoryLog,
@@ -258,6 +265,56 @@ class StockMovementAdmin(admin.ModelAdmin):
     list_display = ("id", "material", "movement_type", "quantity", "warehouse_from", "warehouse_to", "project", "date", "total")
     list_filter = ("movement_type", "date")
     readonly_fields = ("total", "created_at")
+
+
+@admin.register(FuelType)
+class FuelTypeAdmin(admin.ModelAdmin):
+    list_display = ("name", "code", "unit", "company")
+    list_filter = ("company",)
+
+
+@admin.register(FuelStock)
+class FuelStockAdmin(admin.ModelAdmin):
+    list_display = ("warehouse", "fuel_type", "quantity", "price_avg")
+    list_filter = ("warehouse__company",)
+
+
+@admin.register(FuelTransaction)
+class FuelTransactionAdmin(admin.ModelAdmin):
+    list_display = ("id", "date", "movement_type", "fuel_type", "warehouse", "quantity", "total", "user")
+    list_filter = ("movement_type", "date")
+    readonly_fields = ("total", "created_at")
+
+
+@admin.register(Equipment)
+class EquipmentAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "license_plate",
+        "equipment_type",
+        "status",
+        "project",
+        "company",
+        "fuel_type",
+    )
+    list_filter = ("company", "status", "equipment_type")
+    search_fields = ("name", "license_plate", "inventory_number", "make_model")
+
+
+@admin.register(EquipmentDocument)
+class EquipmentDocumentAdmin(admin.ModelAdmin):
+    list_display = ("equipment", "title", "uploaded_at")
+
+
+@admin.register(EquipmentAuditLog)
+class EquipmentAuditLogAdmin(admin.ModelAdmin):
+    list_display = ("equipment", "user", "created_at")
+    list_filter = ("created_at",)
+
+
+@admin.register(EquipmentFuelLog)
+class EquipmentFuelLogAdmin(admin.ModelAdmin):
+    list_display = ("equipment", "transaction", "created_at")
 
 
 @admin.register(WarehouseInventoryItem)

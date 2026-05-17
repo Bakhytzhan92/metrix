@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{{ equipment.name }} — Техника — Metrix{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <a href="{% url 'company_equipment_list' %}" class="text-sm text-indigo-600 hover:text-indigo-800">← Справочник техники</a>
+      <h1 class="text-2xl font-semibold text-slate-900 mt-2">{{ equipment.name }}</h1>
+      <p class="text-sm text-slate-500">{{ equipment.get_status_display }}{% if equipment.license_plate %} · {{ equipment.license_plate }}{% endif %}</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="{% url 'company_equipment_edit' equipment.pk %}" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50">Изменить</a>
+      <span class="text-xs text-slate-400 self-center">QR: {{ equipment.qr_token }}</span>
+    </div>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-2">
+    <div class="rounded-xl border border-slate-200 bg-white p-4">
+      <h2 class="text-sm font-semibold text-slate-800 mb-2">Реквизиты</h2>
+      <dl class="text-sm space-y-1 text-slate-600">
+        {% if equipment.equipment_type %}<div><span class="text-slate-400">Тип:</span> {{ equipment.equipment_type }}</div>{% endif %}
+        {% if equipment.inventory_number %}<div><span class="text-slate-400">Инв. №:</span> {{ equipment.inventory_number }}</div>{% endif %}
+        {% if equipment.vin %}<div><span class="text-slate-400">VIN:</span> {{ equipment.vin }}</div>{% endif %}
+        {% if equipment.make_model %}<div><span class="text-slate-400">Марка/модель:</span> {{ equipment.make_model }}</div>{% endif %}
+        {% if equipment.year_manufactured %}<div><span class="text-slate-400">Год:</span> {{ equipment.year_manufactured }}</div>{% endif %}
+        {% if equipment.project %}<div><span class="text-slate-400">Объект:</span> {{ equipment.project.name }}</div>{% endif %}
+        {% if equipment.base_warehouse %}<div><span class="text-slate-400">Базирование:</span> {{ equipment.base_warehouse.name }}</div>{% endif %}
+        {% if equipment.responsible %}<div><span class="text-slate-400">Ответственный:</span> {{ equipment.responsible.get_username }}</div>{% endif %}
+        {% if equipment.fuel_type %}<div><span class="text-slate-400">Топливо:</span> {{ equipment.fuel_type.name }}</div>{% endif %}
+        {% if equipment.consumption_norm_liters %}
+        <div><span class="text-slate-400">Норма:</span> {{ equipment.consumption_norm_liters }} {{ equipment.get_consumption_norm_mode_display }}</div>
+        {% endif %}
+      </dl>
+    </div>
+    {% if equipment.photo %}
+    <div class="rounded-xl border border-slate-200 bg-white p-4">
+      <h2 class="text-sm font-semibold text-slate-800 mb-2">Фото</h2>
+      <img src="{{ equipment.photo.url }}" alt="" class="max-h-56 rounded-lg object-contain" />
+    </div>
+    {% endif %}
+  </div>
+
+  {% if equipment.notes %}
+  <div class="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 whitespace-pre-wrap">{{ equipment.notes }}</div>
+  {% endif %}
+
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <h2 class="text-sm font-semibold text-slate-800 mb-3">Документы</h2>
+    <ul class="text-sm space-y-2 mb-4">
+      {% for d in documents %}
+      <li><a href="{{ d.file.url }}" class="text-indigo-600 hover:underline">{{ d.title|default:d.file.name }}</a> <span class="text-slate-400 text-xs">{{ d.uploaded_at|date:"d.m.Y" }}</span></li>
+      {% empty %}
+      <li class="text-slate-500">Нет файлов</li>
+      {% endfor %}
+    </ul>
+    {% if user.is_authenticated %}
+    <form method="post" action="{% url 'company_equipment_document_add' equipment.pk %}" enctype="multipart/form-data" class="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-4">
+      {% csrf_token %}
+      <div>
+        <label class="text-xs text-slate-500">Название</label>
+        <input type="text" name="title" class="mt-1 rounded border border-slate-300 px-2 py-1 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs text-slate-500">Файл</label>
+        <input type="file" name="file" required class="mt-1 text-sm" />
+      </div>
+      <button type="submit" class="rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-white">Загрузить</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <h2 class="text-sm font-semibold text-slate-800 mb-3">Заправки (ГСМ)</h2>
+    <div class="overflow-x-auto text-sm">
+      <table class="min-w-full text-left">
+        <thead><tr class="border-b text-slate-500"><th class="py-2 pr-2">Дата</th><th class="py-2 pr-2">Топливо</th><th class="py-2 pr-2">Литры</th><th class="py-2">Склад</th></tr></thead>
+        <tbody>
+          {% for fl in fuel_logs %}
+          <tr class="border-b border-slate-50">
+            <td class="py-2 pr-2">{{ fl.transaction.date|date:"d.m.Y" }}</td>
+            <td class="py-2 pr-2">{{ fl.transaction.fuel_type.name }}</td>
+            <td class="py-2 pr-2 tabular-nums">{{ fl.transaction.quantity }}</td>
+            <td class="py-2">{{ fl.transaction.warehouse.name }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="py-4 text-slate-500">Заправок по этой технике ещё не было</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <h2 class="text-sm font-semibold text-slate-800 mb-3">История изменений</h2>
+    <ul class="text-sm space-y-2 text-slate-600">
+      {% for a in audit_logs %}
+      <li><span class="text-slate-400">{{ a.created_at|date:"d.m.Y H:i" }}</span> {% if a.user %}{{ a.user.get_username }}: {% endif %}{{ a.message }}</li>
+      {% empty %}
+      <li class="text-slate-500">Записей нет</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

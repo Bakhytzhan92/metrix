@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{% if is_edit %}Редактирование{% else %}Новая техника{% endif %} — Metrix{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-6">
+  <h1 class="text-2xl font-semibold text-slate-900 mb-6">{% if is_edit %}Карточка техники{% else %}Новая единица техники{% endif %}</h1>
+  <form method="post" enctype="multipart/form-data" class="space-y-4 bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="text-sm">
+      <label class="block text-slate-700 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% for err in field.errors %}<p class="text-xs text-red-600 mt-1">{{ err }}</p>{% endfor %}
+    </div>
+    {% endfor %}
+    <div class="flex gap-2 pt-2">
+      <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить</button>
+      <a href="{% if is_edit %}{% url 'company_equipment_detail' equipment.pk %}{% else %}{% url 'company_equipment_list' %}{% endif %}" class="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

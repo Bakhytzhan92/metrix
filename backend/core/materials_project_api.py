@@ -123,7 +123,6 @@ def api_project_materials_meta(request: HttpRequest, pk: int) -> JsonResponse:
             "project_id": project.pk,
             "can_edit": _can_edit(request.user, company),
             "warehouses": [{"id": w.id, "name": w.name} for w in warehouses],
-            "categories": [{"value": k, "label": str(v)} for k, v in Material.CATEGORY_CHOICES],
             "writeoff_reasons": [{"value": k, "label": str(v)} for k, v in StockMovement.WRITEOFF_REASON_CHOICES],
             "movement_types": [{"value": k, "label": str(v)} for k, v in StockMovement.TYPE_CHOICES],
             "schedule_phases": phases,
@@ -142,7 +141,7 @@ def api_project_materials_catalog(request: HttpRequest, pk: int) -> JsonResponse
     materials = list(
         Material.objects.filter(company=company)
         .order_by("name")
-        .values("id", "name", "unit", "category")
+        .values("id", "name", "unit")
     )
     return _json({"ok": True, "materials": materials})
 
@@ -157,7 +156,6 @@ def api_project_materials_stocks(request: HttpRequest, pk: int) -> JsonResponse:
     company = project.company
     q = (request.GET.get("q") or "").strip()
     wh_f = request.GET.get("warehouse")
-    cat_f = request.GET.get("category")
     sort = request.GET.get("sort") or "name"
     order = request.GET.get("order") or "asc"
 
@@ -169,12 +167,9 @@ def api_project_materials_stocks(request: HttpRequest, pk: int) -> JsonResponse:
         qs = qs.filter(material__name__icontains=q)
     if wh_f and str(wh_f).isdigit():
         qs = qs.filter(warehouse_id=int(wh_f))
-    if cat_f and cat_f in dict(Material.CATEGORY_CHOICES):
-        qs = qs.filter(material__category=cat_f)
 
     sort_map = {
         "name": "material__name",
-        "category": "material__category",
         "quantity": "quantity",
         "price": "price_avg",
         "total": "line_total",
@@ -207,8 +202,6 @@ def api_project_materials_stocks(request: HttpRequest, pk: int) -> JsonResponse:
                 "stock_id": s.id,
                 "material_id": s.material_id,
                 "name": s.material.name,
-                "category": s.material.category,
-                "category_display": s.material.get_category_display(),
                 "unit": s.material.unit,
                 "quantity": _fmt_qty(qty),
                 "price": _fmt_money(price),
@@ -290,9 +283,6 @@ def api_project_materials_create(request: HttpRequest, pk: int) -> JsonResponse:
     name = (data.get("name") or "").strip()
     if not name:
         return _json({"ok": False, "error": "name_required"}, status=400)
-    category = data.get("category") or Material.CATEGORY_MATERIAL
-    if category not in dict(Material.CATEGORY_CHOICES):
-        category = Material.CATEGORY_MATERIAL
     unit = (data.get("unit") or "шт").strip()[:30] or "шт"
     wh_id = data.get("warehouse_id")
     warehouse = get_object_or_404(Warehouse, pk=int(wh_id), company=company, is_deleted=False)
@@ -312,7 +302,7 @@ def api_project_materials_create(request: HttpRequest, pk: int) -> JsonResponse:
             mat = Material.objects.create(
                 company=company,
                 name=name,
-                category=category,
+                category=Material.CATEGORY_MATERIAL,
                 unit=unit,
                 supplier=supplier,
                 description=description,

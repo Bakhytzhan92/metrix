@@ -2,6 +2,7 @@ from django.urls import include, path
 
 from . import ai_api
 from . import estimate_pdf_views
+from . import fuel_project_api
 from . import inventory_api
 from . import materials_project_api
 from . import views
@@ -18,6 +19,11 @@ urlpatterns = [
     path("projects/<int:pk>/estimate/section/add/", views.estimate_section_add, name="estimate_section_add"),
     path("projects/<int:pk>/estimate/section/<int:section_id>/edit/", views.estimate_section_edit, name="estimate_section_edit"),
     path("projects/<int:pk>/estimate/section/<int:section_id>/delete/", views.estimate_section_delete, name="estimate_section_delete"),
+    path(
+        "projects/<int:pk>/estimate/sections/delete-all/",
+        views.estimate_sections_delete_all,
+        name="estimate_sections_delete_all",
+    ),
     path("projects/<int:pk>/estimate/section/<int:section_id>/item/add/", views.estimate_item_add, name="estimate_item_add"),
     path("projects/<int:pk>/estimate/section/<int:section_id>/item/quick-add/", views.estimate_item_quick_add, name="estimate_item_quick_add"),
     path("projects/<int:pk>/estimate/section/<int:section_id>/item/<int:item_id>/edit/", views.estimate_item_edit, name="estimate_item_edit"),
@@ -174,6 +180,51 @@ urlpatterns = [
         materials_project_api.api_project_materials_writeoff,
         name="api_project_materials_writeoff",
     ),
+    path(
+        "api/project/<int:pk>/gsm/meta/",
+        fuel_project_api.api_project_gsm_meta,
+        name="api_project_gsm_meta",
+    ),
+    path(
+        "api/project/<int:pk>/gsm/stocks/",
+        fuel_project_api.api_project_gsm_stocks,
+        name="api_project_gsm_stocks",
+    ),
+    path(
+        "api/project/<int:pk>/gsm/history/",
+        fuel_project_api.api_project_gsm_history,
+        name="api_project_gsm_history",
+    ),
+    path(
+        "api/project/<int:pk>/gsm/analytics/",
+        fuel_project_api.api_project_gsm_analytics,
+        name="api_project_gsm_analytics",
+    ),
+    path(
+        "api/project/<int:pk>/gsm/timeseries/",
+        fuel_project_api.api_project_gsm_timeseries,
+        name="api_project_gsm_timeseries",
+    ),
+    path(
+        "api/project/<int:pk>/gsm/incoming/",
+        fuel_project_api.api_project_gsm_incoming,
+        name="api_project_gsm_incoming",
+    ),
+    path(
+        "api/project/<int:pk>/gsm/issue/",
+        fuel_project_api.api_project_gsm_issue,
+        name="api_project_gsm_issue",
+    ),
+    path(
+        "api/project/<int:pk>/gsm/writeoff/",
+        fuel_project_api.api_project_gsm_writeoff,
+        name="api_project_gsm_writeoff",
+    ),
+    path(
+        "api/project/<int:pk>/gsm/fuel-type/create/",
+        fuel_project_api.api_project_gsm_fuel_type_create,
+        name="api_project_gsm_fuel_type_create",
+    ),
     path("projects/<int:pk>/documents/", views.project_documents, name="project_documents"),
     path("projects/<int:pk>/ai/", ai_api.project_ai_import, name="project_ai_import"),
     path("projects/<int:pk>/legacy/", views.project_detail, name="project_legacy"),
@@ -206,6 +257,20 @@ urlpatterns = [
     path("warehouses/stock/writeoff/", views.stock_writeoff, name="stock_writeoff"),
     path("warehouses/stock/transfer/", views.stock_transfer, name="stock_transfer"),
     path("warehouses/materials/create/", views.material_create, name="material_create"),
+    path("equipment/", views.company_equipment_list, name="company_equipment_list"),
+    path("equipment/add/", views.company_equipment_create, name="company_equipment_create"),
+    path("equipment/<int:pk>/", views.company_equipment_detail, name="company_equipment_detail"),
+    path("equipment/<int:pk>/edit/", views.company_equipment_edit, name="company_equipment_edit"),
+    path(
+        "equipment/<int:pk>/document/",
+        views.company_equipment_document_add,
+        name="company_equipment_document_add",
+    ),
+    path(
+        "equipment/qr/<uuid:token>/",
+        views.company_equipment_qr_card,
+        name="company_equipment_qr_card",
+    ),
     path("warehouses/outgoing/", views.warehouses_outgoing, name="warehouses_outgoing"),
     path("warehouses/transfer/", views.warehouses_transfer, name="warehouses_transfer"),
     path("warehouses/inventory/", views.warehouse_inventory_erp, name="warehouse_inventory_erp"),

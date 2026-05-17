@@ -31,6 +31,14 @@
     <a href="{% url 'estimate_section_add' project.pk %}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
       Добавить раздел
     </a>
+    {% if sections %}
+    <form action="{% url 'estimate_sections_delete_all' project.pk %}" method="post" class="inline" onsubmit="return confirm('Удалить все разделы сметы и все позиции? Связь этапов графика с разделами будет сброшена. Отменить действие нельзя.');">
+      {% csrf_token %}
+      <button type="submit" class="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-800 hover:bg-red-100">
+        Удалить все разделы
+      </button>
+    </form>
+    {% endif %}
     <form action="{% url 'estimate_import' project.pk %}" method="post" enctype="multipart/form-data" class="inline-flex items-center gap-2">
       {% csrf_token %}
       <input type="file" name="file" accept=".xlsx,.xls" class="text-sm text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100" required />

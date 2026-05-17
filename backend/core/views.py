@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Max, Prefetch, Sum
+from django.db.models import Max, Prefetch, Q, Sum
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -62,6 +62,7 @@ from .forms import (
     WarehouseInventoryCreateForm,
     WarehouseInventoryUpdateForm,
     InventoryTransferForm,
+    EquipmentForm,
 )
 from .models import (
     Company,
@@ -92,6 +93,9 @@ from .models import (
     StockMovement,
     WarehouseInventoryItem,
     InventoryLog,
+    Equipment,
+    EquipmentDocument,
+    EquipmentAuditLog,
 )
 from .warehouse_services import apply_incoming, apply_writeoff, apply_transfer
 from .inventory_services import (
@@ -394,6 +398,18 @@ def estimate_section_delete(request: HttpRequest, pk: int, section_id: int) -> H
     section = get_object_or_404(EstimateSection, pk=section_id, project=project)
     section.delete()
     messages.success(request, "Раздел удалён.")
+    return redirect("project_estimate", pk=project.pk)
+
+
+@login_required
+@require_POST
+def estimate_sections_delete_all(request: HttpRequest, pk: int) -> HttpResponse:
+    """Удалить все разделы сметы проекта и все позиции (CASCADE). Связь этапов графика с разделом обнуляется (SET_NULL)."""
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+    EstimateSection.objects.filter(project=project).delete()
+    messages.success(request, "Все разделы сметы и позиции удалены.")
     return redirect("project_estimate", pk=project.pk)
 
 
@@ -3517,6 +3533,155 @@ def material_create(request: HttpRequest) -> HttpResponse:
     else:
         form = MaterialCreateForm()
     return render(request, "core/material_form.html", {"form": form, "company": company})
+
+
+def _equipment_audit(equipment: Equipment, user, message: str) -> None:
+    EquipmentAuditLog.objects.create(
+        equipment=equipment,
+        user=user,
+        message=message[:2000],
+    )
+
+
+@login_required
+def company_equipment_list(request: HttpRequest) -> HttpResponse:
+    company = _get_warehouse_company(request)
+    if not company or not has_permission(request.user, company, "view_warehouse"):
+        messages.error(request, "Нет доступа к справочнику техники.")
+        return redirect("dashboard")
+    qs = Equipment.objects.filter(company=company).select_related(
+        "project", "fuel_type", "base_warehouse", "responsible"
+    )
+    st = request.GET.get("status", "").strip()
+    if st and st in dict(Equipment.STATUS_CHOICES):
+        qs = qs.filter(status=st)
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(
+            Q(name__icontains=q)
+            | Q(license_plate__icontains=q)
+            | Q(inventory_number__icontains=q)
+            | Q(make_model__icontains=q)
+        )
+    return render(
+        request,
+        "core/equipment_list.html",
+        {
+            "company": company,
+            "equipment_list": qs.order_by("name")[:500],
+            "status_filter": st,
+            "search_q": q,
+            "status_choices": Equipment.STATUS_CHOICES,
+        },
+    )
+
+
+@login_required
+def company_equipment_create(request: HttpRequest) -> HttpResponse:
+    company = _get_warehouse_company(request)
+    if not company or not has_permission(request.user, company, "edit_warehouse"):
+        messages.error(request, "Нет права редактировать технику.")
+        return redirect("dashboard")
+    if request.method == "POST":
+        form = EquipmentForm(request.POST, request.FILES, company=company)
+        if form.is_valid():
+            from .fuel_services import ensure_default_fuel_types
+
+            ensure_default_fuel_types(company)
+            obj = form.save(commit=False)
+            obj.company = company
+            obj.save()
+            _equipment_audit(obj, request.user, "Создана запись в справочнике техники")
+            messages.success(request, "Техника добавлена.")
+            return redirect("company_equipment_detail", pk=obj.pk)
+    else:
+        form = EquipmentForm(company=company)
+    return render(
+        request,
+        "core/equipment_form.html",
+        {"form": form, "company": company, "is_edit": False},
+    )
+
+
+@login_required
+def company_equipment_edit(request: HttpRequest, pk: int) -> HttpResponse:
+    company = _get_warehouse_company(request)
+    if not company or not has_permission(request.user, company, "edit_warehouse"):
+        messages.error(request, "Нет права редактировать технику.")
+        return redirect("dashboard")
+    obj = get_object_or_404(Equipment, pk=pk, company=company)
+    if request.method == "POST":
+        form = EquipmentForm(
+            request.POST, request.FILES, instance=obj, company=company
+        )
+        if form.is_valid():
+            form.save()
+            _equipment_audit(obj, request.user, "Изменена карточка техники")
+            messages.success(request, "Сохранено.")
+            return redirect("company_equipment_detail", pk=obj.pk)
+    else:
+        form = EquipmentForm(instance=obj, company=company)
+    return render(
+        request,
+        "core/equipment_form.html",
+        {"form": form, "company": company, "is_edit": True, "equipment": obj},
+    )
+
+
+@login_required
+def company_equipment_detail(request: HttpRequest, pk: int) -> HttpResponse:
+    company = _get_warehouse_company(request)
+    if not company or not has_permission(request.user, company, "view_warehouse"):
+        messages.error(request, "Нет доступа.")
+        return redirect("dashboard")
+    obj = get_object_or_404(Equipment, pk=pk, company=company)
+    fuel_logs = list(
+        obj.fuel_logs.select_related("transaction", "transaction__fuel_type")
+        .order_by("-created_at")[:100]
+    )
+    return render(
+        request,
+        "core/equipment_detail.html",
+        {
+            "company": company,
+            "equipment": obj,
+            "audit_logs": obj.audit_logs.select_related("user").all()[:100],
+            "documents": obj.documents.all()[:100],
+            "fuel_logs": fuel_logs,
+        },
+    )
+
+
+@login_required
+@require_POST
+def company_equipment_document_add(request: HttpRequest, pk: int) -> HttpResponse:
+    company = _get_warehouse_company(request)
+    if not company or not has_permission(request.user, company, "edit_warehouse"):
+        messages.error(request, "Нет права.")
+        return redirect("dashboard")
+    obj = get_object_or_404(Equipment, pk=pk, company=company)
+    title = (request.POST.get("title") or "").strip()
+    f = request.FILES.get("file")
+    if f:
+        EquipmentDocument.objects.create(equipment=obj, title=title, file=f)
+        _equipment_audit(obj, request.user, f"Загружен документ: {title or f.name}")
+        messages.success(request, "Файл добавлен.")
+    else:
+        messages.error(request, "Выберите файл.")
+    return redirect("company_equipment_detail", pk=obj.pk)
+
+
+@login_required
+def company_equipment_qr_card(request: HttpRequest, token) -> HttpResponse:
+    """Карточка по QR (токен), для быстрого просмотра на объекте."""
+    obj = get_object_or_404(Equipment, qr_token=token)
+    company = _get_warehouse_company(request)
+    if not company or obj.company_id != company.id:
+        messages.error(request, "Техника другой компании.")
+        return redirect("dashboard")
+    if not has_permission(request.user, company, "view_warehouse"):
+        return redirect("dashboard")
+    return render(request, "core/equipment_qr_card.html", {"equipment": obj, "company": company})
 
 
 # ---------- Модуль «Отчёты» ----------

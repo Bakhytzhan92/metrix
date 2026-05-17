@@ -42,6 +42,8 @@ from .models import (
     Stock,
     StockMovement,
     WarehouseInventoryItem,
+    Equipment,
+    FuelType,
 )
 
 
@@ -52,45 +54,23 @@ class RegisterForm(UserCreationForm):
         model = User
         fields = ("username", "email", "password1", "password2")
 
-    def clean_email(
-        self,
-    ):
-        email = normalize_email(
-            self.cleaned_data.get(
-                "email",
-            ),
-        )
+    def clean_email(self):
+        email = normalize_email(self.cleaned_data.get("email"))
         if not email:
-            raise ValidationError(
-                "Укажите email.",
-            )
-        if is_registration_email_taken(
-            email,
-        ):
+            raise ValidationError("Укажите email.")
+        if is_registration_email_taken(email):
             raise ValidationError(
                 "Пользователь с таким email уже зарегистрирован. "
                 "Войдите в систему или используйте другой адрес.",
             )
         return email
 
-    def save(
-        self,
-        commit=True,
-    ):
-        user = super().save(
-            commit=False,
-        )
-        user.email = normalize_email(
-            self.cleaned_data.get(
-                "email",
-            ),
-        )
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.email = normalize_email(self.cleaned_data.get("email"))
         if commit:
             user.save()
-            if hasattr(
-                self,
-                "save_m2m",
-            ):
+            if hasattr(self, "save_m2m"):
                 self.save_m2m()
         return user
 
@@ -923,6 +903,78 @@ class EditCompanyUserForm(forms.ModelForm):
                         update_fields.append("username")
                 u.save(update_fields=update_fields)
         return company_user
+
+
+# ---------- Справочник техники (ГСМ) ----------
+
+
+class EquipmentForm(forms.ModelForm):
+    class Meta:
+        model = Equipment
+        fields = (
+            "name",
+            "equipment_type",
+            "license_plate",
+            "inventory_number",
+            "vin",
+            "make_model",
+            "year_manufactured",
+            "responsible",
+            "project",
+            "fuel_type",
+            "consumption_norm_liters",
+            "consumption_norm_mode",
+            "photo",
+            "odometer_km",
+            "engine_hours",
+            "tank_capacity_liters",
+            "notes",
+        )
+        widgets = {
+            "name": forms.TextInput(attrs={"class": _input_class()}),
+            "equipment_type": forms.TextInput(attrs={"class": _input_class()}),
+            "license_plate": forms.TextInput(attrs={"class": _input_class()}),
+            "inventory_number": forms.TextInput(attrs={"class": _input_class()}),
+            "vin": forms.TextInput(attrs={"class": _input_class()}),
+            "make_model": forms.TextInput(attrs={"class": _input_class()}),
+            "year_manufactured": forms.NumberInput(
+                attrs={"class": _input_class(), "min": 1950, "max": 2100}
+            ),
+            "responsible": forms.Select(attrs={"class": _input_class()}),
+            "project": forms.Select(attrs={"class": _input_class()}),
+            "fuel_type": forms.Select(attrs={"class": _input_class()}),
+            "consumption_norm_liters": forms.NumberInput(
+                attrs={"class": _input_class(), "step": "0.001", "min": "0"}
+            ),
+            "consumption_norm_mode": forms.Select(attrs={"class": _input_class()}),
+            "photo": forms.FileInput(attrs={"class": _input_class()}),
+            "odometer_km": forms.NumberInput(
+                attrs={"class": _input_class(), "step": "0.01", "min": "0"}
+            ),
+            "engine_hours": forms.NumberInput(
+                attrs={"class": _input_class(), "step": "0.01", "min": "0"}
+            ),
+            "tank_capacity_liters": forms.NumberInput(
+                attrs={"class": _input_class(), "step": "0.01", "min": "0"}
+            ),
+            "notes": forms.Textarea(attrs={"class": _input_class(), "rows": 3}),
+        }
+
+    def __init__(self, *args, company=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if company:
+            self.fields["fuel_type"].queryset = FuelType.objects.filter(
+                company=company
+            ).order_by("code")
+            self.fields["project"].queryset = Project.objects.filter(
+                company=company
+            ).order_by("name")
+            cu_ids = CompanyUser.objects.filter(company=company).values_list(
+                "user_id", flat=True
+            )
+            self.fields["responsible"].queryset = User.objects.filter(
+                id__in=cu_ids
+            ).order_by("username")
 
 
 # ---------- Смета проекта ----------

@@ -5,7 +5,6 @@ type Meta = {
   ok: boolean;
   can_edit: boolean;
   warehouses: { id: number; name: string }[];
-  categories: { value: string; label: string }[];
   writeoff_reasons: { value: string; label: string }[];
   schedule_phases: { id: number; label: string }[];
 };
@@ -14,7 +13,6 @@ type StockRow = {
   stock_id: number;
   material_id: number;
   name: string;
-  category_display: string;
   unit: string;
   quantity: string;
   price: string;
@@ -39,7 +37,7 @@ type HistRow = {
   schedule_phase_label: string | null;
 };
 
-type CatMaterial = { id: number; name: string; unit: string; category: string };
+type CatMaterial = { id: number; name: string; unit: string };
 
 function csrf(): string {
   const m = document.cookie.match(/csrftoken=([^;]+)/);
@@ -99,7 +97,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
 
   const [q, setQ] = useState("");
   const [wh, setWh] = useState("");
-  const [cat, setCat] = useState("");
   const [sort, setSort] = useState("name");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [histType, setHistType] = useState("");
@@ -110,8 +107,8 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
 
   useEffect(() => {
     const h = (e: Event) => {
-      const d = (e as CustomEvent).detail as "inventory" | "materials" | "history";
-      setMainTab(d);
+      const d = (e as CustomEvent).detail as string;
+      if (d === "materials" || d === "history") setMainTab(d);
     };
     document.addEventListener("warehouse-main-tab", h);
     return () => document.removeEventListener("warehouse-main-tab", h);
@@ -142,7 +139,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
     const qs = new URLSearchParams();
     if (q.trim()) qs.set("q", q.trim());
     if (wh) qs.set("warehouse", wh);
-    if (cat) qs.set("category", cat);
     qs.set("sort", sort);
     qs.set("order", order);
     try {
@@ -151,7 +147,7 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
     } catch {
       push("Ошибка загрузки остатков");
     }
-  }, [base, q, wh, cat, sort, order, push]);
+  }, [base, q, wh, sort, order, push]);
 
   const loadHistory = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -233,22 +229,10 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                 ))}
               </select>
             </div>
-            <div className="min-w-[140px]">
-              <label className="text-xs font-medium text-slate-500">Категория</label>
-              <select className={fieldCls()} value={cat} onChange={(e) => setCat(e.target.value)}>
-                <option value="">Все</option>
-                {meta.categories.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div className="min-w-[120px]">
               <label className="text-xs font-medium text-slate-500">Сортировка</label>
               <select className={fieldCls()} value={sort} onChange={(e) => setSort(e.target.value)}>
                 <option value="name">Наименование</option>
-                <option value="category">Категория</option>
                 <option value="quantity">Остаток</option>
                 <option value="price">Цена</option>
                 <option value="total">Стоимость</option>
@@ -319,7 +303,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
               <thead className="border-b border-slate-100 bg-slate-50/80">
                 <tr>
                   <th className="px-4 py-3 font-semibold text-slate-700">Наименование</th>
-                  <th className="px-4 py-3 font-semibold text-slate-700">Категория</th>
                   <th className="px-4 py-3 font-semibold text-slate-700">Остаток</th>
                   <th className="px-4 py-3 font-semibold text-slate-700">Ед.</th>
                   <th className="px-4 py-3 font-semibold text-slate-700">Цена</th>
@@ -332,7 +315,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                 {stocks.map((r) => (
                   <tr key={r.stock_id} className="border-b border-slate-50 hover:bg-slate-50/60">
                     <td className="px-4 py-2.5 font-medium text-slate-900">{r.name}</td>
-                    <td className="px-4 py-2.5 text-slate-600">{r.category_display}</td>
                     <td className="px-4 py-2.5 tabular-nums">{r.quantity}</td>
                     <td className="px-4 py-2.5 text-slate-500">{r.unit}</td>
                     <td className="px-4 py-2.5 tabular-nums">{r.price} ₸</td>
