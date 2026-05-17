@@ -1214,6 +1214,139 @@ class WorkAct(models.Model):
         return max(a - p, Decimal("0"))
 
 
+def construction_project_upload_to(instance, filename: str) -> str:
+    """Путь загрузки строительной документации проекта (уникальное имя файла)."""
+    import os
+    import uuid
+
+    stem, ext = os.path.splitext(filename or "")
+    ext = (ext or "")[:12].lower()
+    safe = "".join(c for c in stem[:120] if c.isalnum() or c in "._- ")
+    if not safe:
+        safe = "file"
+    return f"construction_docs/p{instance.project_id}/{uuid.uuid4().hex[:12]}_{safe}{ext}"
+
+
+class ProjectDocumentFolder(models.Model):
+    """Папка в разделе «Документы» проекта (дерево слева)."""
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="document_folders"
+    )
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="children",
+    )
+    name = models.CharField("Название папки", max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["project_id", "parent_id", "name"]
+        verbose_name = "Папка документов проекта"
+        verbose_name_plural = "Папки документов проекта"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class ProjectConstructionFile(models.Model):
+    """Файл строительной документации в проекте (не путать с UploadedDocument для ИИ)."""
+
+    KIND_PDF = "pdf"
+    KIND_WORD = "word"
+    KIND_SPREADSHEET = "spreadsheet"
+    KIND_IMAGE = "image"
+    KIND_OTHER = "other"
+    KIND_CHOICES = [
+        (KIND_PDF, "PDF"),
+        (KIND_WORD, "Word"),
+        (KIND_SPREADSHEET, "Excel"),
+        (KIND_IMAGE, "Фото"),
+        (KIND_OTHER, "Другое"),
+    ]
+
+    CATEGORY_GENERAL = "general"
+    CATEGORY_AOSR = "aosr"
+    CATEGORY_EXEC_SCHEME = "exec_scheme"
+    CATEGORY_CONTRACT = "contract"
+    CATEGORY_DRAWING = "drawing"
+    CATEGORY_CHOICES = [
+        (CATEGORY_GENERAL, "Общее"),
+        (CATEGORY_AOSR, "АОСР"),
+        (CATEGORY_EXEC_SCHEME, "Исполнительные схемы"),
+        (CATEGORY_CONTRACT, "Договоры"),
+        (CATEGORY_DRAWING, "Чертежи"),
+    ]
+
+    WORKFLOW_DRAFT = "draft"
+    WORKFLOW_REVIEW = "review"
+    WORKFLOW_SIGNED = "signed"
+    WORKFLOW_ARCHIVE = "archive"
+    WORKFLOW_CHOICES = [
+        (WORKFLOW_DRAFT, "Черновик"),
+        (WORKFLOW_REVIEW, "На согласовании"),
+        (WORKFLOW_SIGNED, "Подписан"),
+        (WORKFLOW_ARCHIVE, "Архив"),
+    ]
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="construction_files",
+    )
+    folder = models.ForeignKey(
+        ProjectDocumentFolder,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="files",
+    )
+    file = models.FileField("Файл", upload_to=construction_project_upload_to)
+    original_filename = models.CharField("Исходное имя файла", max_length=255)
+    title = models.CharField("Название", max_length=255)
+    file_kind = models.CharField(
+        "Тип файла",
+        max_length=20,
+        choices=KIND_CHOICES,
+        default=KIND_OTHER,
+    )
+    category = models.CharField(
+        "Категория",
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        default=CATEGORY_GENERAL,
+    )
+    workflow_status = models.CharField(
+        "Статус",
+        max_length=20,
+        choices=WORKFLOW_CHOICES,
+        default=WORKFLOW_DRAFT,
+    )
+    act_number = models.CharField("Номер акта", max_length=120, blank=True)
+    act_date = models.DateField("Дата акта", null=True, blank=True)
+    work_section = models.CharField("Раздел работ", max_length=255, blank=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="construction_files_uploaded",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-pk"]
+        verbose_name = "Документ строительства"
+        verbose_name_plural = "Документы строительства"
+
+    def __str__(self) -> str:
+        return self.title
+
+
 # ---------- Модуль «Снабжение»: ресурсы, заявки, заказы ----------
 # Расширяемо: склады, остатки, план/факт; связь заказ → финансы (оплата) — позже.
 

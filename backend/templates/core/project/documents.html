@@ -1,71 +1,459 @@
 {% extends "core/project/project_layout.html" %}
 {% block project_content %}
-<div class="space-y-6">
+<div class="space-y-6" id="construction-docs-app" data-project-id="{{ project.pk }}" data-can-edit="{% if can_edit_documents %}1{% else %}0{% endif %}">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <div>
       <h1 class="text-lg font-semibold text-slate-900">Документы</h1>
-      <p class="text-xs text-slate-500 mt-0.5">Акты выполненных работ: после отправки на оплату они попадут в «Финансы» → «Работы на оплату».</p>
+      <p class="text-xs text-slate-500 mt-0.5">Строительная документация проекта: папки, версии, статусы. Форматы: PDF, Word, Excel, изображения.</p>
     </div>
-    <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">Финансы: работы</a>
+    <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="inline-flex rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50">Финансы: работы</a>
   </div>
 
-  <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-    <h2 class="text-sm font-semibold text-slate-900 mb-3">Новый акт</h2>
-    <form method="post" action="{% url 'project_work_act_create' project.pk %}" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm max-w-5xl">
-      {% csrf_token %}
-      {% for field in act_form %}
-      <div class="{% if field.name == 'description' %}sm:col-span-2 lg:col-span-3{% endif %}">
-        <label class="block text-xs text-slate-600 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
-        {{ field }}
-        {% if field.errors %}<p class="text-xs text-red-600">{{ field.errors }}</p>{% endif %}
-      </div>
-      {% endfor %}
-      <div class="sm:col-span-2 lg:col-span-3">
-        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить акт</button>
-      </div>
-    </form>
+  {# Верхние вкладки категорий #}
+  <div class="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1 text-sm shadow-sm" role="tablist" id="docs-main-tabs">
+    <button type="button" role="tab" data-tab="all" class="docs-tab rounded-lg px-3 py-2 font-medium bg-white text-indigo-700 shadow-sm">Все документы</button>
+    <button type="button" role="tab" data-tab="aosr" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">АОСР</button>
+    <button type="button" role="tab" data-tab="exec_schemes" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Исполнительные схемы</button>
+    <button type="button" role="tab" data-tab="contracts" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Договоры</button>
+    <button type="button" role="tab" data-tab="drawings" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Чертежи</button>
+    <button type="button" role="tab" data-tab="pdf" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">PDF</button>
+    <button type="button" role="tab" data-tab="word" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Word</button>
+    <button type="button" role="tab" data-tab="photos" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Фото</button>
+    <button type="button" role="tab" data-tab="archive" class="docs-tab rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-white hover:text-slate-900">Архив</button>
   </div>
 
-  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-    <table class="min-w-full divide-y divide-slate-100 text-sm">
-      <thead class="bg-slate-50">
-        <tr>
-          <th class="px-3 py-2 text-left font-medium text-slate-700">Подрядчик</th>
-          <th class="px-3 py-2 text-left font-medium text-slate-700">Вид работ</th>
-          <th class="px-3 py-2 text-right font-medium text-slate-700">Сумма</th>
-          <th class="px-3 py-2 text-left font-medium text-slate-700">Дата акта</th>
-          <th class="px-3 py-2 text-left font-medium text-slate-700">Статус</th>
-          <th class="px-3 py-2 text-left font-medium text-slate-700">Действие</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        {% for a in work_acts %}
-        <tr class="hover:bg-slate-50/60">
-          <td class="px-3 py-2 font-medium text-slate-900">{{ a.contractor }}</td>
-          <td class="px-3 py-2 text-slate-600 text-xs">{{ a.work_type|default:"—" }}</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ a.amount|floatformat:2 }} ₸</td>
-          <td class="px-3 py-2 tabular-nums text-slate-600">{{ a.act_date|date:"d.m.Y" }}</td>
-          <td class="px-3 py-2 text-xs">{{ a.get_payment_status_display }}</td>
-          <td class="px-3 py-2">
-            {% if a.payment_status == 'draft' %}
-            <form method="post" action="{% url 'project_work_act_submit_payment' project.pk a.pk %}" class="inline">
-              {% csrf_token %}
-              <button type="submit" class="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">Отправить на оплату</button>
-            </form>
-            {% elif a.payment_status == 'awaiting_payment' %}
-            <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="text-xs text-indigo-600 hover:text-indigo-800">В финансах →</a>
-            {% elif a.payment_status == 'partial' %}
-            <span class="text-xs text-amber-700">Частично оплачено</span>
-            {% else %}
-            <span class="text-xs text-emerald-700">Оплачено</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="6" class="px-4 py-10 text-center text-slate-500">Актов пока нет — добавьте первый выше.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="grid gap-4 lg:grid-cols-[minmax(200px,260px)_1fr]">
+    {# Дерево папок #}
+    <aside class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm h-fit lg:sticky lg:top-4">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Папки</h2>
+        <button type="button" id="docs-new-folder" class="hidden rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 edit-only">+ Папка</button>
+      </div>
+      <button type="button" id="docs-folder-all" class="w-full text-left rounded-lg px-2 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 mb-1">Все документы</button>
+      <div id="docs-folder-tree" class="text-sm text-slate-700 space-y-0.5 max-h-[50vh] overflow-y-auto"></div>
+    </aside>
+
+    <div class="space-y-4 min-w-0">
+      {# Зона загрузки #}
+      <div id="docs-dropzone" class="edit-only hidden rounded-xl border-2 border-dashed border-slate-200 bg-white px-6 py-8 text-center shadow-sm transition-colors hover:border-indigo-300 hover:bg-slate-50/50">
+        <p class="text-sm text-slate-600">Перетащите файлы сюда или выберите на диске</p>
+        <p class="text-xs text-slate-400 mt-1">.pdf, .doc, .docx, .xlsx, .jpg, .png — можно несколько файлов</p>
+        <div class="mt-4 flex flex-wrap justify-center gap-2">
+          <label class="inline-flex cursor-pointer rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Добавить документ
+            <input type="file" id="docs-file-input" class="hidden" multiple accept=".pdf,.doc,.docx,.xlsx,.jpg,.jpeg,.png" />
+          </label>
+        </div>
+        <div id="docs-upload-progress" class="mt-4 hidden max-w-md mx-auto">
+          <div class="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+            <div id="docs-upload-bar" class="h-full bg-indigo-500 transition-all duration-200" style="width:0%"></div>
+          </div>
+          <p id="docs-upload-label" class="text-xs text-slate-500 mt-1"></p>
+        </div>
+      </div>
+
+      {# Фильтры + таблица #}
+      <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="flex flex-col gap-3 p-4 border-b border-slate-100 sm:flex-row sm:flex-wrap sm:items-end">
+          <div class="flex-1 min-w-[140px]">
+            <label class="text-xs font-medium text-slate-500">Поиск</label>
+            <input type="search" id="docs-search" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="Название, файл, № акта…" />
+          </div>
+          <div class="w-full sm:w-40">
+            <label class="text-xs font-medium text-slate-500">Тип файла</label>
+            <select id="docs-filter-kind" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <option value="">Все типы</option>
+            </select>
+          </div>
+          <div class="w-full sm:w-44">
+            <label class="text-xs font-medium text-slate-500">Категория</label>
+            <select id="docs-filter-category" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <option value="">Все категории</option>
+            </select>
+          </div>
+          <button type="button" id="docs-apply-filters" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white h-[38px] self-end">Обновить</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-100 text-sm" id="docs-table">
+            <thead class="bg-slate-50 text-left text-xs font-medium text-slate-600">
+              <tr>
+                <th class="px-3 py-3 w-10"></th>
+                <th class="px-3 py-3">Название</th>
+                <th class="px-3 py-3 hidden md:table-cell">Тип</th>
+                <th class="px-3 py-3 hidden lg:table-cell">Категория</th>
+                <th class="px-3 py-3 hidden sm:table-cell">Размер</th>
+                <th class="px-3 py-3 hidden xl:table-cell">Кто загрузил</th>
+                <th class="px-3 py-3 hidden lg:table-cell">Загружен</th>
+                <th class="px-3 py-3 hidden lg:table-cell">Изменён</th>
+                <th class="px-3 py-3 aosr-col hidden">№ акта</th>
+                <th class="px-3 py-3 aosr-col hidden">Дата акта</th>
+                <th class="px-3 py-3 aosr-col hidden">Раздел работ</th>
+                <th class="px-3 py-3">Статус</th>
+                <th class="px-3 py-3 w-24">Действия</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50" id="docs-tbody"></tbody>
+          </table>
+        </div>
+        <p id="docs-empty" class="hidden px-4 py-12 text-center text-slate-500 text-sm">Нет документов. Загрузите файлы или смените фильтр.</p>
+      </div>
+    </div>
   </div>
+
+  {# Модальное окно предпросмотра #}
+  <div id="docs-preview-backdrop" class="hidden fixed inset-0 z-[120] bg-slate-900/50" aria-hidden="true"></div>
+  <div id="docs-preview-modal" class="hidden fixed inset-4 z-[130] max-w-5xl mx-auto flex flex-col rounded-2xl bg-white shadow-xl border border-slate-200 overflow-hidden">
+    <div class="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+      <h3 id="docs-preview-title" class="text-sm font-semibold text-slate-900 truncate pr-4"></h3>
+      <button type="button" id="docs-preview-close" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100">✕</button>
+    </div>
+    <div id="docs-preview-body" class="flex-1 min-h-[50vh] overflow-auto bg-slate-50 p-2"></div>
+    <div class="flex flex-wrap gap-2 border-t border-slate-100 px-4 py-3 bg-white">
+      <a id="docs-preview-download" href="#" class="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50" download>Скачать</a>
+      <a id="docs-preview-newtab" href="#" target="_blank" rel="noopener" class="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Открыть в новой вкладке</a>
+    </div>
+  </div>
+
+  {# Акты выполненных работ (оплата) — сохраняем существующий функционал #}
+  <details class="rounded-xl border border-slate-200 bg-white shadow-sm group">
+    <summary class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-slate-800 flex items-center justify-between">
+      <span>Акты выполненных работ (оплата)</span>
+      <span class="text-xs text-slate-500 group-open:hidden">Развернуть</span>
+      <span class="text-xs text-slate-500 hidden group-open:inline">Свернуть</span>
+    </summary>
+    <div class="border-t border-slate-100 p-4 space-y-4">
+      <p class="text-xs text-slate-500">После отправки на оплату акты попадают в «Финансы» → «Работы на оплату».</p>
+      <div class="rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+        <h2 class="text-sm font-semibold text-slate-900 mb-3">Новый акт</h2>
+        <form method="post" action="{% url 'project_work_act_create' project.pk %}" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm max-w-5xl">
+          {% csrf_token %}
+          {% for field in act_form %}
+          <div class="{% if field.name == 'description' %}sm:col-span-2 lg:col-span-3{% endif %}">
+            <label class="block text-xs text-slate-600 mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<p class="text-xs text-red-600">{{ field.errors }}</p>{% endif %}
+          </div>
+          {% endfor %}
+          <div class="sm:col-span-2 lg:col-span-3">
+            <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить акт</button>
+          </div>
+        </form>
+      </div>
+      <div class="overflow-x-auto rounded-lg border border-slate-100">
+        <table class="min-w-full divide-y divide-slate-100 text-sm">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="px-3 py-2 text-left font-medium text-slate-700">Подрядчик</th>
+              <th class="px-3 py-2 text-left font-medium text-slate-700">Вид работ</th>
+              <th class="px-3 py-2 text-right font-medium text-slate-700">Сумма</th>
+              <th class="px-3 py-2 text-left font-medium text-slate-700">Дата акта</th>
+              <th class="px-3 py-2 text-left font-medium text-slate-700">Статус</th>
+              <th class="px-3 py-2 text-left font-medium text-slate-700">Действие</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for a in work_acts %}
+            <tr class="hover:bg-slate-50/60">
+              <td class="px-3 py-2 font-medium text-slate-900">{{ a.contractor }}</td>
+              <td class="px-3 py-2 text-slate-600 text-xs">{{ a.work_type|default:"—" }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ a.amount|floatformat:2 }} ₸</td>
+              <td class="px-3 py-2 tabular-nums text-slate-600">{{ a.act_date|date:"d.m.Y" }}</td>
+              <td class="px-3 py-2 text-xs">{{ a.get_payment_status_display }}</td>
+              <td class="px-3 py-2">
+                {% if a.payment_status == 'draft' %}
+                <form method="post" action="{% url 'project_work_act_submit_payment' project.pk a.pk %}" class="inline">
+                  {% csrf_token %}
+                  <button type="submit" class="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">Отправить на оплату</button>
+                </form>
+                {% elif a.payment_status == 'awaiting_payment' %}
+                <a href="{% url 'project_finance_section' project.pk %}?tab=work_payments" class="text-xs text-indigo-600 hover:text-indigo-800">В финансах →</a>
+                {% elif a.payment_status == 'partial' %}
+                <span class="text-xs text-amber-700">Частично оплачено</span>
+                {% else %}
+                <span class="text-xs text-emerald-700">Оплачено</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">Актов пока нет.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>
 </div>
+
+<script>
+(function () {
+  const root = document.getElementById('construction-docs-app');
+  if (!root) return;
+  const projectId = root.dataset.projectId;
+  const canEdit = root.dataset.canEdit === '1';
+  const urls = {
+    meta: "{% url 'api_construction_docs_meta' project.pk %}",
+    folders: "{% url 'api_construction_folders_tree' project.pk %}",
+    folderCreate: "{% url 'api_construction_folder_create' project.pk %}",
+    files: "{% url 'api_construction_files_list' project.pk %}",
+    upload: "{% url 'api_construction_files_upload' project.pk %}",
+    file: (id) => '/projects/' + projectId + '/documents/api/files/' + id + '/',
+  };
+  function csrf() {
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+  async function jfetch(url, opts) {
+    const o = opts || {};
+    const headers = Object.assign({ Accept: 'application/json' }, o.headers || {});
+    if (o.body && !(o.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+    if (['POST', 'PATCH', 'DELETE'].includes((o.method || 'GET').toUpperCase())) headers['X-CSRFToken'] = csrf();
+    const r = await fetch(url, Object.assign({}, o, { headers, credentials: 'same-origin' }));
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) { const t = await r.text(); throw new Error(t.slice(0, 200)); }
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || d.detail || ('HTTP ' + r.status));
+    return d;
+  }
+  let state = { tab: 'all', folderId: null, kinds: [], categories: [], statuses: [] };
+  function statusClass(st) {
+    const m = { draft: 'bg-slate-100 text-slate-700', review: 'bg-amber-100 text-amber-900', signed: 'bg-emerald-100 text-emerald-900', archive: 'bg-slate-800 text-slate-100' };
+    return m[st] || 'bg-slate-100 text-slate-700';
+  }
+  function fileIcon(kind) {
+    if (kind === 'pdf') return '<span class="text-red-600 font-bold text-xs">PDF</span>';
+    if (kind === 'word') return '<span class="text-blue-700 font-bold text-xs">W</span>';
+    if (kind === 'spreadsheet') return '<span class="text-emerald-700 font-bold text-xs">X</span>';
+    if (kind === 'image') return '<span class="text-violet-600 font-bold text-xs">▣</span>';
+    return '<span class="text-slate-400 text-xs">•</span>';
+  }
+  function renderFolderRow(node, depth) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'w-full text-left rounded-lg px-2 py-1.5 hover:bg-slate-100 text-slate-700 docs-folder-btn';
+    btn.style.paddingLeft = (8 + depth * 12) + 'px';
+    btn.dataset.folderId = String(node.id);
+    btn.textContent = node.name;
+    return btn;
+  }
+  function walkTree(nodes, depth, container) {
+    (nodes || []).forEach(function (node) {
+      container.appendChild(renderFolderRow(node, depth));
+      if (node.children && node.children.length) walkTree(node.children, depth + 1, container);
+    });
+  }
+  async function loadMeta() {
+    const d = await jfetch(urls.meta);
+    state.kinds = d.kinds || [];
+    state.categories = d.categories || [];
+    state.statuses = d.statuses || [];
+    const fk = document.getElementById('docs-filter-kind');
+    const fc = document.getElementById('docs-filter-category');
+    fk.innerHTML = '<option value="">Все типы</option>';
+    state.kinds.forEach(function (k) { fk.innerHTML += '<option value="' + k.value + '">' + k.label + '</option>'; });
+    fc.innerHTML = '<option value="">Все категории</option>';
+    state.categories.forEach(function (c) { fc.innerHTML += '<option value="' + c.value + '">' + c.label + '</option>'; });
+  }
+  async function loadFolders() {
+    const d = await jfetch(urls.folders);
+    const container = document.getElementById('docs-folder-tree');
+    container.innerHTML = '';
+    walkTree(d.tree || [], 0, container);
+    container.querySelectorAll('.docs-folder-btn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.getElementById('docs-folder-all').classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium');
+        document.querySelectorAll('.docs-folder-btn').forEach(function (x) { x.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium'); });
+        b.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+        state.folderId = parseInt(b.dataset.folderId, 10);
+        loadFiles();
+      });
+    });
+  }
+  function currentTab() { return state.tab; }
+  function aosrActive() { return state.tab === 'aosr'; }
+  function updateAosrColumns() {
+    document.querySelectorAll('.aosr-col').forEach(function (el) { el.classList.toggle('hidden', !aosrActive()); });
+  }
+  async function loadFiles() {
+    const params = new URLSearchParams();
+    params.set('tab', currentTab());
+    const q = document.getElementById('docs-search').value.trim();
+    if (q) params.set('q', q);
+    const kind = document.getElementById('docs-filter-kind').value;
+    if (kind) params.set('kind', kind);
+    const cat = document.getElementById('docs-filter-category').value;
+    if (cat) params.set('category', cat);
+    if (state.folderId != null) params.set('folder_id', String(state.folderId));
+    const d = await jfetch(urls.files + '?' + params.toString());
+    const tbody = document.getElementById('docs-tbody');
+    const empty = document.getElementById('docs-empty');
+    tbody.innerHTML = '';
+    updateAosrColumns();
+    const files = d.files || [];
+    if (!files.length) { empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    files.forEach(function (f) {
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-slate-50/80';
+      const statusOpts = state.statuses.map(function (s) {
+        return '<option value="' + s.value + '"' + (s.value === f.workflow_status ? ' selected' : '') + '>' + s.label + '</option>';
+      }).join('');
+      const catOpts = state.categories.map(function (c) {
+        return '<option value="' + c.value + '"' + (c.value === f.category ? ' selected' : '') + '>' + c.label + '</option>';
+      }).join('');
+      const actDate = f.act_date ? f.act_date.slice(0, 10) : '';
+      tr.innerHTML =
+        '<td class="px-3 py-2 align-middle">' + fileIcon(f.file_kind) + '</td>' +
+        '<td class="px-3 py-2 font-medium text-slate-900 max-w-[200px] truncate"><button type="button" class="docs-preview-trigger text-left hover:text-indigo-700" data-id="' + f.id + '">' + escapeHtml(f.title) + '</button></td>' +
+        '<td class="px-3 py-2 hidden md:table-cell text-slate-600">' + escapeHtml(f.file_kind_display) + '</td>' +
+        '<td class="px-3 py-2 hidden lg:table-cell">' + (canEdit ? '<select class="docs-patch w-full rounded border border-slate-200 px-1 py-1 text-xs" data-id="' + f.id + '" data-field="category">' + catOpts + '</select>' : escapeHtml(f.category_display)) + '</td>' +
+        '<td class="px-3 py-2 hidden sm:table-cell tabular-nums text-slate-600">' + escapeHtml(f.size_display) + '</td>' +
+        '<td class="px-3 py-2 hidden xl:table-cell text-xs text-slate-500">' + escapeHtml(f.uploaded_by || '—') + '</td>' +
+        '<td class="px-3 py-2 hidden lg:table-cell text-xs text-slate-500">' + escapeHtml((f.created_at || '').slice(0, 16).replace('T', ' ')) + '</td>' +
+        '<td class="px-3 py-2 hidden lg:table-cell text-xs text-slate-500">' + escapeHtml((f.updated_at || '').slice(0, 16).replace('T', ' ')) + '</td>' +
+        '<td class="px-3 py-2 aosr-col hidden text-xs">' + (canEdit
+          ? '<input type="text" class="docs-aosr w-full rounded border border-slate-200 px-1 py-1 text-xs" data-id="' + f.id + '" data-field="act_number" value="' + escapeAttr(f.act_number || '') + '" />'
+          : escapeHtml(f.act_number || '—')) + '</td>' +
+        '<td class="px-3 py-2 aosr-col hidden text-xs">' + (canEdit
+          ? '<input type="date" class="docs-aosr w-full rounded border border-slate-200 px-1 py-1 text-xs" data-id="' + f.id + '" data-field="act_date" value="' + escapeAttr(actDate) + '" />'
+          : escapeHtml(actDate || '—')) + '</td>' +
+        '<td class="px-3 py-2 aosr-col hidden text-xs max-w-[140px]">' + (canEdit
+          ? '<input type="text" class="docs-aosr w-full rounded border border-slate-200 px-1 py-1 text-xs" data-id="' + f.id + '" data-field="work_section" value="' + escapeAttr(f.work_section || '') + '" />'
+          : '<span class="truncate block max-w-[120px]">' + escapeHtml(f.work_section || '—') + '</span>') + '</td>' +
+        '<td class="px-3 py-2">' + (canEdit ? '<select class="docs-patch rounded border border-slate-200 px-1 py-1 text-xs min-w-[8rem]" data-id="' + f.id + '" data-field="workflow_status">' + statusOpts + '</select>' : '<span class="inline-flex rounded-full px-2 py-0.5 text-xs ' + statusClass(f.workflow_status) + '">' + escapeHtml(f.workflow_status_display) + '</span>') + '</td>' +
+        '<td class="px-3 py-2 text-xs space-x-1 whitespace-nowrap">' +
+        '<a href="' + escapeHtml(f.file_url) + '" download class="text-indigo-600 hover:underline">Скачать</a>' +
+        '<a href="' + escapeHtml(f.file_url) + '" target="_blank" rel="noopener" class="text-slate-600 hover:underline">Откр.</a>' +
+        (canEdit ? '<button type="button" class="docs-del text-red-600 hover:underline" data-id="' + f.id + '">Уд.</button>' : '') +
+        '</td>';
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.docs-preview-trigger').forEach(function (b) {
+      b.addEventListener('click', function () { const id = parseInt(b.dataset.id, 10); const file = files.find(function (x) { return x.id === id; }); if (file) openPreview(file); });
+    });
+    tbody.querySelectorAll('.docs-patch').forEach(function (sel) {
+      sel.addEventListener('change', async function () {
+        const id = parseInt(sel.dataset.id, 10);
+        const field = sel.dataset.field;
+        const body = {}; body[field] = sel.value;
+        try { await jfetch(urls.file(id), { method: 'PATCH', body: JSON.stringify(body) }); await loadFiles(); } catch (e) { alert(e.message || e); }
+      });
+    });
+    tbody.querySelectorAll('.docs-del').forEach(function (b) {
+      b.addEventListener('click', async function () {
+        if (!confirm('Удалить документ?')) return;
+        try { await jfetch(urls.file(parseInt(b.dataset.id, 10)), { method: 'DELETE' }); await loadFiles(); await loadFolders(); } catch (e) { alert(e.message || e); }
+      });
+    });
+    tbody.querySelectorAll('.docs-aosr').forEach(function (inp) {
+      inp.addEventListener('change', function () { patchAosrField(inp); });
+    });
+  }
+  function patchAosrField(inp) {
+    const id = parseInt(inp.dataset.id, 10);
+    const field = inp.dataset.field;
+    let v = inp.value;
+    const body = {};
+    if (field === 'act_date' && !v) body.act_date = null;
+    else if (field === 'act_date') body.act_date = v;
+    else if (field === 'act_number') body.act_number = v;
+    else if (field === 'work_section') body.work_section = v;
+    jfetch(urls.file(id), { method: 'PATCH', body: JSON.stringify(body) }).catch(function (e) { alert(e.message || e); });
+  }
+  function escapeHtml(s) {
+    if (!s) return '';
+    const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+  }
+  function escapeAttr(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+  function openPreview(f) {
+    const modal = document.getElementById('docs-preview-modal');
+    const back = document.getElementById('docs-preview-backdrop');
+    const body = document.getElementById('docs-preview-body');
+    document.getElementById('docs-preview-title').textContent = f.title;
+    document.getElementById('docs-preview-download').href = f.file_url;
+    document.getElementById('docs-preview-newtab').href = f.file_url;
+    body.innerHTML = '';
+    if (f.file_kind === 'pdf') {
+      const iframe = document.createElement('iframe'); iframe.className = 'w-full h-[70vh] rounded-lg bg-white'; iframe.src = f.file_url; body.appendChild(iframe);
+    } else if (f.file_kind === 'image') {
+      const img = document.createElement('img'); img.src = f.file_url; img.className = 'max-h-[70vh] mx-auto rounded-lg shadow-sm'; img.alt = f.title; body.appendChild(img);
+    } else if (f.file_kind === 'word') {
+      const wrap = document.createElement('div'); wrap.className = 'text-center py-16 px-4';
+      wrap.innerHTML = '<div class="inline-flex h-20 w-20 items-center justify-center rounded-2xl bg-blue-600 text-white text-2xl font-bold mb-4">W</div><p class="text-slate-700 font-medium">Документ Word</p><p class="text-sm text-slate-500 mt-2">Предпросмотр в браузере недоступен. Скачайте файл или откройте в новой вкладке (если настроен просмотр на стороне ОС).</p>';
+      body.appendChild(wrap);
+    } else {
+      body.innerHTML = '<p class="text-center text-slate-600 py-12">Предпросмотр для этого типа файла не реализован. Используйте скачивание.</p>';
+    }
+    modal.classList.remove('hidden'); back.classList.remove('hidden');
+  }
+  function closePreview() {
+    document.getElementById('docs-preview-modal').classList.add('hidden');
+    document.getElementById('docs-preview-backdrop').classList.add('hidden');
+    document.getElementById('docs-preview-body').innerHTML = '';
+  }
+  document.getElementById('docs-preview-close').addEventListener('click', closePreview);
+  document.getElementById('docs-preview-backdrop').addEventListener('click', closePreview);
+  document.querySelectorAll('.docs-tab').forEach(function (tabEl) {
+    tabEl.addEventListener('click', function () {
+      document.querySelectorAll('.docs-tab').forEach(function (t) { t.classList.remove('bg-white', 'text-indigo-700', 'shadow-sm'); t.classList.add('text-slate-600'); });
+      tabEl.classList.add('bg-white', 'text-indigo-700', 'shadow-sm'); tabEl.classList.remove('text-slate-600');
+      state.tab = tabEl.dataset.tab || 'all';
+      loadFiles().catch(function (e) { alert(e.message || e); });
+    });
+  });
+  document.getElementById('docs-folder-all').addEventListener('click', function () {
+    state.folderId = null;
+    document.querySelectorAll('.docs-folder-btn').forEach(function (x) { x.classList.remove('bg-indigo-50', 'text-indigo-700', 'font-medium'); });
+    this.classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+    loadFiles().catch(function (e) { alert(e.message || e); });
+  });
+  document.getElementById('docs-apply-filters').addEventListener('click', function () { loadFiles().catch(function (e) { alert(e.message || e); }); });
+  document.getElementById('docs-search').addEventListener('keydown', function (e) { if (e.key === 'Enter') loadFiles().catch(function () {}); });
+  document.getElementById('docs-new-folder').addEventListener('click', async function () {
+    const name = prompt('Название папки'); if (!name) return;
+    try {
+      await jfetch(urls.folderCreate, { method: 'POST', body: JSON.stringify({ name: name, parent_id: state.folderId }) });
+      await loadFolders();
+    } catch (e) { alert(e.message || e); }
+  });
+  function uploadFiles(fileList) {
+    if (!fileList || !fileList.length) return;
+    const fd = new FormData();
+    if (state.folderId != null) fd.append('folder_id', String(state.folderId));
+    for (let i = 0; i < fileList.length; i++) fd.append('files', fileList[i]);
+    const xhr = new XMLHttpRequest();
+    const bar = document.getElementById('docs-upload-bar');
+    const prog = document.getElementById('docs-upload-progress');
+    const plabel = document.getElementById('docs-upload-label');
+    prog.classList.remove('hidden'); bar.style.width = '0%'; plabel.textContent = 'Загрузка…';
+    xhr.open('POST', urls.upload);
+    xhr.setRequestHeader('X-CSRFToken', csrf());
+    xhr.upload.onprogress = function (ev) {
+      if (ev.lengthComputable) { const p = Math.round((ev.loaded / ev.total) * 100); bar.style.width = p + '%'; plabel.textContent = p + '%'; }
+    };
+    xhr.onload = function () {
+      prog.classList.add('hidden');
+      let d; try { d = JSON.parse(xhr.responseText); } catch (_) { alert('Ошибка ответа сервера'); return; }
+      if (xhr.status >= 400) { alert(d.error || 'Ошибка загрузки'); return; }
+      if (d.errors && d.errors.length) alert(d.errors.join('\n'));
+      loadFiles().catch(function () {}); loadFolders().catch(function () {});
+    };
+    xhr.onerror = function () { prog.classList.add('hidden'); alert('Сеть'); };
+    xhr.send(fd);
+  }
+  const dz = document.getElementById('docs-dropzone');
+  dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.classList.add('border-indigo-400', 'bg-indigo-50/30'); });
+  dz.addEventListener('dragleave', function () { dz.classList.remove('border-indigo-400', 'bg-indigo-50/30'); });
+  dz.addEventListener('drop', function (e) { e.preventDefault(); dz.classList.remove('border-indigo-400', 'bg-indigo-50/30'); if (canEdit) uploadFiles(e.dataTransfer.files); });
+  document.getElementById('docs-file-input').addEventListener('change', function () { uploadFiles(this.files); this.value = ''; });
+  if (canEdit) {
+    document.querySelectorAll('.edit-only').forEach(function (el) { el.classList.remove('hidden'); });
+  }
+  loadMeta().then(loadFolders).then(function () {
+    document.getElementById('docs-folder-all').classList.add('bg-indigo-50', 'text-indigo-700', 'font-medium');
+    return loadFiles();
+  }).catch(function (e) { console.error(e); alert(e.message || 'Не удалось загрузить документы'); });
+})();
+</script>
 {% endblock %}

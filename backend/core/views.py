@@ -2297,6 +2297,7 @@ def project_documents(request: HttpRequest, pk: int) -> HttpResponse:
         .order_by("-act_date", "-created_at")
     )
     act_form = WorkActForm()
+    can_edit_documents = has_permission(request.user, project.company, "edit_projects")
     return render(
         request,
         "core/project/documents.html",
@@ -2306,6 +2307,7 @@ def project_documents(request: HttpRequest, pk: int) -> HttpResponse:
             "work_acts": acts,
             "act_form": act_form,
             "work_payment_labels": dict(WorkAct.PAYMENT_STATUS_CHOICES),
+            "can_edit_documents": can_edit_documents,
         },
     )
 

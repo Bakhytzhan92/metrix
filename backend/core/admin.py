@@ -44,6 +44,8 @@ from .models import (
     WarehouseInventoryItem,
     InventoryTransfer,
     InventoryLog,
+    ProjectDocumentFolder,
+    ProjectConstructionFile,
 )
 
 
@@ -402,4 +404,26 @@ class ConstructionWorkLogAdmin(admin.ModelAdmin):
 class ConstructionWorkPhotoAdmin(admin.ModelAdmin):
     list_display = ("work_log", "caption", "created_at")
     raw_id_fields = ("work_log",)
+
+
+@admin.register(ProjectDocumentFolder)
+class ProjectDocumentFolderAdmin(admin.ModelAdmin):
+    list_display = ("name", "project", "parent", "created_at")
+    list_filter = ("project",)
+    search_fields = ("name",)
+
+
+@admin.register(ProjectConstructionFile)
+class ProjectConstructionFileAdmin(admin.ModelAdmin):
+    list_display = (
+        "title",
+        "project",
+        "file_kind",
+        "category",
+        "workflow_status",
+        "updated_at",
+    )
+    list_filter = ("file_kind", "category", "workflow_status", "project")
+    search_fields = ("title", "original_filename", "act_number")
+    raw_id_fields = ("project", "folder", "uploaded_by")
 

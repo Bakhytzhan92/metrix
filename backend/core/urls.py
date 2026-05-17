@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 from . import ai_api
+from . import construction_docs_api
 from . import estimate_pdf_views
 from . import fuel_project_api
 from . import inventory_api
@@ -226,6 +227,36 @@ urlpatterns = [
         name="api_project_gsm_fuel_type_create",
     ),
     path("projects/<int:pk>/documents/", views.project_documents, name="project_documents"),
+    path(
+        "projects/<int:pk>/documents/api/meta/",
+        construction_docs_api.api_construction_meta,
+        name="api_construction_docs_meta",
+    ),
+    path(
+        "projects/<int:pk>/documents/api/folders/",
+        construction_docs_api.api_construction_folders_tree,
+        name="api_construction_folders_tree",
+    ),
+    path(
+        "projects/<int:pk>/documents/api/folder/create/",
+        construction_docs_api.api_construction_folder_create,
+        name="api_construction_folder_create",
+    ),
+    path(
+        "projects/<int:pk>/documents/api/files/",
+        construction_docs_api.api_construction_files_list,
+        name="api_construction_files_list",
+    ),
+    path(
+        "projects/<int:pk>/documents/api/files/upload/",
+        construction_docs_api.api_construction_files_upload,
+        name="api_construction_files_upload",
+    ),
+    path(
+        "projects/<int:pk>/documents/api/files/<int:file_id>/",
+        construction_docs_api.api_construction_file_detail,
+        name="api_construction_file_detail",
+    ),
     path("projects/<int:pk>/ai/", ai_api.project_ai_import, name="project_ai_import"),
     path("projects/<int:pk>/legacy/", views.project_detail, name="project_legacy"),
     path("projects/<int:pk>/edit/", views.project_edit, name="project_edit"),
