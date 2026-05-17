@@ -8,32 +8,32 @@
     <p class="text-sm text-ink-muted mt-1 max-w-2xl">Инвентарь (оборудование), материалы и ГСМ — отдельные учётные контуры.</p>
   </div>
 
-  <nav class="flex flex-wrap gap-2 p-1 rounded-2xl bg-white/90 border border-line shadow-mx-sm w-fit max-w-full mb-2" aria-label="Склады: подразделы">
+  <nav class="flex flex-wrap gap-1.5 p-1 rounded-2xl bg-white border border-gray-200 shadow-mx-sm w-fit max-w-full mb-2" aria-label="Склады: подразделы">
     <button
       type="button"
       data-wh-main="inventory"
-      class="wh-main-tab px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 bg-primary text-white shadow-md shadow-primary/20"
+      class="wh-main-tab inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150 shadow-sm mx-subtab--active"
     >
       Инвентарь
     </button>
     <button
       type="button"
       data-wh-main="materials"
-      class="wh-main-tab px-4 py-2 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-slate-50 transition-all duration-150"
+      class="wh-main-tab inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
     >
       Материалы
     </button>
     <button
       type="button"
       data-wh-main="gsm"
-      class="wh-main-tab px-4 py-2 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-slate-50 transition-all duration-150"
+      class="wh-main-tab inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
     >
       ГСМ
     </button>
     <button
       type="button"
       data-wh-main="history"
-      class="wh-main-tab px-4 py-2 rounded-xl text-sm font-medium text-ink-muted hover:text-ink hover:bg-slate-50 transition-all duration-150"
+      class="wh-main-tab inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
     >
       История
     </button>
@@ -193,13 +193,14 @@
   function styleTabs(active) {
     tabs.forEach(function(btn) {
       var on = btn.getAttribute('data-wh-main') === active;
-      btn.classList.toggle('bg-primary', on);
-      btn.classList.toggle('text-white', on);
-      btn.classList.toggle('shadow-md', on);
-      btn.classList.toggle('shadow-primary/20', on);
-      btn.classList.toggle('text-ink-muted', !on);
-      btn.classList.toggle('hover:text-ink', !on);
-      btn.classList.toggle('hover:bg-slate-50', !on);
+      btn.classList.toggle('mx-subtab--active', on);
+      btn.classList.toggle('shadow-sm', on);
+      btn.classList.toggle('border-gray-200', !on);
+      btn.classList.toggle('bg-white', !on);
+      btn.classList.toggle('text-gray-600', !on);
+      btn.classList.toggle('hover:border-gray-300', !on);
+      btn.classList.toggle('hover:bg-gray-50', !on);
+      btn.classList.toggle('hover:text-gray-900', !on);
     });
   }
   function setMain(tab) {
