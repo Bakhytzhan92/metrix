@@ -17,7 +17,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from .access_utils import has_permission
 from .inventory_services import get_written_off_warehouse
-from .models import Material, ProjectSchedulePhase, Stock, StockMovement, Warehouse
+from .models import Material, Project, ProjectSchedulePhase, Stock, StockMovement, Warehouse
 from .rbac import permission_required
 from .warehouse_services import (
     apply_incoming,
@@ -100,6 +100,29 @@ def _stock_status(row_qty: Decimal) -> str:
 
 def _stock_status_label(code: str) -> str:
     return "В наличии" if code == "in_stock" else "Нет остатка"
+
+
+def _serialize_stock_row(s: Stock) -> dict[str, Any]:
+    """Одна строка таблицы остатков (как в api_project_materials_stocks)."""
+    qty = s.quantity or Decimal("0")
+    price = s.price_avg or Decimal("0")
+    total = qty * price
+    st = _stock_status(qty)
+    return {
+        "stock_id": s.id,
+        "material_id": s.material_id,
+        "name": s.material.name,
+        "unit": s.material.unit,
+        "quantity": _fmt_qty(qty),
+        "price": _fmt_money(price),
+        "total_value": _fmt_money(total),
+        "warehouse_id": s.warehouse_id,
+        "warehouse_name": s.warehouse.name,
+        "status": st,
+        "status_display": _stock_status_label(st),
+        "supplier": s.material.supplier or "",
+        "description": (s.material.description or "")[:200],
+    }
 
 
 @require_GET
@@ -191,30 +214,192 @@ def api_project_materials_stocks(request: HttpRequest, pk: int) -> JsonResponse:
     else:
         qs = qs.order_by(col)
 
-    rows = []
-    for s in qs:
-        qty = s.quantity or Decimal("0")
-        price = s.price_avg or Decimal("0")
-        total = qty * price
-        st = _stock_status(qty)
-        rows.append(
-            {
-                "stock_id": s.id,
-                "material_id": s.material_id,
-                "name": s.material.name,
-                "unit": s.material.unit,
-                "quantity": _fmt_qty(qty),
-                "price": _fmt_money(price),
-                "total_value": _fmt_money(total),
-                "warehouse_id": s.warehouse_id,
-                "warehouse_name": s.warehouse.name,
-                "status": st,
-                "status_display": _stock_status_label(st),
-                "supplier": s.material.supplier or "",
-                "description": (s.material.description or "")[:200],
-            }
-        )
+    rows = [_serialize_stock_row(s) for s in qs]
     return _json({"ok": True, "stocks": rows})
+
+
+@require_http_methods(["PATCH", "DELETE"])
+@permission_required("view_warehouse")
+def api_project_materials_stock_detail(
+    request: HttpRequest, pk: int, stock_id: int
+) -> JsonResponse:
+    if request.method == "DELETE":
+        return api_project_materials_stock_delete(request, pk, stock_id)
+    return api_project_materials_stock_patch(request, pk, stock_id)
+
+
+def api_project_materials_stock_delete(
+    request: HttpRequest, pk: int, stock_id: int
+) -> JsonResponse:
+    err, data = _project_and_warehouses(request, pk)
+    if err:
+        return err
+    project, warehouses, wh_ids = data
+    company = project.company
+    if not _can_edit(request.user, company):
+        return _json({"ok": False, "error": "forbidden"}, status=403)
+
+    stock = get_object_or_404(
+        Stock.objects.select_related("material", "warehouse"),
+        pk=stock_id,
+        warehouse_id__in=wh_ids,
+        material__company=company,
+    )
+    mat = stock.material
+    wh = stock.warehouse
+    qty = stock.quantity or Decimal("0")
+    price = stock.price_avg or Decimal("0")
+    audit_comment = (
+        f"Удалена позиция: «{mat.name}», склад «{wh.name}», "
+        f"остаток {_fmt_qty(qty)} {mat.unit}, цена {_fmt_money(price)}"
+    )
+
+    try:
+        with transaction.atomic():
+            StockMovement.objects.create(
+                material=mat,
+                warehouse_from=None,
+                warehouse_to=wh,
+                project=project,
+                movement_type=StockMovement.TYPE_STOCK_REMOVE,
+                quantity=Decimal("0"),
+                price=Decimal("0"),
+                date=date.today(),
+                comment=audit_comment[:500],
+                user=request.user,
+                writeoff_reason="",
+                supplier="",
+            )
+            stock.delete()
+    except Exception as e:
+        return _json({"ok": False, "error": str(e)[:500]}, status=400)
+
+    return _json({"ok": True})
+
+
+def api_project_materials_stock_patch(
+    request: HttpRequest, pk: int, stock_id: int
+) -> JsonResponse:
+    """Инлайн-правка: наименование и ед.изм. у Material; остаток и цена — у Stock."""
+    err, data = _project_and_warehouses(request, pk)
+    if err:
+        return err
+    project, warehouses, wh_ids = data
+    company = project.company
+    if not _can_edit(request.user, company):
+        return _json({"ok": False, "error": "forbidden"}, status=403)
+
+    stock = get_object_or_404(
+        Stock.objects.select_related("material", "warehouse"),
+        pk=stock_id,
+        warehouse_id__in=wh_ids,
+        material__company=company,
+    )
+    mat = stock.material
+    body = json.loads(request.body or b"{}")
+
+    old_name = mat.name
+    old_unit = mat.unit
+    old_qty = stock.quantity or Decimal("0")
+    old_price = stock.price_avg or Decimal("0")
+
+    name_dirty = False
+    unit_dirty = False
+    qty_dirty = False
+    price_dirty = False
+
+    if "name" in body:
+        name = (body.get("name") or "").strip()
+        if not name:
+            return _json({"ok": False, "error": "Укажите наименование"}, status=400)
+        if name != mat.name:
+            if (
+                Material.objects.filter(company=company, name=name)
+                .exclude(pk=mat.pk)
+                .exists()
+            ):
+                return _json(
+                    {"ok": False, "error": "Материал с таким названием уже есть"},
+                    status=400,
+                )
+            mat.name = name
+            name_dirty = True
+
+    if "unit" in body:
+        unit = (body.get("unit") or "шт").strip()[:30] or "шт"
+        if unit != mat.unit:
+            mat.unit = unit
+            unit_dirty = True
+
+    if "quantity" in body:
+        q = _parse_decimal(body.get("quantity"))
+        if q is None or q < 0:
+            return _json({"ok": False, "error": "Укажите неотрицательное количество"}, status=400)
+        if q != old_qty:
+            stock.quantity = q
+            qty_dirty = True
+
+    if "price" in body or "price_avg" in body:
+        raw = body["price_avg"] if "price_avg" in body else body.get("price")
+        if raw in (None, ""):
+            pr = Decimal("0")
+        else:
+            pr = _parse_decimal(raw)
+            if pr is None or pr < 0:
+                return _json({"ok": False, "error": "Укажите неотрицательную цену"}, status=400)
+        if pr != old_price:
+            stock.price_avg = pr
+            price_dirty = True
+
+    if not name_dirty and not unit_dirty and not qty_dirty and not price_dirty:
+        return _json({"ok": False, "error": "Нет изменений"}, status=400)
+
+    audit_parts: list[str] = []
+    if name_dirty:
+        audit_parts.append(f"Наименование: «{old_name}» → «{mat.name}»")
+    if unit_dirty:
+        audit_parts.append(f"Ед. изм.: {old_unit} → {mat.unit}")
+    if qty_dirty:
+        audit_parts.append(
+            f"Остаток: {_fmt_qty(old_qty)} → {_fmt_qty(stock.quantity)} {mat.unit}"
+        )
+    if price_dirty:
+        audit_parts.append(
+            f"Цена за ед.: {_fmt_money(old_price)} → {_fmt_money(stock.price_avg)}"
+        )
+
+    try:
+        with transaction.atomic():
+            if name_dirty or unit_dirty:
+                mat.save()
+            if qty_dirty or price_dirty:
+                uf: list[str] = []
+                if qty_dirty:
+                    uf.append("quantity")
+                if price_dirty:
+                    uf.append("price_avg")
+                stock.save(update_fields=uf)
+            if audit_parts:
+                StockMovement.objects.create(
+                    material=mat,
+                    warehouse_from=None,
+                    warehouse_to=stock.warehouse,
+                    project=project,
+                    movement_type=StockMovement.TYPE_MANUAL_EDIT,
+                    quantity=Decimal("0"),
+                    price=Decimal("0"),
+                    date=date.today(),
+                    comment="; ".join(audit_parts)[:500],
+                    user=request.user,
+                    writeoff_reason="",
+                    supplier="",
+                )
+    except Exception as e:
+        return _json({"ok": False, "error": str(e)[:500]}, status=400)
+
+    stock.refresh_from_db()
+    stock = Stock.objects.select_related("material", "warehouse").get(pk=stock_id)
+    return _json({"ok": True, "stock": _serialize_stock_row(stock)})
 
 
 @require_GET

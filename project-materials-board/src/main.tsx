@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 
 type Meta = {
@@ -7,6 +8,7 @@ type Meta = {
   warehouses: { id: number; name: string }[];
   writeoff_reasons: { value: string; label: string }[];
   schedule_phases: { id: number; label: string }[];
+  movement_types: { value: string; label: string }[];
 };
 
 type StockRow = {
@@ -79,6 +81,317 @@ function ToastHost({ msgs }: { msgs: string[] }) {
 
 function fieldCls() {
   return "mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm";
+}
+
+function inlineCellInputCls() {
+  return "w-full min-w-[4rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 shadow-sm tabular-nums hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+}
+
+function inlineNameInputCls() {
+  return "w-full min-w-[8rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-sm font-medium text-slate-900 shadow-sm hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+}
+
+function inlineUnitInputCls() {
+  return "w-full min-w-[2.5rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-600 shadow-sm hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+}
+
+function previewTotalTenge(qtyStr: string, priceStr: string): string {
+  const q = parseFloat(String(qtyStr).replace(",", "."));
+  const p = parseFloat(String(priceStr).replace(",", "."));
+  const qq = Number.isFinite(q) ? q : 0;
+  const pp = Number.isFinite(p) ? p : 0;
+  const t = Math.round(qq * pp * 100) / 100;
+  const s = t.toFixed(2);
+  return s.replace(/\.?0+$/, "") || "0";
+}
+
+function MaterialsStockRow({
+  r,
+  canEdit,
+  apiBase,
+  onRowSaved,
+  onRowDeleted,
+  onError,
+  onMaterialMetaChange,
+}: {
+  r: StockRow;
+  canEdit: boolean;
+  apiBase: string;
+  onRowSaved: (s: StockRow) => void;
+  onRowDeleted: (stockId: number) => void;
+  onError: (msg: string) => void;
+  onMaterialMetaChange: () => void;
+}) {
+  const [name, setName] = useState(r.name);
+  const [qty, setQty] = useState(r.quantity);
+  const [unit, setUnit] = useState(r.unit);
+  const [price, setPrice] = useState(r.price);
+  const [saving, setSaving] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    setName(r.name);
+    setQty(r.quantity);
+    setUnit(r.unit);
+    setPrice(r.price);
+  }, [r.stock_id, r.name, r.quantity, r.unit, r.price]);
+
+  useEffect(() => {
+    if (!deleteConfirmOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDeleteConfirmOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deleteConfirmOpen]);
+
+  const totalPreview = useMemo(() => previewTotalTenge(qty, price), [qty, price]);
+
+  const rollback = useCallback(() => {
+    setName(r.name);
+    setQty(r.quantity);
+    setUnit(r.unit);
+    setPrice(r.price);
+  }, [r.name, r.quantity, r.unit, r.price]);
+
+  const savePatch = async (body: Record<string, unknown>) => {
+    setSaving(true);
+    try {
+      const res = await api<{ ok: boolean; stock: StockRow }>(
+        `${apiBase}/stocks/${r.stock_id}/`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+      if (res.ok && res.stock) {
+        onRowSaved(res.stock);
+        if ("name" in body || "unit" in body) {
+          onMaterialMetaChange();
+        }
+      }
+    } catch (e) {
+      rollback();
+      onError(e instanceof Error ? e.message : "Ошибка сохранения");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!canEdit) {
+    return (
+      <tr className="border-b border-slate-50 hover:bg-slate-50/60">
+        <td className="px-4 py-2.5 font-medium text-slate-900">{r.name}</td>
+        <td className="px-4 py-2.5 tabular-nums">{r.quantity}</td>
+        <td className="px-4 py-2.5 text-slate-500">{r.unit}</td>
+        <td className="px-4 py-2.5 tabular-nums">{r.price} ₸</td>
+        <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800">
+          {r.total_value} ₸
+        </td>
+        <td className="px-4 py-2.5 text-slate-600">{r.warehouse_name}</td>
+        <td className="px-4 py-2.5">
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+              r.status_display === "В наличии"
+                ? "bg-emerald-50 text-emerald-800"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {r.status_display}
+          </span>
+        </td>
+      </tr>
+    );
+  }
+
+  const runDelete = async () => {
+    setDeleteConfirmOpen(false);
+    setSaving(true);
+    try {
+      await api<{ ok: boolean }>(`${apiBase}/stocks/${r.stock_id}/`, { method: "DELETE" });
+      onRowDeleted(r.stock_id);
+      onMaterialMetaChange();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Не удалось удалить");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteModal =
+    deleteConfirmOpen &&
+    createPortal(
+      <div
+        className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/50 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`del-stock-title-${r.stock_id}`}
+        onClick={() => setDeleteConfirmOpen(false)}
+      >
+        <div
+          className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 id={`del-stock-title-${r.stock_id}`} className="text-base font-semibold text-slate-900">
+            Удалить строку?
+          </h3>
+          <p className="mt-3 text-sm text-slate-600">
+            Удалить <span className="font-medium text-slate-800">«{r.name}»</span> со склада{" "}
+            <span className="font-medium text-slate-800">«{r.warehouse_name}»</span>? Строка остатка будет снята;
+            материал может остаться в справочнике, если используется на других складах.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+              onClick={() => setDeleteConfirmOpen(false)}
+            >
+              Нет, отмена
+            </button>
+            <button
+              type="button"
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+              onClick={() => void runDelete()}
+            >
+              Да, удалить
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+
+  return (
+    <>
+      {deleteModal}
+    <tr className={`border-b border-slate-50 hover:bg-slate-50/60 ${saving ? "opacity-80" : ""}`}>
+      <td className="px-4 py-2 align-middle">
+        <input
+          className={inlineNameInputCls()}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => {
+            const t = name.trim();
+            if (!t) {
+              rollback();
+              return;
+            }
+            if (t === r.name) return;
+            void savePatch({ name: t });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+          disabled={saving}
+          aria-label="Наименование"
+        />
+      </td>
+      <td className="px-4 py-2 align-middle">
+        <input
+          className={inlineCellInputCls()}
+          value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          onBlur={() => {
+            if (qty === r.quantity) return;
+            const qn = parseFloat(String(qty).replace(",", "."));
+            if (!Number.isFinite(qn) || qn < 0) {
+              rollback();
+              onError("Некорректное количество");
+              return;
+            }
+            void savePatch({ quantity: qty });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+          disabled={saving}
+          inputMode="decimal"
+          aria-label="Остаток"
+        />
+      </td>
+      <td className="px-4 py-2 align-middle">
+        <input
+          className={inlineUnitInputCls()}
+          value={unit}
+          onChange={(e) => setUnit(e.target.value)}
+          onBlur={() => {
+            const u = unit.trim() || "шт";
+            if (u === r.unit) return;
+            void savePatch({ unit: u });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+          disabled={saving}
+          aria-label="Единица измерения"
+        />
+      </td>
+      <td className="px-4 py-2 align-middle">
+        <div className="flex items-center gap-0.5">
+          <input
+            className={inlineCellInputCls()}
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            onBlur={() => {
+              if (price === r.price) return;
+              const raw = String(price).replace(",", ".").trim();
+              if (raw === "") {
+                void savePatch({ price: "0" });
+                return;
+              }
+              const pn = parseFloat(raw);
+              if (!Number.isFinite(pn) || pn < 0) {
+                rollback();
+                onError("Некорректная цена");
+                return;
+              }
+              void savePatch({ price: raw });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            disabled={saving}
+            inputMode="decimal"
+            aria-label="Цена"
+          />
+          <span className="shrink-0 text-slate-500 text-sm">₸</span>
+        </div>
+      </td>
+      <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800">
+        {totalPreview} ₸
+      </td>
+      <td className="px-4 py-2.5 text-slate-600">{r.warehouse_name}</td>
+      <td className="px-4 py-2.5">
+        <span
+          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+            r.status_display === "В наличии"
+              ? "bg-emerald-50 text-emerald-800"
+              : "bg-slate-100 text-slate-600"
+          }`}
+        >
+          {r.status_display}
+        </span>
+      </td>
+      <td className="px-1 py-2 text-center align-middle">
+        <button
+          type="button"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-lg font-light leading-none text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+          title="Удалить строку"
+          aria-label="Удалить строку остатка"
+          disabled={saving}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDeleteConfirmOpen(true);
+          }}
+        >
+          ×
+        </button>
+      </td>
+    </tr>
+    </>
+  );
 }
 
 function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
@@ -309,31 +622,36 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                   <th className="px-4 py-3 font-semibold text-slate-700">Стоимость</th>
                   <th className="px-4 py-3 font-semibold text-slate-700">Склад</th>
                   <th className="px-4 py-3 font-semibold text-slate-700">Статус</th>
+                  {meta.can_edit ? (
+                    <th
+                      className="w-9 px-1 py-3 text-center font-normal text-slate-400"
+                      scope="col"
+                      title="Удалить строку"
+                    >
+                      <span className="sr-only">Удалить</span>
+                    </th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
                 {stocks.map((r) => (
-                  <tr key={r.stock_id} className="border-b border-slate-50 hover:bg-slate-50/60">
-                    <td className="px-4 py-2.5 font-medium text-slate-900">{r.name}</td>
-                    <td className="px-4 py-2.5 tabular-nums">{r.quantity}</td>
-                    <td className="px-4 py-2.5 text-slate-500">{r.unit}</td>
-                    <td className="px-4 py-2.5 tabular-nums">{r.price} ₸</td>
-                    <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800">
-                      {r.total_value} ₸
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-600">{r.warehouse_name}</td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                          r.status_display === "В наличии"
-                            ? "bg-emerald-50 text-emerald-800"
-                            : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {r.status_display}
-                      </span>
-                    </td>
-                  </tr>
+                  <MaterialsStockRow
+                    key={r.stock_id}
+                    r={r}
+                    canEdit={!!meta.can_edit}
+                    apiBase={base}
+                    onRowSaved={(row) =>
+                      setStocks((prev) => prev.map((x) => (x.stock_id === row.stock_id ? row : x)))
+                    }
+                    onError={(msg) => push(msg)}
+                    onRowDeleted={(id) => {
+                      setStocks((prev) => prev.filter((x) => x.stock_id !== id));
+                      push("Строка удалена");
+                    }}
+                    onMaterialMetaChange={() => {
+                      void loadCatalog();
+                    }}
+                  />
                 ))}
               </tbody>
             </table>
@@ -355,10 +673,11 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                 onChange={(e) => setHistType(e.target.value)}
               >
                 <option value="">Все</option>
-                <option value="incoming">Поступление</option>
-                <option value="outgoing">Расход на объект</option>
-                <option value="transfer">Перемещение</option>
-                <option value="writeoff">Списание</option>
+                {(meta.movement_types || []).map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
               </select>
             </div>
             <button

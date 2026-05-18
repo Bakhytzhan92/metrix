@@ -253,7 +253,33 @@
 <script>
 (function () {
   var SAVE_DEBOUNCE_MS = 320;
+  var SECTION_RECALC_DEBOUNCE_MS = 200;
   var saveTimers = {};
+  var sectionRecalcTimers = new WeakMap();
+
+  function flushSectionRecalc(section) {
+    if (!section) return;
+    var t = sectionRecalcTimers.get(section);
+    if (t) {
+      clearTimeout(t);
+      sectionRecalcTimers.delete(section);
+    }
+    recalcSection(section);
+    recalcProjectCards();
+  }
+  function scheduleSectionAndProjectRecalc(section) {
+    if (!section) return;
+    var prev = sectionRecalcTimers.get(section);
+    if (prev) clearTimeout(prev);
+    sectionRecalcTimers.set(
+      section,
+      setTimeout(function () {
+        sectionRecalcTimers.delete(section);
+        recalcSection(section);
+        recalcProjectCards();
+      }, SECTION_RECALC_DEBOUNCE_MS)
+    );
+  }
 
   function getCookie(name) {
     var m = document.cookie.match("(^|;) ?" + name + "=([^;]*)(;|$)");
@@ -389,11 +415,7 @@
     }).catch(function () {});
   }
   function recalcFromForm(formEl) {
-    var section = formEl.closest(".estimate-section");
-    if (section) {
-      recalcSection(section);
-      recalcProjectCards();
-    }
+    flushSectionRecalc(formEl.closest(".estimate-section"));
   }
   function normalizeNumField(name, val) {
     if (name !== "quantity" && name !== "cost_price" && name !== "markup_percent") return val;
@@ -539,8 +561,12 @@
         formEl.dataset.estimateDirty = "1";
         if (input.name === "name" && input.classList.contains("js-estimate-name-auto")) {
           fitEstimateNameTa(input);
+        } else {
+          var row = getRowForForm(formEl);
+          if (row) recalcRow(row);
+          var section = formEl.closest(".estimate-section");
+          if (section) scheduleSectionAndProjectRecalc(section);
         }
-        recalcFromForm(formEl);
         scheduleSave(formEl);
       });
       input.addEventListener("change", function () {
@@ -552,6 +578,7 @@
         scheduleSave(formEl);
       });
       input.addEventListener("blur", function () {
+        flushSectionRecalc(formEl.closest(".estimate-section"));
         if (formEl.dataset.estimateDirty === "1") {
           saveRowNow(formEl);
         }

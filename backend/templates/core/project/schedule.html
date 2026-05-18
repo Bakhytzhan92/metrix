@@ -6,8 +6,10 @@
   @media (min-width: 768px) { .sched-cards { grid-template-columns: 1fr 1fr; } }
   .sched-card { border: 1px solid var(--sched-border); border-radius: 1rem; background: #fff; padding: 1.125rem; box-shadow: 0 4px 24px -4px rgba(109, 94, 248, 0.08), 0 8px 20px -8px rgba(15, 23, 42, 0.06); }
   .sched-split { display: flex; border: 1px solid var(--sched-border); border-radius: 1rem; overflow: hidden; background: #fff; min-height: 420px; max-height: calc(100vh - 220px); box-shadow: 0 2px 12px -2px rgba(15, 23, 42, 0.06); }
-  .sched-pinned { flex: 0 0 auto; min-width: 260px; max-width: min(96vw, 1600px); display: flex; flex-direction: column; border-right: 1px solid var(--sched-border); background: linear-gradient(180deg, #fafbfc 0%, #f5f7fb 100%); }
-  .sched-pinned-scroll { overflow: auto; flex: 1; }
+  .sched-pinned { flex: 0 0 auto; min-width: 260px; max-width: min(96vw, 1600px); min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--sched-border); background: linear-gradient(180deg, #fafbfc 0%, #f5f7fb 100%); }
+  /* Одна видимая вертикальная полоса — у таймлайна справа; слева скролл синхронный, без второго скроллбара */
+  .sched-pinned-scroll { overflow: auto; flex: 1; min-height: 0; scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: contain; }
+  .sched-pinned-scroll::-webkit-scrollbar { width: 0; height: 0; }
   .sched-table { table-layout: fixed; width: auto; min-width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
   .sched-table th { position: sticky; top: 0; z-index: 2; background: #f1f5f9; text-align: left; height: 36px; padding: 4px 0.35rem; font-weight: 600; color: #334155; border-bottom: 1px solid var(--sched-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; vertical-align: middle; }
   .sched-table th .sched-col-resizer { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; margin-right: -4px; cursor: col-resize; z-index: 5; user-select: none; }
@@ -17,13 +19,13 @@
   .sched-table tr.sched-sec td { background: #f1f5f9; font-weight: 600; color: #0f172a; }
   .sched-table tr:hover td { background: #f8fafc; }
   .sched-table tr.sched-sec:hover td { background: #e2e8f0; }
-  .sched-timeline-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #fff; }
+  .sched-timeline-wrap { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #fff; }
   .sched-timeline-head-scroll { overflow: hidden; border-bottom: 1px solid var(--sched-border); background: #f8fafc; }
   .sched-timeline-head-inner { display: flex; height: 36px; font-size: 11px; color: #64748b; user-select: none; }
   .sched-timeline-head-cell { flex-shrink: 0; border-right: 1px solid #e2e8f0; padding: 4px 2px; text-align: center; box-sizing: border-box; }
-  .sched-timeline-body { flex: 1; overflow: auto; position: relative; }
+  .sched-timeline-body { flex: 1; min-height: 0; overflow: auto; position: relative; overscroll-behavior: contain; }
   .sched-timeline-canvas { position: relative; min-height: 100%; }
-  .sched-gantt-row { min-height: var(--sched-row-h); box-sizing: border-box; border-bottom: 1px solid #f1f5f9; position: relative; }
+  .sched-gantt-row { min-height: var(--sched-row-h); box-sizing: border-box; border-bottom: 1px solid #f1f5f9; position: relative; contain: layout style; }
   .sched-gantt-row:nth-child(even) { background: #fafafa; }
   .sched-bar { position: absolute; top: 50%; height: 30px; transform: translateY(-50%); border-radius: 6px; cursor: grab; min-width: 8px; box-sizing: border-box; border: 2px solid rgba(0,0,0,.12); display: flex; align-items: center; padding: 0 6px; font-size: 10px; color: #0f172a; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; z-index: 1; transition: box-shadow .15s, filter .15s; }
   .sched-bar:hover { box-shadow: 0 4px 16px rgba(109, 94, 248, 0.2), 0 2px 8px rgb(0 0 0 / 0.08); filter: brightness(1.02); z-index: 2; }
@@ -268,32 +270,64 @@
   const rows = el ? JSON.parse(el.textContent) : [];
   const assigneesEl = document.getElementById("schedule-assignees-data");
   const ASSIGNEES = assigneesEl ? JSON.parse(assigneesEl.textContent) : [];
+  /** Кэш div-строк графика по row_index — без querySelector в drawDeps */
+  var ganttRowByIndex = {};
   let zoom = "day";
-  function fillAssigneeSelects() {
-    document.querySelectorAll(".js-sched-assignee").forEach(function (sel) {
-      var cur = sel.getAttribute("data-selected") || "";
-      sel.textContent = "";
-      var o0 = document.createElement("option");
-      o0.value = "";
-      o0.textContent = "—";
-      sel.appendChild(o0);
-      ASSIGNEES.forEach(function (u) {
-        var o = document.createElement("option");
-        o.value = String(u.id);
-        o.textContent = u.username;
-        if (String(u.id) === String(cur)) o.selected = true;
-        sel.appendChild(o);
-      });
+  function fillOneAssigneeSelect(sel) {
+    if (!sel || sel.getAttribute("data-assignee-opts-built") === "1") return;
+    sel.setAttribute("data-assignee-opts-built", "1");
+    var cur = sel.getAttribute("data-selected") || "";
+    sel.textContent = "";
+    var o0 = document.createElement("option");
+    o0.value = "";
+    o0.textContent = "—";
+    sel.appendChild(o0);
+    ASSIGNEES.forEach(function (u) {
+      var o = document.createElement("option");
+      o.value = String(u.id);
+      o.textContent = u.username;
+      if (String(u.id) === String(cur)) o.selected = true;
+      sel.appendChild(o);
     });
+  }
+  function fillAssigneeSelects(done) {
+    var sels = document.querySelectorAll(".js-sched-assignee");
+    var i = 0;
+    var BATCH = 32;
+    function step() {
+      var end = Math.min(i + BATCH, sels.length);
+      for (; i < end; i++) {
+        fillOneAssigneeSelect(sels[i]);
+      }
+      if (i < sels.length) {
+        requestAnimationFrame(step);
+      } else if (typeof done === "function") {
+        done();
+      }
+    }
+    if (!sels.length) {
+      if (typeof done === "function") done();
+      return;
+    }
+    step();
   }
 
   var depRedrawTimer = null;
+  var scrollDepsTimer = null;
   function scheduleDrawDeps() {
     if (depRedrawTimer) return;
     depRedrawTimer = requestAnimationFrame(function () {
       depRedrawTimer = null;
       drawDeps();
     });
+  }
+  /** При скролле не пересчитывать SVG каждый кадр — только после паузы */
+  function scheduleDrawDepsAfterScroll() {
+    if (scrollDepsTimer) clearTimeout(scrollDepsTimer);
+    scrollDepsTimer = setTimeout(function () {
+      scrollDepsTimer = null;
+      scheduleDrawDeps();
+    }, 160);
   }
 
   const pxPerDayMap = { day: 28, week: 10, month: 4 };
@@ -487,6 +521,7 @@
     var svg = document.getElementById("sched-dep-svg");
     if (!host || !canvas) return;
     host.innerHTML = "";
+    ganttRowByIndex = {};
     host.style.width = timelineWidth() + "px";
     if (svg) svg.setAttribute("width", timelineWidth());
 
@@ -535,6 +570,7 @@
         rowEl.appendChild(bar);
       }
       host.appendChild(rowEl);
+      ganttRowByIndex[r.row_index] = rowEl;
     });
     applyCollapseVisibility();
     requestAnimationFrame(function () {
@@ -574,8 +610,8 @@
       var fi = itemToRow[r.item_id];
       var pi = itemToRow[r.predecessor_id];
       if (fi === undefined || pi === undefined) return;
-      var fromRow = document.querySelector(".sched-gantt-row[data-row-index=\"" + pi + "\"]");
-      var toRow = document.querySelector(".sched-gantt-row[data-row-index=\"" + fi + "\"]");
+      var fromRow = ganttRowByIndex[pi];
+      var toRow = ganttRowByIndex[fi];
       if (!fromRow || !toRow) return;
       if (fromRow.offsetParent == null || toRow.offsetParent == null) return;
       var fromBar = fromRow.querySelector(".sched-bar");
@@ -610,21 +646,30 @@
     var body = document.getElementById("sched-body-scroll");
     var head = document.getElementById("sched-head-scroll");
     if (!left || !body) return;
-    left.addEventListener("scroll", function () {
-      body.scrollTop = left.scrollTop;
-      scheduleDrawDeps();
-    });
-    body.addEventListener("scroll", function () {
-      left.scrollTop = body.scrollTop;
-      if (head) head.scrollLeft = body.scrollLeft;
-      scheduleDrawDeps();
-    });
-    if (head) {
-      head.addEventListener("scroll", function () {
-        body.scrollLeft = head.scrollLeft;
-        scheduleDrawDeps();
-      });
-    }
+    var syncingY = false;
+    left.addEventListener(
+      "scroll",
+      function () {
+        if (syncingY) return;
+        syncingY = true;
+        if (Math.abs(body.scrollTop - left.scrollTop) > 0.5) body.scrollTop = left.scrollTop;
+        syncingY = false;
+        scheduleDrawDepsAfterScroll();
+      },
+      { passive: true }
+    );
+    body.addEventListener(
+      "scroll",
+      function () {
+        if (syncingY) return;
+        syncingY = true;
+        if (Math.abs(left.scrollTop - body.scrollTop) > 0.5) left.scrollTop = body.scrollTop;
+        if (head) head.scrollLeft = body.scrollLeft;
+        syncingY = false;
+        scheduleDrawDepsAfterScroll();
+      },
+      { passive: true }
+    );
   }
 
   function postJson(url, body) {
@@ -953,12 +998,21 @@
         handle.classList.add("sched-col-resizer-active");
         var prevCursor = document.body.style.cursor;
         document.body.style.cursor = "col-resize";
+        var moveSyncRaf = null;
         function onMove(e) {
           var nw = Math.max(mins[idx], Math.round(startW + (e.clientX - startX)));
           colEls[idx].style.width = nw + "px";
-          scheduleSyncHeights();
+          if (moveSyncRaf) return;
+          moveSyncRaf = requestAnimationFrame(function () {
+            moveSyncRaf = null;
+            scheduleSyncHeights();
+          });
         }
         function onUp() {
+          if (moveSyncRaf) {
+            cancelAnimationFrame(moveSyncRaf);
+            moveSyncRaf = null;
+          }
           handle.classList.remove("sched-col-resizer-active");
           document.body.style.cursor = prevCursor;
           document.removeEventListener("mousemove", onMove);
@@ -990,7 +1044,14 @@
   window.addEventListener("resize", scheduleSyncHeights);
   var schedLeftTbl = document.getElementById("sched-left-table");
   if (schedLeftTbl && typeof ResizeObserver !== "undefined") {
-    var schedRo = new ResizeObserver(function () { scheduleSyncHeights(); });
+    var roDeb = null;
+    var schedRo = new ResizeObserver(function () {
+      if (roDeb) clearTimeout(roDeb);
+      roDeb = setTimeout(function () {
+        roDeb = null;
+        scheduleSyncHeights();
+      }, 60);
+    });
     schedRo.observe(schedLeftTbl);
   }
 })();

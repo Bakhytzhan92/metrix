@@ -152,6 +152,11 @@ urlpatterns = [
         name="api_project_materials_catalog",
     ),
     path(
+        "api/project/<int:pk>/materials/stocks/<int:stock_id>/",
+        materials_project_api.api_project_materials_stock_detail,
+        name="api_project_materials_stock_detail",
+    ),
+    path(
         "api/project/<int:pk>/materials/stocks/",
         materials_project_api.api_project_materials_stocks,
         name="api_project_materials_stocks",

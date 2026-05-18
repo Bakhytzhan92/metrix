@@ -1714,11 +1714,15 @@ class StockMovement(models.Model):
     TYPE_OUTGOING = "outgoing"
     TYPE_TRANSFER = "transfer"
     TYPE_WRITEOFF = "writeoff"
+    TYPE_MANUAL_EDIT = "manual_edit"
+    TYPE_STOCK_REMOVE = "stock_remove"
     TYPE_CHOICES = [
         (TYPE_INCOMING, "Поступление"),
         (TYPE_OUTGOING, "Расход на объект"),
         (TYPE_TRANSFER, "Перемещение"),
         (TYPE_WRITEOFF, "Списание"),
+        (TYPE_MANUAL_EDIT, "Правка карточки"),
+        (TYPE_STOCK_REMOVE, "Удаление позиции"),
     ]
 
     REASON_USED = "used"
