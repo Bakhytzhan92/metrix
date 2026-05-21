@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Max, Prefetch, Q, Sum
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.dateparse import parse_date
@@ -273,7 +273,9 @@ def _get_estimate_totals(project):
 
     from django.db.models import Sum
 
-    agg = EstimateItem.objects.filter(section__project=project).aggregate(
+    agg = EstimateItem.objects.filter(
+        section__project=project, is_subsection_header=False
+    ).aggregate(
         cost=Sum("total_cost"),
         price=Sum("total_price"),
     )
@@ -392,6 +394,24 @@ def estimate_section_edit(request: HttpRequest, pk: int, section_id: int) -> Htt
 
 @login_required
 @require_POST
+def estimate_section_inline(request: HttpRequest, pk: int, section_id: int) -> HttpResponse:
+    """Сохранение названия и порядка раздела сметы с страницы сметы (без отдельной формы)."""
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+    if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return HttpResponseBadRequest("Expected XMLHttpRequest")
+    section = get_object_or_404(EstimateSection, pk=section_id, project=project)
+    form = EstimateSectionForm(request.POST, instance=section)
+    if form.is_valid():
+        form.save()
+        return JsonResponse({"ok": True, "name": section.name, "order": section.order})
+    err_payload = {k: [str(x) for x in v] for k, v in form.errors.items()}
+    return JsonResponse({"ok": False, "errors": err_payload}, status=400)
+
+
+@login_required
+@require_POST
 def estimate_section_delete(request: HttpRequest, pk: int, section_id: int) -> HttpResponse:
     project, err = _get_project_or_403(request, pk)
     if err:
@@ -492,7 +512,9 @@ def estimate_item_inline(request: HttpRequest, pk: int, section_id: int, item_id
     if form.is_valid():
         saved = form.save()
         if wants_json:
-            agg = EstimateItem.objects.filter(section=section).aggregate(
+            agg = EstimateItem.objects.filter(
+                section=section, is_subsection_header=False
+            ).aggregate(
                 sc=Sum("total_cost"), sp=Sum("total_price")
             )
             sc = agg.get("sc") or 0
@@ -1133,12 +1155,15 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
             .first()
         )
         if ei:
-            req_initial = {
-                "estimate_item": ei,
-                "quantity": ei.quantity,
-                "required_date": date.today(),
-            }
-            supply_selected_item_id = ei.pk
+            if ei.is_subsection_header:
+                ei = None
+            else:
+                req_initial = {
+                    "estimate_item": ei,
+                    "quantity": ei.quantity,
+                    "required_date": date.today(),
+                }
+                supply_selected_item_id = ei.pk
 
     supply_estimate_sections: list = []
     supply_first_selectable_item_pk = None
@@ -1170,6 +1195,8 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
         if not supply_selected_item_id:
             for block in supply_estimate_sections:
                 for row in block["rows"]:
+                    if row["item"].is_subsection_header:
+                        continue
                     supply_first_selectable_item_pk = row["item"].pk
                     break
                 if supply_first_selectable_item_pk:

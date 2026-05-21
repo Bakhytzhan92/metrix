@@ -967,6 +967,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
     auto_razdel = 1
     pending_razdel: str | None = None
     last_zemlyanye_section: str | None = None
+    last_heading_line: str | None = None
     prev_raw_low: str | None = None
 
     def _remember_carriageway_ctx(sec: str | None) -> None:
@@ -989,6 +990,38 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
             tail,
         ):
             last_zemlyanye_section = sec
+
+    def _emit_subsection_row(body: str, pending: str | None) -> None:
+        """Подзаголовок группы работ — отдельная строка в таблице сметы."""
+        nonlocal pending_razdel, last_heading_line
+        if not section or not body or not str(body).strip():
+            return
+        merged = _norm(f"{pending}  {body}" if pending else body)
+        if not merged:
+            return
+        name_u = merged.upper()[:ESTIMATE_ITEM_NAME_MAX_LENGTH]
+        key = ("hdr", section[:255], name_u[:2000])
+        if key in dedupe:
+            return
+        dedupe.add(key)
+        out.append(
+            {
+                "section": section[:255],
+                "name": name_u,
+                "unit": "—",
+                "quantity": 0.0,
+                "is_subsection_header": True,
+            }
+        )
+        if lsr_id and (
+            "ЗЕМЛЯНЫЕ" in name_u
+            or "КОЛОДЕЦ" in name_u
+            or "ДЮКЕР" in name_u
+        ):
+            _remember_carriageway_ctx(_format_section(lsr_id, merged)[:255])
+        pending_razdel = None
+        last_heading_line = name_u
+
     n = len(grid)
     i = 0
     while i < n:
@@ -1083,7 +1116,17 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                 if lsr_id != nid:
                     auto_razdel = 1
                     last_zemlyanye_section = None
+                    last_heading_line = None
                 lsr_id = nid
+                section = f"ЛОКАЛЬНАЯ СМЕТА № {nid}"[:255]
+            sub_frag = _section_title_from_lsr_header(raw) or _section_title_from_lsr_header(
+                probe,
+            )
+            if sub_frag:
+                _emit_subsection_row(sub_frag.strip(), pending_razdel)
+            prev_raw_low = low_raw
+            i += 1
+            continue
         nline = _norm(probe)
         m_raz = RE_RAZDEL.match(nline)
         if not m_raz and raw:
@@ -1106,12 +1149,10 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                 or _section_title_from_lsr_header(probe)
                 or sec_src.strip()
             )
-            if pending_razdel:
-                body = f"{pending_razdel}  {title}"
-                pending_razdel = None
-            elif lsr_id and object_name and re.search(
-                r"ЗЕМЛЯНЫЕ|ГР-", title, re.I
-            ):
+            pend = pending_razdel
+            if pend:
+                _emit_subsection_row(title.strip(), pend)
+            elif lsr_id and object_name and re.search(r"ЗЕМЛЯНЫЕ|ГР-", title, re.I):
                 sec_tail_gr = (
                     section.split("|", 1)[-1].strip()
                     if section and "|" in section
@@ -1122,6 +1163,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                 else:
                     body = f"РАЗДЕЛ {auto_razdel}. {object_name}  {title}"
                     auto_razdel += 1
+                _emit_subsection_row(body, None)
             else:
                 sec_tail = (
                     section.split("|", 1)[-1].strip()
@@ -1129,8 +1171,8 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                     else (section or "")
                 )
                 if (
-                    section
-                    and "ДЮКЕР" in section.upper()
+                    last_heading_line
+                    and "ДЮКЕР" in last_heading_line.upper()
                     and re.search(
                         r"^ЗЕМЛЯНЫЕ\s+РАБОТЫ",
                         title.strip(),
@@ -1138,59 +1180,52 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                     )
                     and not re.search(
                         r"ЗЕМЛЯНЫЕ\s+РАБОТЫ",
-                        sec_tail,
+                        last_heading_line,
                         re.I,
                     )
                 ):
-                    merged = f"{sec_tail} {title.strip()}"
-                    section = _format_section(
-                        lsr_id,
-                        merged,
-                    )[:255]
-                    _remember_carriageway_ctx(section)
-                    prev_raw_low = low_raw
-                    i += 1
-                    continue
-                body = title.strip()
-                if (
-                    sec_tail
-                    and len(sec_tail) > 12
-                    and re.match(
-                        r"(?i)^ЗЕМЛЯНЫЕ\s+РАБОТЫ\s*$",
-                        body,
-                    )
-                    and not re.search(
-                        r"ЗЕМЛЯНЫЕ\s+РАБОТЫ",
-                        sec_tail,
-                        re.I,
-                    )
-                ):
-                    body = _norm(f"{sec_tail} {body}")[:220]
-                if (
-                    sec_tail
-                    and len(sec_tail) > 12
-                    and re.match(
-                        r"(?i)^ПРОЧИЕ\s+РАБОТЫ\s*$",
-                        body,
-                    )
-                    and not re.search(
-                        r"(?i)\bПРОЧИЕ\s+РАБОТЫ\b",
-                        sec_tail,
-                    )
-                ):
-                    body = _norm(f"{sec_tail} {body}")[:220]
-                if (
-                    sec_tail
-                    and len(sec_tail) > 12
-                    and _RE_MONOLITH_CAST_BLOCK_LINE.match(body)
-                    and not re.search(
-                        r"(?i)\bМонолитный\s+(?:литальный|л[ие]кальный)\s+блок\b",
-                        sec_tail,
-                    )
-                ):
-                    body = _norm(f"{sec_tail} {body}")[:220]
-            section = _format_section(lsr_id, body)[:255]
-            _remember_carriageway_ctx(section)
+                    merged = _norm(f"{last_heading_line} {title.strip()}")[:220]
+                    _emit_subsection_row(merged, None)
+                else:
+                    body = title.strip()
+                    if (
+                        sec_tail
+                        and len(sec_tail) > 12
+                        and re.match(
+                            r"(?i)^ЗЕМЛЯНЫЕ\s+РАБОТЫ\s*$",
+                            body,
+                        )
+                        and not re.search(
+                            r"ЗЕМЛЯНЫЕ\s+РАБОТЫ",
+                            sec_tail,
+                            re.I,
+                        )
+                    ):
+                        body = _norm(f"{sec_tail} {body}")[:220]
+                    if (
+                        sec_tail
+                        and len(sec_tail) > 12
+                        and re.match(
+                            r"(?i)^ПРОЧИЕ\s+РАБОТЫ\s*$",
+                            body,
+                        )
+                        and not re.search(
+                            r"(?i)\bПРОЧИЕ\s+РАБОТЫ\b",
+                            sec_tail,
+                        )
+                    ):
+                        body = _norm(f"{sec_tail} {body}")[:220]
+                    if (
+                        sec_tail
+                        and len(sec_tail) > 12
+                        and _RE_MONOLITH_CAST_BLOCK_LINE.match(body)
+                        and not re.search(
+                            r"(?i)\bМонолитный\s+(?:литальный|л[ие]кальный)\s+блок\b",
+                            sec_tail,
+                        )
+                    ):
+                        body = _norm(f"{sec_tail} {body}")[:220]
+                    _emit_subsection_row(body, None)
             prev_raw_low = low_raw
             i += 1
             continue

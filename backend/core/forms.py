@@ -318,7 +318,9 @@ class ProjectSupplyRequestForm(forms.Form):
         super().__init__(*args, **kwargs)
         if project:
             self.fields["estimate_item"].queryset = (
-                EstimateItem.objects.filter(section__project=project)
+                EstimateItem.objects.filter(
+                    section__project=project, is_subsection_header=False
+                )
                 .select_related("section")
                 .order_by("section__order", "order", "id")
             )

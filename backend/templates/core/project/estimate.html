@@ -41,12 +41,12 @@
       Добавить раздел
     </a>
     {% if sections %}
-    <form action="{% url 'estimate_sections_delete_all' project.pk %}" method="post" class="inline" onsubmit="return confirm('Удалить все разделы сметы и все позиции? Связь этапов графика с разделами будет сброшена. Отменить действие нельзя.');">
-      {% csrf_token %}
-      <button type="submit" class="inline-flex items-center justify-center min-h-[42px] rounded-xl border-2 border-red-200 bg-red-50 px-4 text-sm font-medium text-red-800 hover:bg-red-100 transition-transform hover:scale-[1.02]">
-        Удалить все разделы
-      </button>
-    </form>
+    <button
+      type="button"
+      class="js-estimate-delete-all-open inline-flex items-center justify-center min-h-[42px] rounded-xl border-2 border-red-200 bg-red-50 px-4 text-sm font-medium text-red-800 hover:bg-red-100 transition-transform hover:scale-[1.02]"
+    >
+      Удалить все разделы
+    </button>
     {% endif %}
     <form action="{% url 'estimate_import' project.pk %}" method="post" enctype="multipart/form-data" class="inline-flex items-center gap-2">
       {% csrf_token %}
@@ -57,36 +57,67 @@
     <button type="button" id="btn-estimate-pdf-import" class="inline-flex items-center justify-center min-h-[42px] rounded-xl border border-primary/25 bg-primary/5 px-4 text-sm font-medium text-primary hover:bg-primary/10 transition-transform hover:scale-[1.02]">Импорт из PDF</button>
   </div>
 
-  {# Разделы работ — сворачиваемые секции; автосохранение строк без изменений #}
+  {# Разделы работ — один вертикальный скролл списка (по аналогии с «Снабжение») #}
   <div class="rounded-2xl border border-line bg-surface-card shadow-mx overflow-hidden">
     <div class="border-b border-line px-5 py-4 bg-gradient-to-r from-white to-slate-50/50">
-      <h2 class="text-base font-bold text-ink">Разделы работ</h2>
-      <p class="text-xs text-ink-muted mt-1 max-w-3xl">Пересчёт при вводе. Новая строка — кнопка «+ позиция». Перед уходом со страницы строки сохраняются автоматически. «Сохранить раздел» — сохраняет все строки раздела сразу.</p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+            <h2 class="text-base font-bold text-ink">Разделы работ</h2>
+            {% if sections %}
+            <button
+              type="button"
+              id="js-save-estimate-all"
+              class="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-800 hover:bg-indigo-100 shrink-0"
+            >
+              Сохранить
+            </button>
+            {% endif %}
+          </div>
+          <p class="text-xs text-ink-muted mt-1 max-w-3xl">Прокрутка всего списка одной полосой. Пересчёт строк при количестве, цене и наценке. Наименование и ресурсы сохраняются при смене поля и кнопкой «Сохранить» (все строки сразу). Новая строка — «+ позиция» у раздела.</p>
+        </div>
+      </div>
     </div>
-    <div class="divide-y divide-line/80">
+    {% if sections %}
+    <div id="estimate-sections-scroll" class="max-h-[min(70vh,52rem)] overflow-y-auto overflow-x-hidden overscroll-y-contain divide-y divide-line/80 shadow-inner">
       {% for section in sections %}
       {% with items=section.items.all %}
-      <details class="group estimate-section" id="section-{{ section.pk }}" open>
-        <summary class="sticky top-0 z-10 flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-4 bg-white/95 backdrop-blur-sm border-b border-line shadow-sm marker:content-none [&::-webkit-details-marker]:hidden">
+      <div class="estimate-section group border-0" id="section-{{ section.pk }}" data-section-order="{{ section.order }}">
+        <div class="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 sm:px-4 bg-sky-100/95 backdrop-blur-sm border-b border-sky-200/80 text-sm">
           <div class="flex items-center gap-3 min-w-0">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold text-sm">{{ forloop.counter }}</span>
+            <span class="js-section-order-badge flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/80 text-sky-900 font-bold text-sm ring-1 ring-sky-200/80">{{ forloop.counter }}</span>
             <div class="min-w-0">
-              <span class="font-semibold text-ink block truncate">{{ section.name }}</span>
-              <span class="text-xs text-ink-muted">{{ items|length }} поз.</span>
+              <span class="js-section-display-name font-semibold text-slate-900 block truncate">{{ section.name }}</span>
+              <span class="text-xs text-slate-600">{{ items|length }} поз.</span>
             </div>
           </div>
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
-            <span class="whitespace-nowrap tabular-nums">Себестоимость: <span class="js-section-cost">{{ section.section_total_cost|floatformat:2 }}</span> ₸</span>
-            <span class="whitespace-nowrap tabular-nums">Итого: <span class="js-section-price">{{ section.section_total_price|floatformat:2 }}</span> ₸</span>
-            <a href="{% url 'estimate_section_edit' project.pk section.pk %}" class="text-indigo-600 hover:text-indigo-800">Изменить раздел</a>
-            <form action="{% url 'estimate_section_delete' project.pk section.pk %}" method="post" class="inline" onsubmit="return confirm('Удалить раздел и все позиции?');">
-              {% csrf_token %}
-              <button type="submit" class="text-red-600 hover:text-red-800">Удалить</button>
-            </form>
+          <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 text-sm text-slate-600">
+            <span class="whitespace-nowrap tabular-nums text-xs sm:text-sm">Себест.: <span class="js-section-cost">{{ section.section_total_cost|floatformat:2 }}</span> ₸</span>
+            <span class="whitespace-nowrap tabular-nums text-xs sm:text-sm">Итого: <span class="js-section-price">{{ section.section_total_price|floatformat:2 }}</span> ₸</span>
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                class="js-estimate-section-edit-open inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                data-section-id="{{ section.pk }}"
+                data-section-name="{{ section.name|escape }}"
+                data-section-order="{{ section.order }}"
+                data-save-url="{% url 'estimate_section_inline' project.pk section.pk %}"
+              >
+                Редактировать раздел
+              </button>
+              <button
+                type="button"
+                class="js-estimate-section-delete-open inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-800 hover:bg-red-100"
+                data-delete-url="{% url 'estimate_section_delete' project.pk section.pk %}"
+                data-section-name="{{ section.name|default:''|truncatechars:120|escape }}"
+              >
+                Удалить раздел
+              </button>
+            </div>
           </div>
-        </summary>
-        <div class="px-4 pb-4 pt-2 bg-slate-50/30">
-          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+        </div>
+        <div class="px-3 sm:px-4 pb-4 pt-2 bg-slate-50/30">
+          <div class="mb-2 flex flex-wrap items-center gap-2">
             <form action="{% url 'estimate_item_quick_add' project.pk section.pk %}" method="post" class="inline">
               {% csrf_token %}
               <button type="submit" class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
@@ -94,9 +125,6 @@
                 + позиция
               </button>
             </form>
-            <button type="button" class="js-save-estimate-section inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-800 hover:bg-indigo-100">
-              Сохранить раздел
-            </button>
           </div>
           <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
             <table class="min-w-max w-full divide-y divide-slate-200 text-xs sm:text-sm">
@@ -117,6 +145,11 @@
               </thead>
               <tbody class="divide-y divide-slate-100">
                 {% for item in items %}
+                {% if item.is_subsection_header %}
+                <tr class="estimate-subsection-banner align-middle border-y border-slate-200 bg-slate-100/90">
+                  <td colspan="11" class="px-3 py-2.5 text-center text-xs sm:text-sm font-bold uppercase tracking-tight text-slate-900">{{ item.name }}</td>
+                </tr>
+                {% else %}
                 <tr class="estimate-row hover:bg-slate-50/50 align-top" data-estimate-form="estimate-row-{{ item.pk }}">
                   <td class="px-1.5 py-0.5 text-center tabular-nums text-slate-600 leading-tight">{{ forloop.counter }}</td>
                   <td class="px-1.5 py-0.5">
@@ -155,17 +188,20 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 18.5m2.106-4.25l5.25-5.25m0 0L18 9.75m-5.25 5.25L18 18"/>
                       </svg>
                     </a>
-                    <form action="{% url 'estimate_item_delete' project.pk section.pk item.pk %}" method="post" class="inline" onsubmit="return confirm('Удалить позицию?');">
-                      {% csrf_token %}
-                      <button type="submit" class="inline-flex rounded-md p-2 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Удалить позицию" aria-label="Удалить позицию">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
-                        </svg>
-                      </button>
-                    </form>
+                    <button
+                      type="button"
+                      class="js-estimate-row-delete-open inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-lg font-light leading-none text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      title="Удалить строку"
+                      aria-label="Удалить строку"
+                      data-delete-url="{% url 'estimate_item_delete' project.pk section.pk item.pk %}"
+                      data-item-name="{{ item.name|default:''|truncatechars:100|escape }}"
+                    >
+                      ×
+                    </button>
                     </div>
                   </td>
                 </tr>
+                {% endif %}
                 {% empty %}
                 <tr>
                   <td colspan="11" class="px-4 py-6 text-center text-sm text-slate-500">Позиций нет — нажмите «+ позиция», чтобы добавить строку.</td>
@@ -175,16 +211,11 @@
             </table>
           </div>
         </div>
-      </details>
-      {% endwith %}
-      {% empty %}
-      <div class="px-4 py-8 text-center text-sm text-slate-500">
-        <p>Разделов пока нет.</p>
-        <a href="{% url 'estimate_section_add' project.pk %}" class="mt-2 inline-block text-indigo-600 hover:text-indigo-800">Добавить раздел</a>
       </div>
+      {% endwith %}
       {% endfor %}
-      {% if sections %}
-      <div class="estimate-grand-total px-4 py-4 bg-slate-100/90 border-t-2 border-slate-200">
+    </div>
+    <div class="estimate-grand-total px-4 py-4 bg-slate-100/90 border-t-2 border-slate-200">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <p class="text-sm font-semibold text-slate-900">Итого по смете <span class="font-normal text-slate-500">(все разделы)</span></p>
           <label class="inline-flex items-center gap-2 shrink-0 cursor-pointer select-none text-sm font-normal text-slate-600">
@@ -203,10 +234,161 @@
           </div>
           <p class="text-base font-semibold text-slate-900 min-w-0 overflow-x-auto tabular-nums">Итого для заказчика<span class="js-vat-suffix text-sm font-normal text-slate-500 {% if not project.estimate_vat_enabled %}hidden{% endif %}"> (с НДС)</span>: <span class="whitespace-nowrap"><span class="js-project-total-price">{{ totals.client_total|floatformat:2 }}</span> ₸</span></p>
         </div>
+    </div>
+    {% else %}
+    <div class="px-4 py-8 text-center text-sm text-slate-500">
+      <p>Разделов пока нет.</p>
+      <a href="{% url 'estimate_section_add' project.pk %}" class="mt-2 inline-block text-indigo-600 hover:text-indigo-800">Добавить раздел</a>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Модалка: подтверждение удаления строки сметы #}
+  <div
+    id="modal-estimate-row-delete"
+    class="hidden fixed inset-0 z-[70] flex items-center justify-center p-4"
+    aria-hidden="true"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-estimate-row-delete-title"
+  >
+    <div class="absolute inset-0 bg-slate-900/50" data-close-estimate-row-delete tabindex="-1"></div>
+    <div class="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+      <h3 id="modal-estimate-row-delete-title" class="text-base font-semibold text-slate-900">Удалить позицию?</h3>
+      <p id="modal-estimate-row-delete-body" class="mt-3 text-sm text-slate-600">Удалить эту позицию? Действие нельзя отменить.</p>
+      <div class="mt-6 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+          data-close-estimate-row-delete
+        >
+          Отмена
+        </button>
+        <button
+          type="button"
+          id="modal-estimate-row-delete-confirm"
+          class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+        >
+          Удалить
+        </button>
       </div>
-      {% endif %}
     </div>
   </div>
+  <form id="js-estimate-delete-item-form" method="post" class="hidden" aria-hidden="true">{% csrf_token %}</form>
+
+  {# Модалка: редактирование раздела сметы (только название) #}
+  <div
+    id="modal-estimate-section-edit"
+    class="hidden fixed inset-0 z-[70] flex items-center justify-center p-4"
+    aria-hidden="true"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-estimate-section-edit-title"
+  >
+    <div class="absolute inset-0 bg-slate-900/50" data-close-estimate-section-edit tabindex="-1"></div>
+    <div class="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+      <h3 id="modal-estimate-section-edit-title" class="text-base font-semibold text-slate-900">Редактировать раздел</h3>
+      <p id="modal-section-edit-errors" class="mt-2 hidden text-sm text-red-600" role="alert"></p>
+      <div class="mt-4 space-y-3">
+        <div>
+          <label for="modal-section-edit-name" class="block text-xs font-medium text-slate-600">Название раздела</label>
+          <input
+            id="modal-section-edit-name"
+            type="text"
+            maxlength="255"
+            class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            autocomplete="off"
+          />
+        </div>
+      </div>
+      <div class="mt-6 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+          data-close-estimate-section-edit
+        >
+          Отмена
+        </button>
+        <button
+          type="button"
+          id="modal-section-edit-save"
+          class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+        >
+          Сохранить
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# Модалка: подтверждение удаления раздела сметы #}
+  <div
+    id="modal-estimate-section-delete"
+    class="hidden fixed inset-0 z-[70] flex items-center justify-center p-4"
+    aria-hidden="true"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-estimate-section-delete-title"
+  >
+    <div class="absolute inset-0 bg-slate-900/50" data-close-estimate-section-delete tabindex="-1"></div>
+    <div class="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+      <h3 id="modal-estimate-section-delete-title" class="text-base font-semibold text-slate-900">Удалить раздел?</h3>
+      <p id="modal-estimate-section-delete-body" class="mt-3 text-sm text-slate-600">
+        Удалить раздел и все позиции в нём? Связь этапов графика с разделом может сброситься. Отменить действие нельзя.
+      </p>
+      <div class="mt-6 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+          data-close-estimate-section-delete
+        >
+          Отмена
+        </button>
+        <button
+          type="button"
+          id="modal-estimate-section-delete-confirm"
+          class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+        >
+          Удалить раздел
+        </button>
+      </div>
+    </div>
+  </div>
+  <form id="js-estimate-delete-all-sections-form" method="post" action="{% url 'estimate_sections_delete_all' project.pk %}" class="hidden" aria-hidden="true">{% csrf_token %}</form>
+
+  {# Модалка: удалить все разделы сметы #}
+  <div
+    id="modal-estimate-delete-all-sections"
+    class="hidden fixed inset-0 z-[70] flex items-center justify-center p-4"
+    aria-hidden="true"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-estimate-delete-all-sections-title"
+  >
+    <div class="absolute inset-0 bg-slate-900/50" data-close-estimate-delete-all-sections tabindex="-1"></div>
+    <div class="relative z-10 w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+      <h3 id="modal-estimate-delete-all-sections-title" class="text-base font-semibold text-slate-900">Удалить все разделы?</h3>
+      <p class="mt-3 text-sm text-slate-600">
+        Удалить все разделы сметы и все позиции? Связь этапов графика с разделами будет сброшена. Отменить действие нельзя.
+      </p>
+      <div class="mt-6 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+          data-close-estimate-delete-all-sections
+        >
+          Нет
+        </button>
+        <button
+          type="button"
+          id="modal-estimate-delete-all-sections-confirm"
+          class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+        >
+          Да
+        </button>
+      </div>
+    </div>
+  </div>
+  <form id="js-estimate-delete-section-form" method="post" class="hidden" aria-hidden="true">{% csrf_token %}</form>
 
   {# Модалка: импорт ЛСР из PDF #}
   <div id="modal-estimate-pdf" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-estimate-pdf-title">
@@ -504,7 +686,7 @@
           });
         })
         .catch(function () {
-          if (!silent) alert("Сеть недоступна или сбой запроса. Проверьте подключение и нажмите «Сохранить раздел».");
+          if (!silent) alert("Сеть недоступна или сбой запроса. Проверьте подключение и нажмите «Сохранить».");
           resolve({ ok: false });
         });
     });
@@ -629,42 +811,303 @@
     },
     true
   );
-  document.querySelectorAll(".js-save-estimate-section").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var sec = btn.closest(".estimate-section");
-      if (!sec) return;
-      var label = btn.textContent;
+  var saveAllBtn = document.getElementById("js-save-estimate-all");
+  if (saveAllBtn) {
+    saveAllBtn.addEventListener("click", function () {
+      var label = saveAllBtn.textContent;
       document.querySelectorAll('form[id^="estimate-row-"]').forEach(function (f) {
         cancelScheduledSave(f.id);
       });
-      var forms = sec.querySelectorAll('form[id^="estimate-row-"]');
+      var forms = document.querySelectorAll('form[id^="estimate-row-"]');
       if (!forms.length) return;
       var promises = [];
       forms.forEach(function (formEl) {
-        formEl.dataset.estimateDirty = "1";
-        promises.push(saveRowPromise(formEl, false));
+        promises.push(saveRowPromise(formEl, false, { force: true }));
       });
-      btn.disabled = true;
-      btn.textContent = "Сохранение…";
+      saveAllBtn.disabled = true;
+      saveAllBtn.textContent = "Сохранение…";
       Promise.all(promises)
         .then(function (results) {
           var bad = results.some(function (r) {
             return r && r.ok === false;
           });
-          btn.disabled = false;
-          btn.textContent = bad ? label : "Сохранено";
+          saveAllBtn.disabled = false;
+          saveAllBtn.textContent = bad ? label : "Сохранено";
           if (!bad) {
             setTimeout(function () {
-              btn.textContent = label;
+              saveAllBtn.textContent = label;
             }, 2000);
           }
         })
         .catch(function () {
-          btn.disabled = false;
-          btn.textContent = label;
+          saveAllBtn.disabled = false;
+          saveAllBtn.textContent = label;
         });
     });
-  });
+  }
+
+  (function wireEstimateSectionEditModal() {
+    var editModal = document.getElementById("modal-estimate-section-edit");
+    var nameInp = document.getElementById("modal-section-edit-name");
+    var errEl = document.getElementById("modal-section-edit-errors");
+    var saveBtn = document.getElementById("modal-section-edit-save");
+    if (!editModal || !nameInp || !saveBtn) return;
+    var ctx = null;
+
+    function closeEdit() {
+      editModal.classList.add("hidden");
+      editModal.setAttribute("aria-hidden", "true");
+      ctx = null;
+    }
+    function openEdit(btn) {
+      var details = btn.closest(".estimate-section");
+      if (!details) return;
+      ctx = {
+        details: details,
+        editBtn: btn,
+        sectionOrder: String(
+          details.getAttribute("data-section-order") || btn.getAttribute("data-section-order") || "0"
+        ),
+        saveUrl: btn.getAttribute("data-save-url"),
+        sectionId: btn.getAttribute("data-section-id"),
+      };
+      nameInp.value = btn.getAttribute("data-section-name") || "";
+      if (errEl) {
+        errEl.textContent = "";
+        errEl.classList.add("hidden");
+      }
+      editModal.classList.remove("hidden");
+      editModal.setAttribute("aria-hidden", "false");
+      try {
+        nameInp.focus({ preventScroll: true });
+      } catch (e1) {
+        nameInp.focus();
+      }
+    }
+    document.querySelectorAll(".js-estimate-section-edit-open").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openEdit(btn);
+      });
+    });
+    editModal.querySelectorAll("[data-close-estimate-section-edit]").forEach(function (el) {
+      el.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        closeEdit();
+      });
+    });
+    editModal.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeEdit();
+    });
+    saveBtn.addEventListener("click", function () {
+      if (!ctx || !ctx.saveUrl) return;
+      if (errEl) {
+        errEl.textContent = "";
+        errEl.classList.add("hidden");
+      }
+      var tok = getCookie("csrftoken");
+      var fd = new FormData();
+      fd.append("csrfmiddlewaretoken", tok || "");
+      fd.append("name", String(nameInp.value || "").trim());
+      fd.append("order", String(ctx.sectionOrder || "0").trim() || "0");
+      saveBtn.disabled = true;
+      fetch(ctx.saveUrl, {
+        method: "POST",
+        headers: {
+          "X-Requested-With": "XMLHttpRequest",
+          "X-CSRFToken": tok || "",
+        },
+        body: fd,
+        credentials: "same-origin",
+      })
+        .then(function (r) {
+          return r.json().then(function (j) {
+            return { ok: r.ok, j: j };
+          });
+        })
+        .catch(function () {
+          return { ok: false, j: null };
+        })
+        .then(function (x) {
+          saveBtn.disabled = false;
+          if (!x.j) {
+            if (errEl) {
+              errEl.textContent = "Не удалось сохранить (ответ сервера).";
+              errEl.classList.remove("hidden");
+            }
+            return;
+          }
+          if (!x.j.ok) {
+            if (errEl) {
+              var parts = [];
+              if (x.j.errors) {
+                Object.keys(x.j.errors).forEach(function (k) {
+                  (x.j.errors[k] || []).forEach(function (m) {
+                    parts.push(m);
+                  });
+                });
+              }
+              errEl.textContent = parts.length ? parts.join(" ") : "Проверьте поля.";
+              errEl.classList.remove("hidden");
+            }
+            return;
+          }
+          var nm = x.j.name;
+          var ord = String(x.j.order);
+          var title = ctx.details.querySelector(".js-section-display-name");
+          if (title) title.textContent = nm;
+          ctx.editBtn.setAttribute("data-section-name", nm);
+          ctx.editBtn.setAttribute("data-section-order", ord);
+          var delBtn = ctx.details.querySelector(".js-estimate-section-delete-open");
+          if (delBtn) {
+            var short = nm.length > 120 ? nm.slice(0, 117) + "..." : nm;
+            delBtn.setAttribute("data-section-name", short);
+          }
+          ctx.details.setAttribute("data-section-order", ord);
+          closeEdit();
+        });
+    });
+  })();
+
+  (function wireEstimateSectionDeleteModal() {
+    var secModal = document.getElementById("modal-estimate-section-delete");
+    var secForm = document.getElementById("js-estimate-delete-section-form");
+    var secBody = document.getElementById("modal-estimate-section-delete-body");
+    var secConfirm = document.getElementById("modal-estimate-section-delete-confirm");
+    if (!secModal || !secForm) return;
+    function closeSec() {
+      secModal.classList.add("hidden");
+      secModal.setAttribute("aria-hidden", "true");
+    }
+    function openSec(url, nameHint) {
+      if (!url) return;
+      secForm.setAttribute("action", url);
+      if (secBody) {
+        secBody.textContent = nameHint
+          ? "Удалить раздел «" + nameHint + "» и все позиции в нём? Связь этапов графика с разделом может сброситься. Отменить действие нельзя."
+          : "Удалить раздел и все позиции в нём? Связь этапов графика с разделом может сброситься. Отменить действие нельзя.";
+      }
+      secModal.classList.remove("hidden");
+      secModal.setAttribute("aria-hidden", "false");
+    }
+    document.querySelectorAll(".js-estimate-section-delete-open").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var u = btn.getAttribute("data-delete-url");
+        var n = btn.getAttribute("data-section-name") || "";
+        openSec(u, n);
+      });
+    });
+    secModal.querySelectorAll("[data-close-estimate-section-delete]").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.preventDefault();
+        closeSec();
+      });
+    });
+    secModal.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeSec();
+    });
+    if (secConfirm) {
+      secConfirm.addEventListener("click", function () {
+        secForm.submit();
+      });
+    }
+  })();
+
+  (function wireEstimateDeleteAllSectionsModal() {
+    var modal = document.getElementById("modal-estimate-delete-all-sections");
+    var form = document.getElementById("js-estimate-delete-all-sections-form");
+    var confirmBtn = document.getElementById("modal-estimate-delete-all-sections-confirm");
+    if (!modal || !form) return;
+    function closeAll() {
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+    }
+    function openAll() {
+      modal.classList.remove("hidden");
+      modal.setAttribute("aria-hidden", "false");
+    }
+    document.querySelectorAll(".js-estimate-delete-all-open").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        openAll();
+      });
+    });
+    modal.querySelectorAll("[data-close-estimate-delete-all-sections]").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.preventDefault();
+        closeAll();
+      });
+    });
+    modal.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeAll();
+    });
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", function () {
+        form.submit();
+      });
+    }
+  })();
+
+  (function wireEstimateRowDeleteModal() {
+    var modal = document.getElementById("modal-estimate-row-delete");
+    var form = document.getElementById("js-estimate-delete-item-form");
+    var bodyEl = document.getElementById("modal-estimate-row-delete-body");
+    var confirmBtn = document.getElementById("modal-estimate-row-delete-confirm");
+    if (!modal || !form) return;
+    function close() {
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+    }
+    function open(url, nameHint) {
+      if (!url) return;
+      form.setAttribute("action", url);
+      if (bodyEl) {
+        bodyEl.textContent = nameHint
+          ? "Удалить позицию «" + nameHint + "»? Действие нельзя отменить."
+          : "Удалить эту позицию? Действие нельзя отменить.";
+      }
+      modal.classList.remove("hidden");
+      modal.setAttribute("aria-hidden", "false");
+    }
+    document.querySelectorAll(".js-estimate-row-delete-open").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var u = btn.getAttribute("data-delete-url");
+        var n = btn.getAttribute("data-item-name") || "";
+        open(u, n);
+      });
+    });
+    modal.querySelectorAll("[data-close-estimate-row-delete]").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.preventDefault();
+        close();
+      });
+    });
+    modal.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") close();
+    });
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", function () {
+        form.submit();
+      });
+    }
+  })();
+
+  function renumberEstimateDataRowIndices() {
+    document.querySelectorAll(".estimate-section").forEach(function (sec) {
+      var n = 0;
+      sec.querySelectorAll("tr.estimate-row").forEach(function (tr) {
+        n += 1;
+        var td = tr.querySelector("td:first-child");
+        if (td) td.textContent = String(n);
+      });
+    });
+  }
+  renumberEstimateDataRowIndices();
 })();
 </script>
 <script>

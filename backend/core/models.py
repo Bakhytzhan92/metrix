@@ -391,12 +391,20 @@ class EstimateSection(models.Model):
     @property
     def section_total_cost(self):
         from decimal import Decimal
-        return sum((i.total_cost for i in self.items.all()), Decimal("0"))
+
+        return sum(
+            (i.total_cost for i in self.items.filter(is_subsection_header=False)),
+            Decimal("0"),
+        )
 
     @property
     def section_total_price(self):
         from decimal import Decimal
-        return sum((i.total_price for i in self.items.all()), Decimal("0"))
+
+        return sum(
+            (i.total_price for i in self.items.filter(is_subsection_header=False)),
+            Decimal("0"),
+        )
 
 
 # Локальные сметы (PDF): наименования работ часто длинные; лимит для импорта/парсера.
@@ -522,6 +530,10 @@ class EstimateItem(models.Model):
         blank=True,
         default="",
     )
+    is_subsection_header = models.BooleanField(
+        "Подзаголовок группы (строка из PDF)",
+        default=False,
+    )
 
     class Meta:
         ordering = ["order", "id"]
@@ -558,6 +570,18 @@ class EstimateItem(models.Model):
 
     def save(self, *args, **kwargs):
         from decimal import Decimal, ROUND_HALF_UP
+
+        if self.is_subsection_header:
+            self.quantity = Decimal("0")
+            self.cost_price = Decimal("0")
+            self.markup_percent = Decimal("0")
+            self.sell_price = Decimal("0")
+            self.total_cost = Decimal("0")
+            self.total_price = Decimal("0")
+            if not (self.unit or "").strip():
+                self.unit = "—"
+            super().save(*args, **kwargs)
+            return
 
         q = self.quantity or Decimal("0")
         cp = self.cost_price or Decimal("0")

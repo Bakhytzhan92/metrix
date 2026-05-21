@@ -19,6 +19,7 @@ urlpatterns = [
     path("projects/<int:pk>/estimate/vat/", views.estimate_vat_toggle, name="estimate_vat_toggle"),
     path("projects/<int:pk>/estimate/section/add/", views.estimate_section_add, name="estimate_section_add"),
     path("projects/<int:pk>/estimate/section/<int:section_id>/edit/", views.estimate_section_edit, name="estimate_section_edit"),
+    path("projects/<int:pk>/estimate/section/<int:section_id>/inline/", views.estimate_section_inline, name="estimate_section_inline"),
     path("projects/<int:pk>/estimate/section/<int:section_id>/delete/", views.estimate_section_delete, name="estimate_section_delete"),
     path(
         "projects/<int:pk>/estimate/sections/delete-all/",

@@ -24,8 +24,7 @@ def _parse_quantity(
         v, (int, float, Decimal)
     ):
         try:
-            return Decimal(str(v)
-            )
+            return Decimal(str(v))
         except (InvalidOperation, ValueError):
             return Decimal("0")
     s = str(v).strip().replace(" ", "")
@@ -49,10 +48,10 @@ def apply_local_estimate_rows(
 ) -> dict[str, int | list[str]]:
     """
     Создаёт разделы и позиции (тип «Работы», нулевые цены).
-    Дубликаты в файле и в БД: ключ включает pdf_pos_no + pdf_norm_code, если они есть в строке.
+    Строки-подзаголовки (is_subsection_header) — баннер в таблице, без количества.
     """
     err: list[str] = []
-    file_seen: set[tuple[str, str, str, str, str, str]] = set()
+    file_seen: set[tuple[Any, ...]] = set()
     max_order = (
         EstimateSection.objects.filter(
             project=project
@@ -67,11 +66,57 @@ def apply_local_estimate_rows(
     with transaction.atomic():
         for r in rows:
             sec_name = (r.get("section") or "Локальная смета").strip()[:255]
+            is_hdr = r.get("is_subsection_header") is True
             name = (r.get("name") or "").strip()[:ESTIMATE_ITEM_NAME_MAX_LENGTH]
+
+            if is_hdr:
+                if not name:
+                    continue
+                unit = ((r.get("unit") or "—") or "—").strip()[:30] or "—"
+                fk_h = ("hdr", sec_name, name[:2000])
+                if fk_h in file_seen:
+                    continue
+                file_seen.add(fk_h)
+                if EstimateItem.objects.filter(
+                    section__project=project,
+                    section__name=sec_name,
+                    name=name,
+                    is_subsection_header=True,
+                ).exists():
+                    continue
+                section = EstimateSection.objects.filter(
+                    project=project, name=sec_name
+                ).first()
+                if not section:
+                    section = EstimateSection.objects.create(
+                        project=project,
+                        name=sec_name,
+                        order=next_section_order,
+                    )
+                    next_section_order += 1
+                o = (section.items.aggregate(m=Max("order"))["m"] or 0) + 1
+                try:
+                    EstimateItem.objects.create(
+                        section=section,
+                        name=name,
+                        type=EstimateItem.TYPE_LABOR,
+                        unit=unit,
+                        quantity=Decimal("0"),
+                        cost_price=Decimal("0"),
+                        markup_percent=Decimal("0"),
+                        order=o,
+                        is_subsection_header=True,
+                        pdf_pos_no="",
+                        pdf_norm_code="",
+                    )
+                except Exception as e:  # noqa: BLE001
+                    err.append(f"{name[:40]}: {e}")
+                    continue
+                items_created += 1
+                continue
+
             unit = (r.get("unit") or "шт").strip()[:30]
-            qty_d = _parse_quantity(
-                r.get("quantity")
-            )
+            qty_d = _parse_quantity(r.get("quantity"))
             if not name or not unit or qty_d == 0:
                 continue
             qk = f"{qty_d:.4f}"
@@ -97,9 +142,7 @@ def apply_local_estimate_rows(
                 )
             if fkey in file_seen:
                 continue
-            file_seen.add(
-                fkey
-            )
+            file_seen.add(fkey)
             if pos_meta or code_meta:
                 if EstimateItem.objects.filter(
                     section__project=project,

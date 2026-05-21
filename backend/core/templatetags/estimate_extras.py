@@ -59,6 +59,8 @@ def estimate_kind_cost_totals(sections):
     work = Decimal("0")
     for sec in sections:
         for item in sec.items.all():
+            if item.is_subsection_header:
+                continue
             c = item.total_cost or Decimal("0")
             if not isinstance(c, Decimal):
                 c = Decimal(str(c))

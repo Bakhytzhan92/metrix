@@ -257,6 +257,11 @@
                 <tbody class="divide-y divide-slate-100">
                   {% for row in sec_block.rows %}
                   {% with item=row.item %}
+                  {% if item.is_subsection_header %}
+                  <tr class="bg-slate-100/90 border-y border-slate-200">
+                    <td colspan="5" class="px-3 py-2 text-center text-xs font-bold uppercase tracking-tight text-slate-900">{{ item.name }}</td>
+                  </tr>
+                  {% else %}
                   <tr class="hover:bg-indigo-50/50 cursor-pointer transition-colors supply-pick-row" data-supply-pick-row>
                     <td class="py-2 pl-3 pr-1 text-center align-middle">
                       <input
@@ -276,6 +281,7 @@
                     <td class="px-2 py-2 text-right tabular-nums text-slate-800 align-top">{{ item.quantity|qty_plain }}</td>
                     <td class="px-2 py-2 text-right tabular-nums text-emerald-800 align-top pr-3">{{ row.purchased_qty|floatformat:4 }}</td>
                   </tr>
+                  {% endif %}
                   {% endwith %}
                   {% empty %}
                   <tr><td colspan="5" class="px-3 py-2 text-xs text-slate-500">В разделе нет позиций.</td></tr>
