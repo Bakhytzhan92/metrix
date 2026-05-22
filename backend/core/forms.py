@@ -39,6 +39,7 @@ from .models import (
     EstimateItem,
     ProjectSchedulePhase,
     Material,
+    MATERIAL_MEASURE_UNIT_CHOICES,
     Stock,
     StockMovement,
     WarehouseInventoryItem,
@@ -706,13 +707,39 @@ class InventoryTransferForm(forms.Form):
 class MaterialCreateForm(forms.ModelForm):
     """Добавление материала в справочник компании."""
 
+    unit = forms.ChoiceField(
+        label="Ед. изм.",
+        choices=[],
+        widget=forms.Select(attrs={"class": _input_class()}),
+    )
+
     class Meta:
         model = Material
         fields = ("name", "unit")
         widgets = {
             "name": forms.TextInput(attrs={"class": _input_class(), "placeholder": "Название"}),
-            "unit": forms.TextInput(attrs={"class": _input_class(), "placeholder": "ед. изм."}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        extras: list[tuple[str, str]] = []
+        u = getattr(self.instance, "unit", None)
+        vals = dict(MATERIAL_MEASURE_UNIT_CHOICES).keys()
+        if u and u not in vals:
+            extras.append((u, str(u)))
+        self.fields["unit"].choices = extras + MATERIAL_MEASURE_UNIT_CHOICES
+
+    def clean_unit(self):
+        from .models import coerce_material_measure_unit
+
+        raw = self.cleaned_data.get("unit") or ""
+        v = coerce_material_measure_unit(raw)
+        if v is not None:
+            return v
+        u = getattr(self.instance, "unit", "") or ""
+        if getattr(self.instance, "pk", None) and raw.strip()[:30] == u.strip()[:30]:
+            return raw.strip()[:30] or "шт"
+        raise ValidationError("Выберите единицу измерения из списка")
 
     def save(self, commit=True):
         self.instance.category = Material.CATEGORY_MATERIAL
@@ -967,7 +994,7 @@ class EquipmentForm(forms.ModelForm):
         if company:
             self.fields["fuel_type"].queryset = FuelType.objects.filter(
                 company=company
-            ).order_by("code")
+            ).exclude(code="gas").order_by("code")
             self.fields["project"].queryset = Project.objects.filter(
                 company=company
             ).order_by("name")

@@ -1667,6 +1667,74 @@ class Warehouse(models.Model):
 # ---------- Новая модель складов: Material, Stock, StockMovement ----------
 
 
+# Единицы измерения для склада материалов (хранится строковый код значения колонки value).
+MATERIAL_MEASURE_UNIT_CHOICES = [
+    ("шт", "шт"),
+    ("тн", "тн"),
+    ("м", "м"),
+    ("м2", "м²"),
+    ("компл.", "компл."),
+    ("м3", "м³"),
+    ("л", "л"),
+    ("т", "т"),
+    ("кг", "кг"),
+    ("км", "км"),
+    ("пог. м", "пог. м"),
+    ("усл. ед.", "усл. ед."),
+    ("упак.", "упак."),
+]
+
+_MATERIAL_MEASURE_ALLOWED = frozenset(c[0] for c in MATERIAL_MEASURE_UNIT_CHOICES)
+
+_MATERIAL_MEASURE_UNIT_ALIASES = {
+    "шт.": "шт",
+    "комплект": "компл.",
+    "компл": "компл.",
+    "м²": "м2",
+    "м 2": "м2",
+    "м³": "м3",
+    "м 3": "м3",
+    "упак": "упак.",
+}
+
+
+def coerce_material_measure_unit(raw: str | None, *, default: str = "шт") -> str | None:
+    """
+    Приводит ввод ед. изм. к каноническому коду из MATERIAL_MEASURE_UNIT_CHOICES.
+    Возвращает None, если значение распознать нельзя.
+    """
+
+    if default not in _MATERIAL_MEASURE_ALLOWED:
+        default = "шт"
+
+    u = "" if raw is None else str(raw).strip()
+    if not u:
+        u = default
+    u = u[:30]
+
+    if u in _MATERIAL_MEASURE_ALLOWED:
+        return u
+    canonical = _MATERIAL_MEASURE_UNIT_ALIASES.get(u)
+    if canonical and canonical in _MATERIAL_MEASURE_ALLOWED:
+        return canonical
+
+    uni = (
+        u.replace("\u00a0", "")
+        .replace(" ", "")
+        .replace("²", "2")
+        .replace("\u00b2", "2")
+        .replace("³", "3")
+        .replace("\u00b3", "3")
+        .lower()
+    )
+    if uni == "м2" and "м2" in _MATERIAL_MEASURE_ALLOWED:
+        return "м2"
+    if uni == "м3":
+        return "м3"
+
+    return None
+
+
 class Material(models.Model):
     """Материал / инструмент / оборудование (справочник компании)."""
 

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 type FuelTypeRow = { id: number; code: string; name: string; unit: string };
-type WarehouseOpt = { id: number; name: string };
 type EquipmentRow = {
   id: number;
   name: string;
@@ -15,8 +14,6 @@ type EquipmentRow = {
   tank_l: string;
   engine_hours: string;
 };
-type ProjectOpt = { id: number; name: string };
-
 type FuelCard = {
   fuel_type_id: number;
   code: string;
@@ -25,7 +22,6 @@ type FuelCard = {
   balance: string;
   avg_price: string;
   month_out: string;
-  warehouse_hint: string;
   last_issue_date: string;
   last_writeoff_date: string;
   low_balance: boolean;
@@ -34,10 +30,10 @@ type FuelCard = {
 type Meta = {
   ok: boolean;
   can_edit: boolean;
-  warehouses: WarehouseOpt[];
+  /** Склад по умолчанию для операций ГСМ в этом проекте */
+  gsm_warehouse: { id: number; name: string } | null;
   fuel_types: FuelTypeRow[];
   equipment: EquipmentRow[];
-  projects: ProjectOpt[];
   fuel_cards?: FuelCard[];
   fuel_alerts?: string[];
   recipient_types: { value: string; label: string }[];
@@ -53,8 +49,6 @@ type StockRow = {
   quantity: string;
   price: string;
   total_value: string;
-  warehouse_id: number;
-  warehouse_name: string;
 };
 
 type HistEntry = {
@@ -65,7 +59,6 @@ type HistEntry = {
   unit: string;
   quantity: string;
   total: string;
-  warehouse_name: string;
   username: string | null;
   comment: string;
   document_number: string;
@@ -147,7 +140,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
   }, []);
 
   const [q, setQ] = useState("");
-  const [wh, setWh] = useState("");
   const [ft, setFt] = useState("");
   const [sort, setSort] = useState("fuel");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
@@ -157,7 +149,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
   const [histTo, setHistTo] = useState("");
   const [histEquip, setHistEquip] = useState("");
   const [histFuel, setHistFuel] = useState("");
-  const [histProj, setHistProj] = useState("");
 
   const [anGroup, setAnGroup] = useState<"project" | "equipment" | "employee" | "contractor">("project");
   const [anFrom, setAnFrom] = useState("");
@@ -191,7 +182,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
   const loadStocks = useCallback(async () => {
     const qs = new URLSearchParams();
     if (q.trim()) qs.set("q", q.trim());
-    if (wh) qs.set("warehouse", wh);
     if (ft) qs.set("fuel_type", ft);
     qs.set("sort", sort);
     qs.set("order", order);
@@ -201,7 +191,7 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
     } catch {
       push("Ошибка остатков ГСМ");
     }
-  }, [base, q, wh, ft, sort, order, push]);
+  }, [base, q, ft, sort, order, push]);
 
   const loadHistory = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -210,14 +200,13 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
     if (histTo) qs.set("date_to", histTo);
     if (histEquip) qs.set("equipment_id", histEquip);
     if (histFuel) qs.set("fuel_type_id", histFuel);
-    if (histProj) qs.set("project_id", histProj);
     try {
       const d = await api<{ ok: boolean; entries: HistEntry[] }>(`${base}/history/?${qs}`);
       if (d.ok) setHistory(d.entries);
     } catch {
       push("Ошибка журнала ГСМ");
     }
-  }, [base, histType, histFrom, histTo, histEquip, histFuel, histProj, push]);
+  }, [base, histType, histFrom, histTo, histEquip, histFuel, push]);
 
   const loadTimeseries = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -303,7 +292,8 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-600">
-        Учёт топлива отдельно от материалов и инвентаря. Остатки по складам проекта.
+        Учёт топлива отдельно от материалов и инвентаря. Остатки по проекту (по всем складам проекта
+        суммируются).
       </p>
 
       <div className="flex flex-wrap gap-1 border-b border-slate-200">
@@ -343,17 +333,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
               />
             </div>
             <div className="min-w-[130px]">
-              <label className="text-xs font-medium text-slate-500">Склад</label>
-              <select className={fieldCls()} value={wh} onChange={(e) => setWh(e.target.value)}>
-                <option value="">Все</option>
-                {meta.warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="min-w-[130px]">
               <label className="text-xs font-medium text-slate-500">Топливо</label>
               <select className={fieldCls()} value={ft} onChange={(e) => setFt(e.target.value)}>
                 <option value="">Все</option>
@@ -371,7 +350,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                 <option value="quantity">Остаток</option>
                 <option value="price">Цена</option>
                 <option value="total">Сумма</option>
-                <option value="warehouse">Склад</option>
               </select>
             </div>
             <div className="min-w-[100px]">
@@ -448,7 +426,7 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                   Справочник проектной техники →
                 </a>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {meta.fuel_cards.map((c) => (
                   <div
                     key={c.fuel_type_id}
@@ -459,7 +437,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-base font-semibold text-slate-900">{c.name}</p>
-                        <p className="text-xs text-slate-500">{c.warehouse_hint || "Склад: —"}</p>
                       </div>
                       {c.low_balance && (
                         <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
@@ -508,7 +485,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                   <th className="px-4 py-3 font-semibold text-slate-700">Ед.</th>
                   <th className="px-4 py-3 font-semibold text-slate-700">Цена</th>
                   <th className="px-4 py-3 font-semibold text-slate-700">Сумма</th>
-                  <th className="px-4 py-3 font-semibold text-slate-700">Склад</th>
                 </tr>
               </thead>
               <tbody>
@@ -521,7 +497,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                     <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800">
                       {r.total_value} ₸
                     </td>
-                    <td className="px-4 py-2.5 text-slate-600">{r.warehouse_name}</td>
                   </tr>
                 ))}
               </tbody>
@@ -587,17 +562,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                 ))}
               </select>
             </div>
-            <div className="min-w-[180px]">
-              <label className="text-xs font-medium text-slate-500">Объект</label>
-              <select className={fieldCls()} value={histProj} onChange={(e) => setHistProj(e.target.value)}>
-                <option value="">Все</option>
-                {meta.projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
             <button
               type="button"
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
@@ -617,7 +581,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                   <th className="px-4 py-2">Сумма</th>
                   <th className="px-4 py-2">Техника</th>
                   <th className="px-4 py-2">Водитель / кому</th>
-                  <th className="px-4 py-2">Склад</th>
                   <th className="px-4 py-2">Пользователь</th>
                   <th className="px-4 py-2">Комментарий</th>
                 </tr>
@@ -638,7 +601,6 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                     <td className="max-w-[140px] px-4 py-2 text-xs text-slate-600">
                       {h.driver_name || h.issued_to_name || "—"}
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-600">{h.warehouse_name}</td>
                     <td className="px-4 py-2 text-xs text-slate-500">{h.username || "—"}</td>
                     <td className="max-w-xs px-4 py-2 text-xs text-slate-500">
                       {h.comment}
@@ -794,6 +756,7 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
       {modal === "issue" && meta.can_edit && (
         <IssueModal
           meta={meta}
+          projectId={projectId}
           onClose={() => setModal(null)}
           onSubmit={async (payload) => {
             const r = await postJson<{ ok: boolean; norm_warning?: string }>(`${base}/issue/`, payload);
@@ -862,7 +825,6 @@ function IncomingModal({
   onError: (e: Error) => void;
 }) {
   const [fuelTypeId, setFuelTypeId] = useState(String(meta.fuel_types[0]?.id || ""));
-  const [warehouseId, setWarehouseId] = useState(String(meta.warehouses[0]?.id || ""));
   const [quantity, setQuantity] = useState("");
   const [price, setPrice] = useState("");
   const [supplier, setSupplier] = useState("");
@@ -881,16 +843,6 @@ function IncomingModal({
               {meta.fuel_types.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name} ({t.unit})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500">Склад</label>
-            <select className={fieldCls()} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-              {meta.warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
                 </option>
               ))}
             </select>
@@ -929,18 +881,23 @@ function IncomingModal({
           <button
             type="button"
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
-            onClick={() =>
+            onClick={() => {
+              const whId = meta.gsm_warehouse?.id;
+              if (whId == null) {
+                onError(new Error("Не настроен склад проекта для ГСМ"));
+                return;
+              }
               onSubmit({
                 fuel_type_id: parseInt(fuelTypeId, 10),
-                warehouse_id: parseInt(warehouseId, 10),
+                warehouse_id: whId,
                 quantity,
                 price,
                 supplier,
                 document_number: docNo,
                 date: dt,
                 comment,
-              }).catch((e: unknown) => onError(e instanceof Error ? e : new Error(String(e))))
-            }
+              }).catch((e: unknown) => onError(e instanceof Error ? e : new Error(String(e))));
+            }}
           >
             Провести
           </button>
@@ -952,11 +909,13 @@ function IncomingModal({
 
 function IssueModal({
   meta,
+  projectId,
   onClose,
   onSubmit,
   onError,
 }: {
   meta: Meta;
+  projectId: number;
   onClose: () => void;
   onSubmit: (p: Record<string, unknown>) => Promise<void>;
   onError: (e: Error) => void;
@@ -964,13 +923,11 @@ function IssueModal({
   const [dt, setDt] = useState(() => new Date().toISOString().slice(0, 10));
   const [recipientType, setRecipientType] = useState(meta.recipient_types[0]?.value || "equipment");
   const [fuelTypeId, setFuelTypeId] = useState(String(meta.fuel_types[0]?.id || ""));
-  const [warehouseId, setWarehouseId] = useState(String(meta.warehouses[0]?.id || ""));
   const [quantity, setQuantity] = useState("");
   const [issuedTo, setIssuedTo] = useState("");
   const [driverName, setDriverName] = useState("");
   const [equipmentId, setEquipmentId] = useState("");
   const [workHours, setWorkHours] = useState("");
-  const [targetProjectId, setTargetProjectId] = useState("");
   const [contractor, setContractor] = useState("");
   const [comment, setComment] = useState("");
   const [price, setPrice] = useState("");
@@ -1056,37 +1013,11 @@ function IssueModal({
           )}
 
           <div>
-            <label className="text-xs font-medium text-slate-500">Объект</label>
-            <select
-              className={fieldCls()}
-              value={targetProjectId}
-              onChange={(e) => setTargetProjectId(e.target.value)}
-            >
-              <option value="">—</option>
-              {meta.projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
             <label className="text-xs font-medium text-slate-500">Вид топлива</label>
             <select className={fieldCls()} value={fuelTypeId} onChange={(e) => setFuelTypeId(e.target.value)}>
               {meta.fuel_types.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500">Склад</label>
-            <select className={fieldCls()} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-              {meta.warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
                 </option>
               ))}
             </select>
@@ -1122,15 +1053,20 @@ function IssueModal({
                 onError(new Error("Выберите технику из справочника"));
                 return;
               }
+              const whId = meta.gsm_warehouse?.id;
+              if (whId == null) {
+                onError(new Error("Не настроен склад проекта для ГСМ"));
+                return;
+              }
               const p: Record<string, unknown> = {
                 fuel_type_id: parseInt(fuelTypeId, 10),
-                warehouse_id: parseInt(warehouseId, 10),
+                warehouse_id: whId,
                 quantity,
                 recipient_type: recipientType,
                 issued_to_name: isEquipRcpt ? "" : issuedTo,
                 driver_name: isEquipRcpt ? driverName : "",
                 equipment_name: "",
-                target_project_id: targetProjectId ? parseInt(targetProjectId, 10) : null,
+                target_project_id: projectId,
                 contractor_name: contractor,
                 date: dt,
                 comment,
@@ -1161,7 +1097,6 @@ function WriteoffModal({
   onError: (e: Error) => void;
 }) {
   const [fuelTypeId, setFuelTypeId] = useState(String(meta.fuel_types[0]?.id || ""));
-  const [warehouseId, setWarehouseId] = useState(String(meta.warehouses[0]?.id || ""));
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState(meta.writeoff_reasons[0]?.value || "machinery");
   const [dt, setDt] = useState(() => new Date().toISOString().slice(0, 10));
@@ -1178,16 +1113,6 @@ function WriteoffModal({
               {meta.fuel_types.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500">Склад</label>
-            <select className={fieldCls()} value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-              {meta.warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
                 </option>
               ))}
             </select>
@@ -1222,16 +1147,21 @@ function WriteoffModal({
           <button
             type="button"
             className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white"
-            onClick={() =>
-              onSubmit({
+            onClick={() => {
+              const whId = meta.gsm_warehouse?.id;
+              if (whId == null) {
+                onError(new Error("Не настроен склад проекта для ГСМ"));
+                return;
+              }
+              void onSubmit({
                 fuel_type_id: parseInt(fuelTypeId, 10),
-                warehouse_id: parseInt(warehouseId, 10),
+                warehouse_id: whId,
                 quantity,
                 writeoff_reason: reason,
                 date: dt,
                 comment,
-              }).catch((e: unknown) => onError(e instanceof Error ? e : new Error(String(e))))
-            }
+              }).catch((e: unknown) => onError(e instanceof Error ? e : new Error(String(e))));
+            }}
           >
             Списать
           </button>

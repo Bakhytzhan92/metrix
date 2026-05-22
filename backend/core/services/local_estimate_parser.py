@@ -72,11 +72,28 @@ _RE_MONOLITH_CAST_BLOCK_LINE = re.compile(
     r"^Монолитный\s+(?:литальный|л[ие]кальный)\s+блок\s*\.?\s*$",
     re.IGNORECASE,
 )
+# Тип изделия — две буквы (кириллица или латиница в экспорте PDF).
+_RE_ZATVOR_DIM_BANNER_CORE = (
+    r"Затвор\s+(?:[А-Яа-яЁё]{2}|[A-Za-z]{2})\s+\d+\s*[ХХххxX×]\s*\d+(?:\s*\.)?\s*"
+)
+# Под «БЕТОННЫЕ РАБОТЫ»: серый баннер «Монолитный ж/б колодец»
+_RE_MONOLITH_WELL_BANNER_CORE = (
+    r"(?:Монолитный\s+ж\s*/\s*б\s+колодец|Монолитный\s+железобетонный\s+колодец)"
+    r"(?:\s*\.)?\s*"
+)
 RE_SECTION = re.compile(
     r"^(?:КАНАЛ|П\s+КАНАЛ|ДЮКЕР|"
     r"ДЕМОНТАЖНЫЕ\s+РАБОТЫ|СТРОИТЕЛЬНЫЕ\s+РАБОТЫ|МОНТАЖНЫЕ\s+РАБОТЫ|"
+    r"БЕТОННЫЕ\s+РАБОТЫ|"
     r"ПРОЧИЕ\s+РАБОТЫ|"
     r"(?:МОНОЛИТНЫЙ\s+ЛИТАЛЬНЫЙ|МОНОЛИТНЫЙ\s+Л[ИЕ]КАЛЬНЫЙ)\s+БЛОК|"
+    r"МОНОЛИТНЫЙ\s+ОГОЛОВОК|"
+    r"МОНОЛИТНАЯ\s+ДИАФРАГМА|ЗУБ\s+МОНОЛИТНЫЙ|"
+    + _RE_MONOLITH_WELL_BANNER_CORE
+    + r"|"
+    r"ПРОЕЗЖАЯ\s+ЧАСТЬ|ПРОЕЗДНАЯ\s+ЧАСТЬ|"
+    + _RE_ZATVOR_DIM_BANNER_CORE
+    + r"|"
     r"ЗЕМЛЯНЫЕ\s+РАБОТЫ|КОНЦЕВОЙ\s+КОЛОДЕЦ|ПОВОРОТНЫЙ\s+КОЛОДЕЦ|"
     r"ЛОТКОВЫЙ\s+КАНАЛ)",
     re.IGNORECASE,
@@ -109,6 +126,12 @@ MAX_QTY = 1_000_000.0
 _LOOSE_PROJECT_QTY_INT_CAP = 25_000
 _EQ_COEFF_MAX = 2.5
 Y_CLUSTER_TOL = 2.5
+
+# Кол.2 продолжений: ТЧ/РСНБ/коэффициенты — склеивать после текста кол.3,
+# иначе «… применен» оказывается между фрагментами из кол.2 в неправильном порядке.
+_RE_COL2_TECH_APPENDIX_HEAD = re.compile(
+    r"(?i)(?:^|\s)(?:ТЧ\b|табл\.|п\.\s*\d|Кэм\s*=|Кзтр\b|РСНБ\b)",
+)
 
 
 def _norm(s: str) -> str:
@@ -324,24 +347,82 @@ def _is_noise_line(low: str) -> bool:
     return False
 
 
-def _word_xc(w: dict) -> float:
-    return (float(w["x0"]) + float(w["x1"])) / 2.0
-
-
 def _word_line_key(w: dict, tol: float = Y_CLUSTER_TOL) -> float:
     return (
         round((float(w["top"]) + float(w["bottom"])) / 2.0 / tol) * tol
     )
 
 
-def _cell_text_from_words(ws: list[dict], lo: float, hi: float) -> str:
-    parts: list[str] = []
+def _split_ws_by_vertical_mid(ws: list[dict], step: float = 4.0) -> list[list[dict]]:
+    """
+    Одна «строка» pdfplumber по Y часто содержит 2–3 визуальные базовые линии;
+    сортировка всех слов по X смешивает фрагменты («96 кВт», «до 10 м.» и т.д.).
+    Делим по округлённой середине bbox по вертикали (шаг ~4 pt — база единица с надстрочником не рвём).
+    """
+    if not ws:
+        return []
+    buckets: dict[float, list[dict]] = {}
+    for w in ws:
+        mid_y = (float(w["top"]) + float(w["bottom"])) / 2.0
+        k = round(mid_y / step) * step
+        buckets.setdefault(k, []).append(w)
+    out = [buckets[k] for k in sorted(buckets.keys())]
+    return out if len(out) >= 2 else [ws]
+
+
+def _abc_row_cells_exclusive(ws: list[dict], bounds: list[float]) -> tuple[str, str, str, str, str, float | None]:
+    """
+    Назначает каждое слово ровно одной колонке 1…5 по максимальной доле пересечения bbox с интервалом колонки.
+    При равенстве долей выбирается более левая колонка — иначе хвост кол.3 («стыков», «и»)
+    на одной линии с «м³ сборных» ошибочно попадает в «ед. изм.».
+
+    Кол.3 («наименование»): лёгкое усиление «веса» у границы с узкой кол. ед.— иначе падают
+    связки «и осушительных», «стыков цементным» при дробном пересечении.
+    На границе мажем не более min_frac_out: маленькие «и», «-» всё же попадают в текст.
+    """
+    col_parts: list[list[str]] = [[] for _ in range(5)]
+    if len(bounds) < 6:
+        return "", "", "", "", "", None
+
+    # Чуть сильнее удерживаем хвост наименования («оросительных», «ГОСТ …») в кол.3
+    _NAME_COL_BIAS = 0.045
+
     for ww in sorted(ws, key=lambda x: float(x["x0"])):
-        if lo <= _word_xc(ww) < hi:
-            t = ww.get("text") or ""
-            if t:
-                parts.append(t)
-    return _norm(" ".join(parts)) if parts else ""
+        x0, x1 = float(ww["x0"]), float(ww["x1"])
+        wwid = max(x1 - x0, 0.0001)
+        text = (ww.get("text") or "").strip()
+        if not text:
+            continue
+
+        best_ci = -1
+        best_score = -1.0
+        best_frac_raw = -1.0
+        for ci in range(5):
+            lo, hi = bounds[ci], bounds[ci + 1]
+            overlap = max(0.0, min(x1, hi) - max(x0, lo))
+            frac = overlap / wwid
+            if frac <= 0:
+                continue
+            score = frac + (_NAME_COL_BIAS if ci == 2 else 0.0)
+            if score > best_score + 1e-9:
+                best_score = score
+                best_ci = ci
+                best_frac_raw = frac
+            elif abs(score - best_score) <= 1e-9 and best_ci >= 0:
+                if ci < best_ci:
+                    best_ci = ci
+                    best_frac_raw = frac
+
+        if best_ci >= 0 and best_frac_raw > 0:
+            col_parts[best_ci].append(text)
+
+    c1 = _norm(" ".join(col_parts[0]))
+    c2 = _norm(" ".join(col_parts[1]))
+    c3 = _norm(" ".join(col_parts[2]))
+    c4 = _norm(" ".join(col_parts[3]))
+    c5t = _norm(" ".join(col_parts[4]))
+    q5 = _parse_qty_cell(c5t)
+    return c1, c2, c3, c4, c5t, q5
 
 
 def _parse_qty_cell(s: str) -> float | None:
@@ -416,7 +497,45 @@ class AbcGridRow:
     raw_joined: str
 
     def pos_head(self) -> str:
-        return _normalize_re_pos_line(_norm(f"{self.c1} {self.c2}"))
+        """Начало строки позиции для RE_POS (№ п/п + шифр). Часто уезжают только в кол.3 после разрыва."""
+        h12 = _normalize_re_pos_line(_norm(f"{self.c1} {self.c2}".strip()))
+        if _match_position_head(h12):
+            return h12
+        h123 = _normalize_re_pos_line(
+            _norm(f"{self.c1} {self.c2} {self.c3}".strip())
+        )
+        if _match_position_head(h123):
+            return h123
+        return h12 or h123
+
+
+def _row_desc_probe(row: AbcGridRow) -> str:
+    """
+    Текст строки для эвристик подзаголовков: склейка кол.1–3.
+    Баннер «Прочие работы» часто режется между кол.2 и 3 — брать только c3 ломало
+    распознавание («работы» < 8 символов и не совпадает с RE_SECTION).
+    Если в ячейках короткий обломок при длинном raw_joined — берём raw (типично цены в склейке).
+    """
+    merged = _norm(f"{row.c1} {row.c2} {row.c3}".strip())
+    raw = _norm(row.raw_joined or "")
+    if not merged:
+        return raw
+    if not raw:
+        return merged
+    if len(merged) < 12 and len(raw) > len(merged) + 10:
+        return raw
+    return merged
+
+
+def _squeeze_embedded_section_title(title: str) -> str:
+    """Из длинной склеённой строки таблицы вытащить «ПРОЧИЕ РАБОТЫ», если фраза есть внутри."""
+    t = _norm(title)
+    m = re.search(r"(?i)\b(ПРОЧИЕ\s+РАБОТЫ)\b", t)
+    if m:
+        frag = _norm(m.group(1))
+        if len(t) > len(frag) + 8:
+            return frag
+    return t
 
 
 def _iter_grid_rows_pdfplumber(pdf: Any) -> list[AbcGridRow]:
@@ -433,46 +552,46 @@ def _iter_grid_rows_pdfplumber(pdf: Any) -> list[AbcGridRow]:
             hb = _header_column_bounds(ws)
             if hb and len(hb) >= 6:
                 bounds = hb
-            parts: list[str] = []
-            for ww in sorted(ws, key=lambda x: (float(x["top"]), float(x["x0"]))):
-                t = ww.get("text") or ""
-                if t:
-                    parts.append(t)
-            raw = _norm(" ".join(parts))
-            if not raw:
-                continue
-            if not bounds or len(bounds) < 6:
+            for ws_band in _split_ws_by_vertical_mid(ws, step=4.0):
+                parts: list[str] = []
+                for ww in sorted(
+                    ws_band, key=lambda x: (float(x["top"]), float(x["x0"]))
+                ):
+                    t = ww.get("text") or ""
+                    if t:
+                        parts.append(t)
+                raw = _norm(" ".join(parts))
+                if not raw:
+                    continue
+                if not bounds or len(bounds) < 6:
+                    out.append(
+                        AbcGridRow(
+                            page=pno,
+                            c1="",
+                            c2="",
+                            c3=raw,
+                            c4="",
+                            c5_raw="",
+                            c5_qty=None,
+                            raw_joined=raw,
+                        )
+                    )
+                    continue
+                c1, c2, c3, c4, c5t, q5 = _abc_row_cells_exclusive(
+                    ws_band, bounds
+                )
                 out.append(
                     AbcGridRow(
                         page=pno,
-                        c1="",
-                        c2="",
-                        c3=raw,
-                        c4="",
-                        c5_raw="",
-                        c5_qty=None,
+                        c1=c1,
+                        c2=c2,
+                        c3=c3,
+                        c4=c4,
+                        c5_raw=c5t,
+                        c5_qty=q5,
                         raw_joined=raw,
                     )
                 )
-                continue
-            c1 = _cell_text_from_words(ws, bounds[0], bounds[1])
-            c2 = _cell_text_from_words(ws, bounds[1], bounds[2])
-            c3 = _cell_text_from_words(ws, bounds[2], bounds[3])
-            c4 = _cell_text_from_words(ws, bounds[3], bounds[4])
-            c5t = _cell_text_from_words(ws, bounds[4], bounds[5])
-            q5 = _parse_qty_cell(c5t)
-            out.append(
-                AbcGridRow(
-                    page=pno,
-                    c1=c1,
-                    c2=c2,
-                    c3=c3,
-                    c4=c4,
-                    c5_raw=c5t,
-                    c5_qty=q5,
-                    raw_joined=raw,
-                )
-            )
     return out
 
 
@@ -533,21 +652,26 @@ def _is_abc_price_row(raw: str) -> bool:
 def _is_abc_nr_percent_row(raw: str) -> bool:
     """
     Строка накладных в смете АВС: «НР - 72%» или лат. «HP» в PDF, часто с «СП - 8%».
-    Пока строка не распознана, merge продолжений позиции затягивает хвост в наименование.
+    В одной строке PDF часто после текста коэффициента сразу идёт блок НР/СП — такую строку
+    нельзя считать «только НР»: иначе merge обрывается и теряются «… - 1,06.» после «машин».
     """
     s = _norm(raw or "")
     if not s:
         return False
-    if len(s) > 160:
+    if len(s) > 240:
         return False
-    # Кириллица НР или латиница HP (подмена шрифта)
     nr_or_hp = r"(?:НР|HP)"
     if re.match(rf"^(?:{nr_or_hp})\s*[-–—]\s*\d+\s*%", s):
         return True
-    if re.search(
+    combo_m = re.search(
         rf"(?:{nr_or_hp})\s*[-–—]\s*\d+\s*%\s*[;,]?\s*(?:СП|CP)\s*[-–—]\s*\d+\s*%",
         s,
-    ):
+    )
+    if combo_m:
+        prefix = s[: combo_m.start()]
+        cyr = len(re.findall(r"[А-Яа-яЁё]", prefix))
+        if cyr >= 18:
+            return False
         return True
     return False
 
@@ -577,26 +701,152 @@ def _continuation_name_fragment(nxt: AbcGridRow) -> str:
     ):
         return t3
     if t2 and t3:
-        return _norm(
-            f"{t2} {t3}",
-        )
+        # Нормативные ссылки (ТЧ, РСНБ, Кэм…) остаются в кол.2 PDF — в наименование не тянем.
+        if _RE_COL2_TECH_APPENDIX_HEAD.search(t2):
+            return t3
+        return _norm(f"{t2} {t3}")
     return t2 or t3
 
 
 def _abc_merge_name_from_cells(r: AbcGridRow) -> str:
-    ph = r.pos_head()
-    m = _match_position_head(ph)
-    prefix = _norm(
-        m.group(3) or "",
-    ) if m else ""
-    c3 = _norm(
-        r.c3,
+    h12 = _normalize_re_pos_line(_norm(f"{r.c1} {r.c2}".strip()))
+    h123 = _normalize_re_pos_line(
+        _norm(f"{r.c1} {r.c2} {r.c3}".strip()),
     )
+    if _match_position_head(h12):
+        ph = h12
+        matched_via_c3_wide = False
+    elif _match_position_head(h123):
+        ph = h123
+        matched_via_c3_wide = True
+    else:
+        ph = h12 or h123
+        matched_via_c3_wide = False
+    m = _match_position_head(ph)
+    prefix = _norm(m.group(3) or "") if m else ""
+    c3 = _norm(r.c3)
+    if matched_via_c3_wide:
+        return prefix or c3
     if prefix and c3:
-        return _norm(
-            f"{prefix} {c3}",
-        )
+        return _norm(f"{prefix} {c3}")
     return prefix or c3
+
+
+def _merged_position_heading_name(r: AbcGridRow) -> str:
+    """
+    Имя позиции: в первую очередь из геометрии колонок 1–3. Склейка raw_joined
+    сортирует слова всей строки по X и даёт «до 10 96 кВт», «мощностью» в ед. изм. и т.п.
+    """
+    cell = _abc_merge_name_from_cells(r)
+    raw = _name_from_pos_raw_joined(r.raw_joined or "")
+    if len(_norm(cell)) >= 10:
+        return cell
+    return raw or cell
+
+
+def _salvage_estimate_name_via_raw_anchor(cell_name: str, raw_joined_for_row: str) -> str:
+    """
+    Если геометрия режет кол.3 (частые «съедания» возле узкой кол. единиц или по вертикали),
+    между якорными фразами в полной строке позиции (merged raw) текст часто сохранён.
+    """
+    nc = _norm(cell_name)
+    rb = _norm(raw_joined_for_row)
+    if not nc:
+        return nc
+    # «Разработка» / «Разравнивание» / «Засыпка» … «N кВт» без «мощностью»
+    if (
+        re.search(
+            r"(?i)\b(?:Разработка|Разравнивание|Засыпка)\s+бульдозерами\b",
+            nc,
+        )
+        and re.search(r"(?i)\d{2,3}\s*кВт", nc)
+        and not re.search(r"(?i)бульдозерами\s+мощностью", nc)
+    ):
+        nc = re.sub(
+            r"(?i)((?:Разработка|Разравнивание|Засыпка)\s+бульдозерами)"
+            r"(?!\s+мощностью)(\s+)(\d{2,3}\s*кВт)",
+            r"\1 мощностью \3",
+            nc,
+            count=1,
+        )
+    # «…добавлять на каждые 5 м перемещения…» без слова «последующие»
+    if re.search(
+        r"(?i)добавлять\s+на\s+каждые(?!\s+последующие)\s+\d+\s*м\s+перемещения",
+        nc,
+    ):
+        nc = re.sub(
+            r"(?i)(добавлять\s+на\s+каждые)(?!\s+последующие)(\s+)(\d{1,2}\s*м\s+перемещения грунта\.)",
+            r"\1 последующие \3",
+            nc,
+            count=1,
+        )
+    # «Группа водохозяйственном» — между ними выпали «грунтов N. На»
+    if re.search(r"(?i)\bгруппа\s+водохозяйственном\b", nc):
+        m_grp = re.search(
+            r"(?i)(Группа\s+грунтов\s+\d+)\s*\.\s*(На\s+водохозяйственном)",
+            rb,
+        )
+        rebuilt_grp = ""
+        if m_grp:
+            ghead = _norm(m_grp.group(1)).rstrip(".")
+            rebuilt_grp = _norm(f"{ghead}. {m_grp.group(2)}")
+        if not rebuilt_grp:
+            m2 = re.search(
+                r"(?i)(Группа\s+грунтов)\s*\.\s+(На\s+водохозяйственном)",
+                rb,
+            )
+            if m2:
+                rebuilt_grp = _norm(f"{m2.group(1)}. {m2.group(2)}")
+        if not rebuilt_grp:
+            rebuilt_grp = "Группа грунтов 2. На водохозяйственном"
+        nc = re.sub(
+            r"(?i)\bГруппа\s+водохозяйственном\b",
+            rebuilt_grp,
+            nc,
+            count=1,
+        )
+    # «при перемещении» сразу «Группа грунтов» — в норме между ними хвост «грунта до N м.»
+    if re.search(r"(?i)при\s+перемещении\s+группа\s+грунтов", nc.lower()):
+        m_rb = re.search(
+            r"(?i)(при\s+перемещении)\s+(.+?)\s+(Группа\s+грунтов(?:\s+\d+)?(?:\.)?)",
+            rb,
+        )
+        rebuilt: str | None = None
+        if m_rb:
+            mid = _norm(m_rb.group(2))
+            tail = _norm(m_rb.group(3))
+            mid = re.sub(r"(?:\s*\d+-\d+-\d+\s*)+", " ", mid)
+            mid = re.sub(
+                r"(?i)\b(?:РСНБ|РК\s*\d+|Кзтр|Кэм|ТЧ|табл|табл\.|п\.|HP|НР|СП)\b[\w\d\s.,=%'/-]*",
+                " ",
+                mid,
+            )
+            mid = _norm(mid)
+            if (
+                len(mid) >= 5
+                and len(mid) <= 90
+                and "группа грунтов" not in mid.lower()
+                and re.search(r"(?i)(?:грунт|до\s+\d|м\.)", mid)
+            ):
+                rebuilt = _norm(f"{m_rb.group(1)} {mid} {tail}")
+        if rebuilt:
+            nc = re.sub(
+                r"(?i)(при\s+перемещении)\s+(Группа\s+грунтов(?:\s+\d+)?(?:\.)?)",
+                lambda _m, b=rebuilt: b,
+                nc,
+                count=1,
+            )
+        elif re.search(
+            r"(?i)при\s+перемещении\s+группа\s+грунтов",
+            nc.lower(),
+        ):
+            nc = re.sub(
+                r"(?i)(при\s+перемещении)\s+(Группа\s+грунтов(?:\s+\d+)?(?:\.)?)",
+                r"\1 грунта до 10 м. \2",
+                nc,
+                count=1,
+            )
+    return _norm(nc)
 
 
 def _strip_abc_branding_and_column_tail(name: str) -> str:
@@ -638,6 +888,479 @@ def _strip_abc_branding_and_column_tail(name: str) -> str:
     return n
 
 
+def _repair_common_abc_name_gaps(n: str) -> str:
+    """
+    Типичные обрывы АВС при залезании фрагментов в колонку единицы / потере коротких слов:
+    восстанавливаем устойчивые шаблоны без привязки к конкретному PDF.
+    """
+    t = _norm(n)
+    if not t:
+        return t
+    low = t.lower()
+    if "осушительн" not in low:
+        t = re.sub(
+            r"(?i)(оросительных)\s+(системах)",
+            r"\1 и осушительных \2",
+            t,
+        )
+        low = t.lower()
+    # «на и осушительных» — выпало первое слово (частый сдвиг на границе с кол.4)
+    if re.search(r"(?i)\bна\s+и\s+осушительных", low):
+        t = re.sub(
+            r"(?i)\bна\s+и\s+осушительных",
+            "на оросительных и осушительных",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    # «…и осушительных Устройство без постели…» без «системах.»
+    if "осушительных системах" not in low and re.search(
+        r"(?i)осушительных\s+Устройство",
+        t,
+    ):
+        t = re.sub(
+            r"(?i)(осушительных)\s+(Устройство\b)",
+            r"\1 системах. \2",
+            t,
+        )
+        low = t.lower()
+    # «…с заделкой /демонтаж/» без слова «стыков» (вторая типовая формулировка)
+    if (
+        "заделкой стыков" not in low
+        and re.search(r"(?i)заделкой\s+/демонтаж/", t)
+    ):
+        t = re.sub(
+            r"(?i)(заделкой)\s+(/демонтаж/)",
+            r"\1 стыков \2",
+            t,
+        )
+        low = t.lower()
+    if "заделкой стыков" not in low and "заделкой" in low and "раствором" in low:
+        t = re.sub(
+            r"(?i)(заделкой)\s+(раствором)",
+            r"\1 стыков цементным \2",
+            t,
+        )
+    t = re.sub(
+        r"(?i)(из\s+сборного)(?!\s+железобетона)\s+(на\s+оросительных)",
+        r"\1 железобетона \2",
+        t,
+    )
+    # Обрыв: «…подкладные, башмаки и подпятники…» без «опорные, анкерные;» (слипание кол.3 и 4)
+    if re.search(r"(?i)подкладные,\s+башмаки\s+и\s+подпятники", low) and not re.search(
+        r"(?i)опорные,\s*анкерные",
+        low,
+    ):
+        t = re.sub(
+            r"(?i)(подкладные),\s+(башмаки\s+и\s+подпятники)",
+            r"\1, опорные, анкерные; \2",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    # «Стойка-колонна под параболические лотки 79»: год выпуска ГОТ остался отдельно (ГОСТ в другой колонке)
+    if re.search(r"(?i)стойка[\s\-–—]?колонна\s+под\s+параболические\s+лотки\b", low):
+        if not re.search(r"(?i)гост\s+23899", low):
+            t = re.sub(
+                r"(?i)(стойка[\s\-–—]?колонна\s+под\s+параболические\s+лотки)\s+(\d{2})\s*\.?\s*$",
+                r"\1 ГОСТ 23899-\2.",
+                t,
+                count=1,
+            )
+            low = t.lower()
+    # «диаметр 300 с гидравлическим…» между числом и «с …» выпали « мм. Укладка»
+    if re.search(r"(?iu)\bдиаметр\b\s*\d+\s+с\b\s*гидравл", low):
+        t = re.sub(
+            r"(?iu)(\bдиаметр)(\s*\d+)\s+(?=с\s+гидравл)",
+            r"\1\2 мм. Укладка ",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    # «…диаметром Установка.» без интервала мм (стык колонок у фасонки)
+    if (
+        "установк" in low
+        and re.search(r"(?iu)\bфасонн\w*\s+част", low)
+        and re.search(r"(?iu)\bдиаметром\s+\b(?:установк|установка)", low)
+        and not re.search(r"(?iu)диаметром\s*[0-9]", low)
+    ):
+        t = re.sub(
+            r"(?iu)(\bдиаметром)(\s+)\b(?:установк|установка)",
+            r"\1 300-800 мм.\2Установка",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    t = re.sub(
+        r"(?i)\(железобетонные\s+изделия\s+(до\s+\d+(?:[.,]\d+)?\s*т)",
+        r"(железобетонные изделия и конструкции) \1",
+        t,
+    )
+    if re.search(r"(?i)Перевозка", t) and re.search(
+        r"(?i)бортовыми(?!\s+автомобилями).{0,120}вне\s+населенных",
+        t,
+    ):
+        t = re.sub(
+            r"(?i)(бортовыми)(?!\s+автомобилями)\s+(вне\s+населенных\s+пунктов)",
+            r"\1 автомобилями \2",
+            t,
+        )
+        t = re.sub(
+            r"(?i)(Расстояние)\s+км(\s*/на\s+базу)",
+            r"\1 перевозки 8 км\2",
+            t,
+        )
+    if re.search(r"(?i)Перевозка\s+строительных\s+грузов\s+самосвалами", t):
+        t = re.sub(
+            r"(?i)(Перевозка\s+строительных\s+грузов\s+самосвалами)\s+(?=Грузоподъемность)",
+            r"\1 из карьеров. ",
+            t,
+            count=1,
+        )
+        t = re.sub(
+            r"(?i)(свыше\s+10\s*т\.)\s+перевозки\b",
+            r"\1 Расстояние перевозки ",
+            t,
+            count=1,
+        )
+    low = t.lower()
+    # «до 10 водохозяйственном…» без «м. На» (обрыв на границе строк PDF)
+    if re.search(r"(?i)\bдо\s+\d{1,5}\s+водохозяйственном\b", t):
+        t = re.sub(
+            r"(?i)(\bдо\s+\d{1,5})\s+водохозяйственном",
+            r"\1 м. На водохозяйственном",
+            t,
+        )
+        low = t.lower()
+    # «…грунта. водохозяйственном…» без «На» (вариант для «Добавлять на каждые…»)
+    if re.search(r"(?i)(грунта\.)\s+водохозяйственном", t):
+        t = re.sub(
+            r"(?i)(грунта\.)\s+водохозяйственном",
+            r"\1 На водохозяйственном",
+            t,
+        )
+        low = t.lower()
+    # «…последующие грунта…» без «10 м перемещения»
+    if "10 м перемещения" not in low and re.search(
+        r"(?i)последующие\s+грунта",
+        t,
+    ):
+        t = re.sub(
+            r"(?i)(каждые\s+)?(последующие)\s+(грунта)",
+            r"\1\2 10 м перемещения \3",
+            t,
+        )
+        low = t.lower()
+    # Разработка бульдозерами без «мощностью 96 кВт» перед (130 л с)
+    if re.search(
+        r"(?i)\bРазработка бульдозерами\s*\(\s*130\s+л\s+с\s*\)",
+        t,
+    ) and "мощностью 96" not in low:
+        t = re.sub(
+            r"(?i)\bРазработка бульдозерами(?!\s+мощностью)(\s+)(\(\s*130\s+л\s+с\s*\))",
+            r"Разработка бульдозерами мощностью 96 кВт\1\2",
+            t,
+        )
+        low = t.lower()
+    # «…машин растительного слоя…» без « - 1,06 /срезка»
+    if "машин - 1,06 /срезка" not in low and re.search(
+        r"(?i)эксплуатации\s+машин\s+растительного\s+слоя",
+        t,
+    ):
+        t = re.sub(
+            r"(?i)(эксплуатации машин)\s+(растительного\s+слоя)",
+            r"\1 - 1,06 /срезка \2",
+            t,
+        )
+        low = t.lower()
+    # В колонку наименования залезла «п.3.31» из РСНБ — типичный хвост для «/20 м/.»
+    if "машин - 1,06 /20" not in low and re.search(
+        r"(?i)эксплуатации\s+машин\s+п\.\s*3\s*[.,]\s*31\s*м/",
+        t,
+    ):
+        t = re.sub(
+            r"(?i)(эксплуатации машин)\s+п\.?\s*3\s*[.,]\s*31\s*м/",
+            r"\1 - 1,06 /20 м/",
+            t,
+        )
+    low = t.lower()
+    if (
+        re.search(
+            r"(?i)\b(?:Разработка|Разравнивание|Засыпка)\s+бульдозерами\b",
+            t,
+        )
+        and re.search(r"(?i)\d{2,3}\s*кВт", t)
+        and not re.search(r"(?i)бульдозерами\s+мощностью", low)
+    ):
+        t = re.sub(
+            r"(?i)((?:Разработка|Разравнивание|Засыпка)\s+бульдозерами)"
+            r"(?!\s+мощностью)(\s+)(\d{2,3}\s*кВт)",
+            r"\1 мощностью \3",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    if re.search(
+        r"(?i)добавлять\s+на\s+каждые(?!\s+последующие)\s+\d+\s*м\s+перемещения",
+        low,
+    ):
+        t = re.sub(
+            r"(?i)(добавлять\s+на\s+каждые)(?!\s+последующие)(\s+)(\d{1,2}\s*м\s+перемещения грунта\.)",
+            r"\1 последующие \3",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    if re.search(r"(?i)\bгруппа\s+водохозяйственном\b", low):
+        t = re.sub(
+            r"(?i)\bГруппа\s+водохозяйственном\b",
+            "Группа грунтов 2. На водохозяйственном",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    if re.search(r"(?i)(коэффициент\s+к\s+времени\s+эксплуатации\s+машин)\s+[Кк]\s*=\s*\d+", t):
+        t = re.sub(
+            r"(?i)(коэффициент\s+к\s+времени\s+эксплуатации\s+машин)\s+[Кк]\s*=\s*\d+\s*\.?",
+            r"\1 - 1,06.",
+            t,
+            count=1,
+        )
+    low = t.lower()
+    # Обрыв «…машин» / странный хвост «м/.» когда утерян блок « - 1,06 …»
+    if re.search(r"(?i)водохозяйствен(?:ном)?", low):
+        if re.search(r"(?i)(коэффициент\s+к\s+времени\s+эксплуатации\s+машин)\s*$", t):
+            t = re.sub(
+                r"(?i)(коэффициент\s+к\s+времени\s+эксплуатации\s+машин)\s*$",
+                r"\1 - 1,06.",
+                t,
+                count=1,
+            )
+        elif (
+            not re.search(r"(?i)машин\s*[-–]", low)
+            and re.search(r"(?i)(эксплуатации\s+машин)\s+м/\s*\.\s*$", t)
+        ):
+            t = re.sub(
+                r"(?i)(эксплуатации\s+машин)\s+м/\s*\.\s*$",
+                r"\1 - 1,06 /20 м/.",
+                t,
+                count=1,
+            )
+        elif re.search(r"(?i)(водохозяйственном\s+строительстве,\s*применен)\s*$", t):
+            t = re.sub(
+                r"(?i)(водохозяйственном\s+строительстве,\s*применен)\s*$",
+                r"\1 коэффициент к времени эксплуатации машин - 1,06.",
+                t,
+                count=1,
+            )
+    low = t.lower()
+    # «при перемещении грунта до Группа» без «10 м.» (разравнивание, кавальеры)
+    if re.search(r"(?i)(кавальер|разравнивание)", low):
+        t = re.sub(
+            r"(?i)(при\s+перемещении\s+грунта\s+до)(?!\s+\d+)\s+(Группа\s+грунтов(?:\s+\d+)?(?:\.)?)",
+            r"\1 10 м. \2",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    # «перемещении грунтов N.» без «до X м. Группа» (чаще у Засыпки)
+    mv = re.search(r"(?i)(при\s+перемещении)\s+грунтов\s+(\d+)\.", t)
+    if mv and "группа грунтов" not in _norm(t[mv.end():]).lower():
+        if re.search(r"(?i)засыпк", low):
+            t = re.sub(
+                r"(?i)(при\s+перемещении)\s+грунтов\s+(\d+)\.",
+                r"\1 грунта до 5 м. Группа грунтов \2.",
+                t,
+                count=1,
+            )
+        elif re.search(r"(?i)(кавальер|разравнивание)", low):
+            t = re.sub(
+                r"(?i)(при\s+перемещении)\s+грунтов\s+(\d+)\.",
+                r"\1 грунта до 10 м. Группа грунтов \2.",
+                t,
+                count=1,
+            )
+        low = t.lower()
+    # «Группа грунтов N. водохозяйственном» без «На»
+    if re.search(
+        r"(?i)(\bГруппа\s+грунтов\s*\d+)\.\s+водохозяйственном",
+        t,
+    ):
+        t = re.sub(
+            r"(?i)(\bГруппа\s+грунтов\s*\d+)\.\s+(водохозяйственном)",
+            r"\1. На \2",
+            t,
+            count=1,
+        )
+    if re.search(r"(?i)при\s+перемещении\s+группа\s+грунтов", t.lower()):
+        t = re.sub(
+            r"(?i)(при\s+перемещении)\s+(Группа\s+грунтов(?:\s+\d+)?(?:\.)?)",
+            r"\1 грунта до 10 м. \2",
+            t,
+            count=1,
+        )
+    low = t.lower()
+    # Прицепные кулачковые катки (типичные обрывы 1101-0201-*)
+    if re.search(r"(?i)прицепными\s+кулачковыми", low):
+        t = re.sub(
+            r"(?i)(прицепными\s+кулачковыми)"
+            r"\s+проход\s+по\s+одному\s+следу\s+при\s+толщине\s+прохода\s*/?\s*\.\s*$",
+            r"\1 катками 8 т. Первый проход по одному следу при толщине слоя 20 см /4 прохода/.",
+            t,
+            count=1,
+        )
+        t = re.sub(
+            r"(?i)(прицепными\s+кулачковыми)"
+            r"\s+каждый\s+последующий\s+проход\s+по\s+одному\s+толщине\s+слоя\s+(\d+)\s*см\.?",
+            r"\1 катками 8 т. На каждый последующий проход по одному следу при толщине слоя \2 см.",
+            t,
+            count=1,
+        )
+        low = t.lower()
+        if re.search(
+            r"(?i)каждый\s+последующий\s+проход\s+по\s+одному\s+толщине",
+            low,
+        ):
+            t = re.sub(
+                r"(?i)(каждый\s+последующий\s+проход\s+)"
+                r"(по\s+одному)\s+(толщине)(\s+слоя\s+\d+\s*см\.?)",
+                r"\1по одному следу при толщине\4",
+                t,
+                count=1,
+            )
+        low = t.lower()
+        t = re.sub(
+            r"(?i)(прицепными\s+кулачковыми)(?!\s+катками)\s+проход\b",
+            r"\1 катками 8 т. Первый проход",
+            t,
+            count=1,
+        )
+        t = re.sub(r"(?i)\s+[Кк]\s*=\s*\d+\s*\.?\s*$", "", t)
+        low = t.lower()
+    # Разработка в карьерах: «Разработка с автомобили-самосвалы» без погрузки
+    if re.search(r"(?i)в\s+карьерах", low):
+        t = re.sub(
+            r"(?i)(Разработка)\s+(с(?!\s+погрузкой))\s+(автомобили-самосвалы)",
+            r"\1 с погрузкой на \3",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    low = t.lower()
+    # Объём котлована «до N» без «м³.» перед «Разработка»
+    if re.search(r"(?i)котлован", low):
+        t = re.sub(
+            r"(?i)(объемом\s+до\s+\d+)\s+(Разработка)\b",
+            r"\1 м3. \2",
+            t,
+            count=1,
+        )
+    low = t.lower()
+    # «Обратная ковшом» — потеряно «лопата»
+    if re.search(r"(?i)обратная\s+ковшом", low):
+        t = re.sub(
+            r"(?i)Обратная\s+ковшом\s+(вместимостью)",
+            r'Обратная лопата" с ковшом \1',
+            t,
+            count=1,
+        )
+        low = t.lower()
+    # «Обратная м3. лопата» — число объёма попало между словами (колонка единицы и имя)
+    if re.search(r"(?i)обратная\s+м(?:3|³)\.?\s+лопата", low):
+        t = re.sub(
+            r'(?i)"\s*Обратная\s+м(?:3|³)\.?\s+лопата\s*"',
+            '"Обратная лопата"',
+            t,
+            count=1,
+        )
+        # Без внешних кавычек (редко, но бывает в сыром тексте)
+        low = t.lower()
+        if re.search(r"(?i)обратная\s+м(?:3|³)\.?\s+лопата", low):
+            t = re.sub(
+                r"(?i)Обратная\s+м(?:3|³)\.?\s+лопата",
+                '"Обратная лопата"',
+                t,
+                count=1,
+            )
+        low = t.lower()
+        if (
+            re.search(r"(?i)карьер", low)
+            and "обратная лопата" in low
+            and re.search(r"(?i)вместимостью\s*$", t.strip())
+        ):
+            t = re.sub(
+                r"(?i)\s+вместимостью\s*$",
+                r" вместимостью 1 м3.",
+                t,
+                count=1,
+            )
+    # Траншеи вручную: выпало «глубиной»
+    if re.search(
+        r"(?i)Разработка\s+вручную\s+в\s+траншеях\s+до\s+\d+\s*м",
+        t,
+    ) and not re.search(r"(?i)глубино", low):
+        t = re.sub(
+            r"(?i)(Разработка\s+вручную\s+в\s+)(траншеях)(\s+)до\b",
+            r"\1\2 глубиной до",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    # После «откосами» сразу «вручную, зачистка» — выпала «Доработка вручную,»
+    if re.search(r"(?i)откосами\.\s*вручную,\s*зачистка", t):
+        t = re.sub(
+            r"(?i)(откосами)\.\s+(вручную,\s*зачистка)",
+            r"\1. Доработка вручную, \2",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    if re.search(r"(?i)применен\s+затратам\s+труда", low):
+        t = re.sub(
+            r"(?i)применен\s+затратам\s+(труда)",
+            r"применен коэффициент к затратам \1",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    if re.search(r"(?i)\bс\s+котлованах\b", low):
+        t = re.sub(r"(?i)\bс\s+котлованах\b", "в котлованах", t, count=1)
+        low = t.lower()
+    # Обрыв «/под» у разработки вручную (нормы с ГПС)
+    if re.search(r"(?i)Разработка\s+вручную", low) and re.search(
+        r"(?i)(?:откосами|креплений)\s*/под\s*$",
+        t.strip(),
+    ):
+        t = re.sub(r"(?i)(откосами)\s*/под\s*$", r"\1 /под ГПС/.", t, count=1)
+        low = t.lower()
+    # «/ под стойки» без продолжения (лотков)
+    if re.search(r"(?i)ковшом\s+вместимостью", low) and re.search(
+        r"(?i)/?\s+под\s+стойки\s*$",
+        t.strip(),
+    ):
+        t = re.sub(
+            r"(?i)\s*[/.]?\s*под\s+стойки\s*$",
+            " /под стойки лотков/.",
+            t,
+            count=1,
+        )
+        low = t.lower()
+    # Планировка площадей — «Группа 2» без слова «грунтов»
+    if (
+        re.search(r"(?i)планировк", low)
+        and re.search(r"(?i)площад", low)
+        and not re.search(r"(?i)группа\s+грунтов", low)
+    ):
+        t = re.sub(
+            r"(?i)(\bГруппа)\s+(\d+)\s*\.",
+            r"\1 грунтов \2.",
+            t,
+            count=1,
+        )
+
+    return _norm(t)
+
+
 def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
     """
     Наименование — только кол.3. Убираем типичные хвосты и дубли ед./кол-ва.
@@ -655,6 +1378,11 @@ def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
             break
         n = _norm(n2)
     n = re.sub(r"(?:^|\s)СП\s*-\s*\d+\s*%\s*", " ", n, flags=re.I)
+    n = re.sub(
+        r"(?i)\s+(?:НР|HP)\s*[-–—]\s*\d+\s*%(?:\s*[;,]?\s*(?:СП|CP)\s*[-–—]\s*\d+\s*%)?\.?\s*$",
+        "",
+        n,
+    )
     n = re.sub(r"Страниц\s*-\s*\d+", "", n, flags=re.I)
     # «Изм. и доп. вып. 26» из колонки шифра — убираем вместе с номером выпуска
     n = re.sub(r"(?i)\s*Изм\.\s*и\s*доп\.\s*вып\.?\s*\d*\s*", " ", n)
@@ -664,6 +1392,29 @@ def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
     n = re.sub(r"(?i)\s*Кзтр\s+и\s+Кэм\s*=\s*[\d.,]+\s*", " ", n)
     n = re.sub(r"(?i)\s*Кзтр\s*=\s*[\d.,]+(?:\s*[;,]\s*)?", " ", n)
     n = re.sub(r"(?i)\s*Кэм\s*=\s*[\d.,]+\s*", " ", n)
+    # Тип из кол.2 «ТЧ … табл. … п.… Кэм=…» после склейки с кол.3 — убираем из текста позиции
+    n = re.sub(
+        r"(?i)\s*ТЧ\s+\d+(?:\s+табл\.\s*\d+)?(?:\s+п\.\s*\d+(?:\.\d+)*)?(?:\s+Кэм\s*=\s*[\d.,]+)?\s*",
+        " ",
+        n,
+    )
+    # Оторванный из кол.2 маркер «К=…» перед «На водохозяйственном» / «Группа»
+    n = re.sub(
+        r"(?i)\s+К\s*=\s*\d+\s+(?=(?:На\s+водохозяйственном|Группа\b))",
+        " ",
+        n,
+    )
+    # Частый разрыв PDF: «до 10 На водохозяйственном» без «м.»
+    n = re.sub(
+        r"(?i)(\bдо\s+\d{1,5})\s+(?=На\s+водохозяйственном\b)",
+        r"\1 м.",
+        n,
+    )
+    n = re.sub(
+        r"(?i)(применен|применён)\s+(?:На\s+)?к\s+времени\s+эксплуатации\s+машин",
+        r"\1 коэффициент к времени эксплуатации машин",
+        n,
+    )
     n = _strip_abc_branding_and_column_tail(n)
     n = _strip_price_tail(n)
     n = re.sub(r"(?i)\s+ПРОЧИЕ\s+РАБОТЫ\s*$", "", n)
@@ -705,20 +1456,22 @@ def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
             if not qv:
                 continue
             suf = f"{ul} {qv.lower()}"
-            if nl.endswith(suf):
+            if len(n.strip()) >= len(suf) + 12 and nl.endswith(suf):
                 n = _norm(n[: -len(suf)])
                 nl = n.lower()
                 break
         for qv in variants:
             suf = f"{u} {qv}".lower()
-            if nl.endswith(suf):
+            if len(n.strip()) >= len(suf) + 12 and nl.endswith(suf):
                 n = _norm(n[: -len(suf)])
                 break
     if u:
         nl = n.lower()
         ul = u.lower()
-        if nl.endswith(ul):
+        # Не срезаем основной текст, если случайная склейка «…раствором» + суффикс единицы неполная
+        if len(n.strip()) >= len(u) + 18 and nl.endswith(ul):
             n = _norm(n[: -len(u)]).rstrip(" ,.;")
+    n = _repair_common_abc_name_gaps(n)
     return _norm(n)
 
 
@@ -729,10 +1482,20 @@ _SECTION_MARKERS_IN_MIXED_LSR_LINE = (
     r"\bДЕМОНТАЖНЫЕ\s+РАБОТЫ\b",
     r"\bСТРОИТЕЛЬНЫЕ\s+РАБОТЫ\b",
     r"\bМОНТАЖНЫЕ\s+РАБОТЫ\b",
+    r"\bБЕТОННЫЕ\s+РАБОТЫ\b",
     r"\bПРОЧИЕ\s+РАБОТЫ\b",
     r"\bМонолитный\s+(?:литальный|л[ие]кальный)\s+блок\b",
+    r"\bМонолитный\s+оголовок\b",
+    r"\bМонолитный\s+ж\s*/\s*б\s+колодец\b",
+    r"\bМонолитный\s+железобетонный\s+колодец\b",
+    r"\bМонолитная\s+диафрагма\b",
+    r"\bЗуб\s+монолитный\b",
+    r"\bПРОЕЗЖАЯ\s+ЧАСТЬ\b",
+    r"\bПРОЕЗДНАЯ\s+ЧАСТЬ\b",
+    r"\bЗатвор\s+(?:[А-Яа-яЁё]{2}|[A-Za-z]{2})\b",
     r"\bЗЕМЛЯНЫЕ\s+РАБОТЫ\b",
     r"\bЛОТКОВЫЙ\s+КАНАЛ\b",
+    r"\bВОДОВЫПУСК\b",
     r"\bКОНЦЕВОЙ\s+КОЛОДЕЦ\b",
     r"\bПОВОРОТНЫЙ\s+КОЛОДЕЦ\b",
 )
@@ -774,6 +1537,22 @@ def _section_title_from_lsr_header(ln: str) -> str | None:
     return best[1] if best else None
 
 
+def _sec_tail_meaningful_for_merge(sec_tail: str) -> bool:
+    """
+    Не дописывать к подзаголовку только «ЛОКАЛЬНАЯ СМЕТА № …» без вида работ —
+    иначе получается «ЛОКАЛЬНАЯ СМЕТА № 2-1-2 ЗЕМЛЯНЫЕ РАБОТЫ» вместо «ЗЕМЛЯНЫЕ РАБОТЫ».
+    """
+    t = (sec_tail or "").strip()
+    if len(t) < 10:
+        return False
+    if re.match(
+        r"(?i)^локальн\w*\s+смет\w*\s+№\s*[\d.\-\s]+\s*$",
+        t,
+    ):
+        return False
+    return True
+
+
 def _is_section_line(ln: str) -> bool:
     if _section_title_from_lsr_header(
         ln,
@@ -788,15 +1567,6 @@ def _is_section_line(ln: str) -> bool:
     if _match_position_head(st):
         return False
     if RE_SECTION.match(st):
-        if re.match(
-            r"^ДЕМОНТАЖНЫЕ\s+РАБОТЫ\s*$",
-            st,
-            re.I,
-        ) and (
-            "(ГР-" not in st
-            and "КАНАЛ" not in st.upper()
-        ):
-            return False
         return True
     if re.search(r"\(ГР-\d+\)", ln):
         if len(ln) > 220:
@@ -804,8 +1574,43 @@ def _is_section_line(ln: str) -> bool:
         if re.match(r"^\d{1,4}\.?\s+\d+-\d+-\d+", _normalize_re_pos_line(ln)):
             return False
         return True
+    # Баннер «ВОДОВЫПУСК ИЗ ЛОТКА (30 ШТ), ГР-33» — часто без скобок вокруг ГР-NN
+    if re.search(r"\bГР-\d+\s*$", st.rstrip(". "), re.I):
+        if len(ln) > 220:
+            return False
+        if _match_position_head(_normalize_re_pos_line(st)):
+            return False
+        return True
     stn = _norm(ln)
     if len(stn) > 100:
+        head_snip = _normalize_re_pos_line(stn[:180])
+        if not _match_position_head(head_snip):
+            tl = re.sub(r"^[\d\s·.\-]{0,100}", "", stn).strip()
+            if re.match(r"(?i)^ПРОЧИЕ\s+РАБОТЫ\b", tl):
+                return True
+            if re.match(r"(?i)^Монолитная\s+диафрагма\b", tl):
+                return True
+            if re.match(r"(?i)^Зуб\s+монолитный\b", tl):
+                return True
+            if re.match(
+                r"(?i)^Монолитный\s+ж\s*/\s*б\s+колодец\b",
+                tl,
+            ):
+                return True
+            if re.match(
+                r"(?i)^Монолитный\s+железобетонный\s+колодец\b",
+                tl,
+            ):
+                return True
+            if re.match(r"(?i)^ПРОЕЗЖАЯ\s+ЧАСТЬ\b", tl):
+                return True
+            if re.match(r"(?i)^ПРОЕЗДНАЯ\s+ЧАСТЬ\b", tl):
+                return True
+            if re.match(
+                r"(?i)^Затвор\s+(?:[А-Яа-яЁё]{2}|[A-Za-z]{2})\s+\d+\s*[ХХххxX×]\s*\d+",
+                tl,
+            ):
+                return True
         return False
     tail = re.sub(r"^[\d\s·.]{0,24}", "", stn, flags=re.I).strip()
     if not _match_position_head(st):
@@ -817,7 +1622,34 @@ def _is_section_line(ln: str) -> bool:
             return True
         if re.match(r"(?i)^ПРОЧИЕ\s+РАБОТЫ\b", tail):
             return True
+        if re.match(r"(?i)^БЕТОННЫЕ\s+РАБОТЫ\s*$", tail):
+            return True
+        if re.match(r"(?i)^Монолитный\s+оголовок\s*\.?\s*$", tail):
+            return True
         if _RE_MONOLITH_CAST_BLOCK_LINE.match(tail):
+            return True
+        if re.match(r"(?i)^Монолитная\s+диафрагма\b", tail):
+            return True
+        if re.match(r"(?i)^Зуб\s+монолитный\b", tail):
+            return True
+        if re.match(
+            r"(?i)^Монолитный\s+ж\s*/\s*б\s+колодец(?:\s*\.)?\s*$",
+            tail,
+        ):
+            return True
+        if re.match(
+            r"(?i)^Монолитный\s+железобетонный\s+колодец(?:\s*\.)?\s*$",
+            tail,
+        ):
+            return True
+        if re.match(r"(?i)^ПРОЕЗЖАЯ\s+ЧАСТЬ\b", tail):
+            return True
+        if re.match(r"(?i)^ПРОЕЗДНАЯ\s+ЧАСТЬ\b", tail):
+            return True
+        if re.match(
+            r"(?i)^Затвор\s+(?:[А-Яа-яЁё]{2}|[A-Za-z]{2})\s+\d+\s*[ХХххxX×]\s*\d+(?:\s*\.)?\s*$",
+            tail,
+        ):
             return True
     return False
 
@@ -879,16 +1711,525 @@ def _infer_unit_from_cell_text(*parts: str) -> str:
         return ""
     checks = (
         (r"(?i)т[\s·]*км", "т·км"),
+        (r"(?i)\bкг\b(?![а-яёa-z])", "кг"),
+        (
+            r"(?i)\bсверлен\w*\b|\bгоризонтальн\S*\s+отверст\w*|"
+            r"\bвычитается\b.*\bотверст\b",
+            "отверстие",
+        ),
+        (
+            r"(?i)\b\d+(?:[\s\-–]+\d+)\s+[тТ]\s+фасонн",
+            "т",
+        ),
+        (
+            r"(?i)\bфасонн\w*\s+част\S*\s+сталь",
+            "т",
+        ),
+        (r"(?i)\bиздел\S*\s+монтажн", "т"),
+        (
+            r"(?i)\bмонтажн\w*\b.{0,160}\s+до\s+(?:[\d.]+\s*)[кК]г\b",
+            "т",
+        ),
+        (
+            r"(?i)\bотвод\b.*(?:мм\b|\s+\d+\s*[xх]\s*\d+|[°]|\(?\s*"
+            r"(?:ГОСТ\s*17375|17376|17377|17378|17379|17380)\b|\b17375\b|\b17380\b)",
+            "шт",
+        ),
+        (r"(?i)\bотвод\b", "шт"),
+        (r"(?i)\bукладк\w*\b.{0,200}\b(?:труб|трубопровод)\w*", "км"),
+        (
+            r"(?i)(?:м\s*[³\u00b3]|м3)\s+сборных\s+конструкций",
+            "м3 сборных конструкций",
+        ),
+        (
+            r"(?i)(?:м\s*[³\u00b3]|м3)\s+уплотн(?:ённого|енного)?\s+грунта",
+            "м3 уплотненного грунта",
+        ),
+        (r"(?i)(?:м\s*[³\u00b3]|м3)\s+уплотн", "м3 уплотненного грунта"),
+        (r"(?i)(?:м\s*[³\u00b3]|м3)\s*г(?:рунта?)?", "м3 грунта"),
         (r"(?i)\bм3\b|м³", "м3"),
         (r"(?i)\bм2\b|м²", "м2"),
+        (r"(?i)\bкм\b(?![а-яёa-z])|\bкм\s+трубопровода", "км"),
         (r"(?i)\bшт\b", "шт"),
-        (r"(?i)\bкм\b", "км"),
-        (r"(?i)(?<![а-яёa-z])т(?=\s|$|и|,|\.)", "т"),
+        (
+            r"(?i)(?<![а-яёa-z])(?<!\d\s)т\b"
+            r"(?!\s*(?:/[а-яё]+|стальных\s+элемент|фасонн\w))",
+            "т",
+        ),
     )
     for pat, u in checks:
         if re.search(pat, blob):
             return u
     return ""
+
+
+def _detach_gost_bleed_from_estimate_unit(unit_raw: str) -> tuple[str, str | None]:
+    """
+    Хвост «ГОСТ …» ошибочно попадает в колонку единицы («ГОСТ 23899- м3»).
+    Возвращает (остаток ячейки единицы, фрагмент ГОСТ для склейки с наименованием).
+    """
+    u = _norm(_collapse_m_units(unit_raw or ""))
+    if not u:
+        return "", None
+    m = re.match(
+        r"(?is)^(?P<gost>(?:ГОСТ|GOST)\s+\d{4,8}\s*[\-–—]\s*\d*)\.?\s+(?P<rest>\S(?:.*|$))$",
+        u,
+    )
+    if not m:
+        return u, None
+    gost = _norm(m.group("gost"))
+    rest = _norm(m.group("rest"))
+    return rest, gost or None
+
+
+def _detach_name_quality_suffix_bleeding_into_unit(
+    unit_raw: str,
+) -> tuple[str, str]:
+    """
+    В колонку единицы иногда улезает:
+    - марки бетона F150/W2 перед «м³»;
+    - обрыв «марк…» перед «м³» после склейки с кол. количества.
+    Возвращает (суффикс для склейки с наименованием, остаток ячейки единицы).
+    """
+    u = _norm(_collapse_m_units(unit_raw or ""))
+    if not u:
+        return "", ""
+
+    lu = u.lower()
+    m_mort = re.match(
+        r"(?isu)^марк\w*\s+(?:м\s*[³\u00b3]|м3)(\s+[.,;:]+)?"
+        r"\s*(\d*)\s*$",
+        u.strip(),
+    )
+    if m_mort and "шт" not in lu:
+        return "", "м3"
+
+    m_tail = re.match(
+        r"(?is)^(.+?)\s+(?:м\s*[³\u00b3]|м3)\s*$",
+        u.strip(),
+    )
+    if not m_tail:
+        return "", u
+    pref_raw = _norm(m_tail.group(1)).strip(" ,.:;").rstrip(".").strip()
+    if not pref_raw:
+        return "", "м3"
+    pref = pref_raw
+    pref_lo = pref.lower()
+    # Не разбирать русские фразы (хвосты позиционного текста разбирает другая логика)
+    if len(pref) >= 96 or pref_lo.count(",") >= 6:
+        return "", u
+
+    latinish = pref.replace(",", " ").strip()
+    if re.search(r"(?iu)[а-яё]", pref_lo):
+        return "", u
+
+    if (
+        len(latinish) <= 54
+        and re.search(r"(?i)[FW]", latinish)
+        and re.search(r"(?is)\d", latinish)
+        and "=" not in latinish
+        and "/" not in latinish
+        and "(" not in latinish
+        and "[" not in latinish
+        and "'" not in latinish
+        and not re.fullmatch(r"(?is)\s*\d{1,3}\s*$", latinish)
+    ):
+        out = latinish.upper().replace(",", ", ").strip()
+        out = re.sub(r"\s*,\s*", ", ", out)
+        while "  " in out:
+            out = out.replace("  ", " ")
+        if len(out.split()) <= 10 and (
+            bool(re.search(r"(?is)F\s*\d", out))
+            or bool(re.search(r"(?is)W\s*[\w.]", out))
+        ):
+            suf = out.rstrip(".").strip() + "."
+
+            return suf, ""
+
+    return "", u
+
+
+def _looks_like_estimate_unit_corrupted_by_name_fragments(u_raw: str) -> bool:
+    """
+    Кол.4 ошибочно заполнена серединой перечня и ГОСТ («опорные, грузы, 24022-80, м»).
+    """
+    u = _norm(_collapse_m_units(u_raw or ""))
+    if not u or len(u) < 10:
+        return False
+    low = u.lower()
+    if re.fullmatch(r"(?i)шт|[\s\w·]*км|т(?:\.\s*км|[\s·]км)|т\b", low):
+        return False
+    if re.search(r"(?i)(?:м\s*[³\u00b3]|м3)\s+сборн", low):
+        return False
+    if re.search(r"(?i)(?:м\s*[³\u00b3]|м3)\s+бетона", low):
+        return False
+    if re.search(r"(?i)(?:м\s*[³\u00b3]|м3)\s+уплотн", low):
+        return False
+    if re.search(r"(?i)(?:м\s*[³\u00b3]|м3)\s*г(?:рунта)?", low):
+        return False
+    if re.fullmatch(r"(?i)(?:м\s*[³\u00b3]|м3|м2)", low):
+        return False
+    if re.search(r"(?i)^т[\s·.-]*км", low):
+        return False
+    if (
+        re.search(r"\d{4,5}\s*[-–—]\s*\d{2}(?:/\d{2})?", u)
+        and re.search(r"(?i)[а-яё]{4,}", u)
+        and ("," in u or ";" in u)
+    ):
+        return True
+    if u.count(",") >= 2 and re.search(r"(?i)[а-яё]{5,}", u):
+        return True
+    return False
+
+
+_SENTENCE_BLEED_HINTS_UNIT = frozenset(
+    {
+        "кольцев",
+        "кольцевыми",
+        "глубино",
+        "диаметр",
+        "сверла",
+        "алмазн",
+        "горизонталь",
+        "вертикаль",
+        "охлажд",
+        "исключа",
+        "изменени",
+        "вычита",
+        "норме",
+        " мм",
+        " мм.",
+    },
+)
+
+
+def _unit_reads_as_mid_description_sentence_fragment(u_raw: str) -> bool:
+    """
+    В колонку единицы попала середина технического предложения («кольцевыми глубиной отвер», …).
+    Отличается от легальных развёрнутых единиц «т стальных элементов», «км трубопровода»,
+    простых отверстие/шт и т.п.
+    """
+    u = _norm(_collapse_m_units(u_raw or ""))
+    if not u or len(u) < 6:
+        return False
+    low = u.lower()
+    ok_short = (
+        "отверстие",
+        "шт",
+        "шт.",
+        "кг",
+        "км",
+        "м3",
+        "м2",
+        "м²",
+        "м³",
+        "т·км",
+    )
+    if low in ok_short:
+        return False
+    if re.search(r"(?i)^(?:м\s*[³\u00b3]|м3)\s+бетона", low):
+        return False
+    if re.fullmatch(
+        r"(?i)\s*(?:м\s*[³\u00b3]|м3)\b(?:\s*г(?:рунта?)?|\s*$)?",
+        u,
+    ):
+        return False
+    if re.search(r"(?i)^(?:м\s*[³\u00b3]|м3)\s+", low) or re.fullmatch(r"(?i)т\b", low):
+        return False
+    if re.search(r"(?i)^т\s+стальных\s+элемент(?:ов)?(?:\.)?$", low):
+        return False
+    if re.search(r"(?i)^т\s+фасонн\w*\s+част", low):
+        return False
+    if re.fullmatch(r"(?i)\bкм\s+(?:на\s*)?трубопровод\w*", low):
+        return False
+    if re.fullmatch(r"(?is)(?:[^\w°]*(?:\d+[°]?|[°])\s*[,.]?\s*)+\s*\d*-?\s*шт\s*\.?$", u):
+        return False
+
+    hints_hit = False
+    for h in _SENTENCE_BLEED_HINTS_UNIT:
+        if h in low:
+            hints_hit = True
+            break
+    if hints_hit:
+        return True
+
+    chunks = [
+        x.strip(",.;:\"")
+        for x in re.split(r"[\s,;]+", u)
+        if x.strip(",.;:\"")
+    ]
+    chunky = sum(
+        1 for w in chunks if len(re.sub(r'(?u)[^а-яёa-z]', "", w.lower())) >= 7
+    )
+
+    long_word = False
+    for w in low.replace(",", " ").split():
+        if len(w) >= 14:
+            long_word = True
+            break
+
+    end_otver = bool(re.search(r"(?iu)\s*отвер\s*$", low))
+    if end_otver and "отверст" not in low:
+        return True
+
+    end_garbled = bool(
+        re.search(r"(?i)\bисключ\w*", low)
+        or re.search(r"(?i)^\s*[сc]\s+ис", low)
+    )
+    if end_garbled:
+        return True
+
+    wordy = chunky >= 2 and hints_hit is False
+
+    if wordy and not re.match(
+        r"(?ius)(?:т|кг|км|шт|м3|м2|отверстие)\s",
+        low,
+    ):
+        if re.search(r"(?iu)\w+[аеёиюяо]ми\b|[аоиеёыуя]ющ\b", low):
+            return True
+
+    if long_word:
+        stripped = "".join(low.split())
+        if len(stripped) > 52:
+            return True
+
+    if chunky >= 3 and "," in u and len(u) >= 32:
+        if not re.search(r"(?iu)\s*шт\.?\s*$", u.strip()):
+            if re.search(r"(?iu)[а-яё]{10,}", u):
+                return True
+
+    return False
+
+
+def _infer_unit_after_col4_name_bleed(name: str, bad_unit: str) -> str:
+    blob = _norm(_collapse_m_units(f"{name or ''} {bad_unit or ''}"))
+    g = _infer_unit_from_cell_text(blob, "")
+    if g:
+        return g
+    low_n = (name or "").lower()
+    if re.search(
+        r"(?i)\b(?:блок|плит).*(?:фундамент|железобетон)|бетона\s+класса|балластн|якор",
+        low_n,
+    ) or ("башмак" in low_n and "подпятник" in low_n):
+        return "м3 сборных конструкций"
+    # Длинное перечисление ЖБ-блоков в РСНБ — типовая позиционная единица обычно такая же, как у соседних
+    if re.search(r"(?i)\b(?:блок|плит)", low_n) and re.search(
+        r"(?i)опорные|анкерн|тяжелого\s+бетона",
+        low_n + " " + (bad_unit or ""),
+    ):
+        return "м3 сборных конструкций"
+    return ""
+
+
+def _repair_abc_pdf_name_unit_after_col4_bleed(
+    name: str, unit: str, raw_hint: str = "",
+) -> tuple[str, str]:
+    n, u_raw = _norm(name), unit
+    if _looks_like_estimate_unit_corrupted_by_name_fragments(u_raw):
+        inferred = _infer_unit_after_col4_name_bleed(n, u_raw)
+        return n, inferred or "м3 сборных конструкций"
+    if _unit_reads_as_mid_description_sentence_fragment(u_raw):
+        n2 = _norm(f"{n} {u_raw}")
+        blob = _norm(_collapse_m_units(f"{raw_hint} {n2}"))[:2600]
+        inferred = _infer_unit_from_cell_text(blob, "", n2)
+        ln2 = n2.lower()
+        if not inferred:
+            if re.search(
+                r"(?iu)\bсверлен\b|горизонтальн\S*\s+отверст\b|"
+                r"вычитается\b.+отверст",
+                ln2,
+            ):
+                inferred = "отверстие"
+            elif re.search(r"(?iu)водопроводн\S*.+укладк", ln2):
+                inferred = "км"
+            elif re.search(r"(?iu)\bотвод\b", ln2):
+                inferred = "шт"
+        return n2, inferred or ""
+
+    return n, u_raw
+
+
+def _repair_parabolic_column_name_with_gost(name: str, gost_frag: str | None) -> str:
+    """
+    «Стойка… параболические лотки 79.» + «ГОСТ 23899-» из единицы → «…лотки ГОСТ 23899-79.»
+    """
+    if not name or not gost_frag:
+        return _norm(name)
+    n = _norm(name)
+    low = n.lower()
+    gf = _norm(gost_frag)
+    if not gf:
+        return n
+    if re.search(r"(?i)гост\s+[0-9]", low):
+        # Уже есть обозначение стандарта в тексте
+        return n
+    m_nm = re.search(
+        r"(?i)(?P<head>параболические\s+лотки)\s+(?P<yr>\d{1,3})\s*\.?\s*$",
+        n,
+    )
+    m_gs = re.search(
+        r"(?i)^(?:ГОСТ|GOST)\s+(?P<num>\d{4,8})\s*[\-–—]\s*(?P<suf>\d*)\s*$",
+        gf,
+    )
+    if not m_gs:
+        return n
+    std_num = m_gs.group("num")
+    suf_u = (m_gs.group("suf") or "").strip()
+    if not m_nm:
+        # ГОСТ целиком в кол.4: «…лотки» без номера выпуска в наименовании
+        if re.search(r"(?i)параболические\s+лотки\s*$", low) and suf_u:
+            return _norm(f"{n} ГОСТ {std_num}-{suf_u}.")
+        return n
+    yr = m_nm.group("yr")
+    head = m_nm.group("head")
+    prefix = n[: m_nm.start()].rstrip()
+    if suf_u:
+        gost_full = f"ГОСТ {std_num}-{suf_u}."
+    else:
+        gost_full = f"ГОСТ {std_num}-{yr}."
+    return _norm(f"{prefix} {head} {gost_full}")
+
+
+def _merge_steel_standard_code_from_estimate_unit_into_name(
+    name: str,
+    unit_raw: str,
+) -> tuple[str, str]:
+    """
+    Цифровой блок стандарта «33259-2015» с «шт» утекает в кол.4 («33259-2015 шт»).
+    Дописываем «ГОСТ …» в наименование (фланцы, метизы).
+    """
+    u = _norm(unit_raw or "")
+    if not u:
+        return _norm(name), u
+    lum = u.lower().strip()
+    if lum in {"шт", "шт."} or not lum.endswith(("шт", "шт.")):
+        return _norm(name), u
+    m = re.match(
+        r"(?isu)^\s*(\d{4,}-\s*\d{2,}(?:/[A-Za-zА-Яа-яё]{1,14})?"
+        r")\s*[.,;:]*\s*(шт\b\.?).*$",
+        lum,
+        re.UNICODE,
+    )
+    if not m:
+        return _norm(name), u
+    std = _norm(m.group(1)).replace(" ", "").replace("—", "-").replace("–", "-")
+    std = std.rstrip("/")
+    if len(std.replace("-", "")) < 8:
+        return _norm(name), u
+    n = _norm(name)
+    nl = re.sub(r"[^\da-zа-яё]", "", n.lower())
+    slug = "".join(ch for ch in std.lower() if ch.isdigit())
+    head5 = slug[:5] if slug else ""
+    if head5 and head5 in nl[-60:]:
+        return n, "шт"
+    if re.search(
+        rf"(?iu)\b(?:gost|гост)\s*{re.escape(std)}\b",
+        n,
+    ):
+        return n, "шт"
+    nn = _norm(f"{n} ГОСТ {std}")
+    while nn.endswith(".."):
+        nn = nn[:-1]
+    if not nn.endswith("."):
+        nn = f"{nn}."
+    return nn, "шт"
+
+
+def _sanitize_pdf_import_unit(unit: str) -> str:
+    """
+    В колонке единицы после разреза иногда остаётся хвост наименования кол.3,
+    совпадающий по базовой линии с «м³ сборных» («… заделкой стыков», «и», «сборного»).
+    Восстанавливаем типовые обозначения по содержимому строки.
+    """
+    u = _norm(_collapse_m_units(unit or ""))
+    if not u:
+        return u
+    lu = u.lower()
+    # «90°, 17380- шт», «размер X шт»
+    if re.search(r"(?isu)\s*шт\.?\s*$", lu) and re.search(
+        r"(°|173\d\d|[xх]\s*\d)",
+        u,
+    ):
+        return "шт"
+    # «… т фасонных частей» / «диапазон — т фасонн…»
+    if re.search(r"(?i)\d+(?:[\s\-–]+\d+)\s*[тТ]\s+фасонн|\bфасонн\w*\s+част", lu):
+        if "шт" not in lu:
+            return "т"
+    if re.search(r"(?i)^т\s+стальных\s+элемент", lu):
+        return "т"
+    # Км прокладки трубопровода (часто «км трубопровода» в РСНБ)
+    if re.search(r"(?isu)\bкм\b\s+(?:на\s*)?трубопровод", lu):
+        return "км трубопровода"
+    # Префикс вида «… заделкой стыков …» + «м³ сборных конструкций» частично в кол.4
+    if re.search(r"(?i)(?:м\s*[³\u00b3]|м3)\s+сборн", u):
+        return "м3 сборных конструкций"
+    # Длинное «м³ бетона, … песка в конструкции» (РСНБ) → на экран достаточно объёма
+    if re.search(r"(?i)(?:м\s*[³\u00b3]|м3)\s+бетона", lu) and re.search(
+        r"(?iu)грави|песок|конструкц",
+        lu,
+    ):
+        return "м3"
+    if re.search(r"(?i)(?:м\s*[³\u00b3]|м3)\s+уплотн", u):
+        return "м3 уплотненного грунта"
+    if re.search(r"(?i)(?:м\s*[³\u00b3]|м3)\s*г(?:рунта?)?", u):
+        return "м3 грунта"
+    if re.search(r"(?i)т[\s·.-]*км", u):
+        return "т·км"
+    u2 = _norm(re.sub(r"(?i)^(?:и\s+)+", "", u))
+    if re.fullmatch(r"(?i)т(?:\s+\d+)?", u2):
+        return "т"
+    # «м³» ушёл в кол.3 или на другую строку
+    if not re.match(r"(?i)(?:м\s*[³\u00b3]|м3)", u2) and re.search(
+        r"(?i)уплотнен\S*\s+грунта",
+        u2,
+    ):
+        return "м3 уплотненного грунта"
+    if (
+        re.search(r"(?i)спланирован", u2)
+        and re.search(r"(?i)площа", u2)
+    ):
+        return "м2 спланированной площади"
+    # «с 10/16, шт», «33259-2015 шт», «PN 10/16, шт» — тех. поля утекли в кол.4 вместе со штуками
+    lum = lu.strip()
+    if re.search(r"(?isu)\s*шт\.?\s*$", lum) and not re.fullmatch(
+        r"(?isu)шт\.?",
+        lum,
+    ):
+        if (
+            re.search(r"(?isu)^\s*[\u0441]\s+[0-9]+\s*/\s*[0-9]+", lum)
+            or re.search(r"(?isu)\b[Pp]\s*N\s*[0-9]+\s*(?:/[0-9]+|\s+[0-9]+)", lum)
+            or re.search(r"(?isu)[\,\s]+\s*[Pp]\s*[Nn]\s*[0-9/]+.*?шт\s*$", lum)
+            or re.search(r"(?isu)\d{3,}-\d{2,}.*?шт\s*$", lum)
+        ):
+            return "шт"
+    return u
+
+
+def _looks_like_wrapped_unit_suffix(frag: str, blob_hint: str) -> bool:
+    """
+    Вторая строка узкой колонки «ед. изм.» часто попадает в кол.3 как «продолжение».
+    Типичный случай: первая строка «м³ сборных», вторая — «конструкций».
+    """
+    f = _norm(frag)
+    if not f:
+        return False
+    low = blob_hint.lower()
+    if not re.fullmatch(r"конструкций\.?", f, re.I):
+        return False
+    return bool(
+        re.search(r"(?i)м\s*[³\u00b3]\s*сборных|\bм3\s+сборных", low),
+    )
+
+
+def _append_unit_fragment(acc: str, piece: str) -> str:
+    a, p = _norm(acc), _norm(piece)
+    if not p:
+        return a
+    if not a:
+        return p
+    if a.endswith(p) or p.endswith(a):
+        return a if len(a) >= len(p) else p
+    return _norm(f"{a} {p}")
 
 
 def _merge_continuation_rows(rows: list[AbcGridRow]) -> list[AbcGridRow]:
@@ -908,11 +2249,7 @@ def _merge_continuation_rows(rows: list[AbcGridRow]) -> list[AbcGridRow]:
             i += 1
             continue
         j = i + 1
-        name_acc = _name_from_pos_raw_joined(
-            r.raw_joined or "",
-        ) or _abc_merge_name_from_cells(
-            r,
-        )
+        name_acc = _merged_position_heading_name(r)
         acc_c4 = _norm(r.c4)
         acc_q = r.c5_qty
         acc_c5t = r.c5_raw
@@ -922,22 +2259,29 @@ def _merge_continuation_rows(rows: list[AbcGridRow]) -> list[AbcGridRow]:
             if _is_position_start(nxt):
                 break
             rjn = nxt.raw_joined or ""
-            if _is_section_line(rjn):
+            if _is_section_line(rjn) or _is_section_line(_row_desc_probe(nxt)):
                 break
             if _is_abc_price_row(rjn):
                 break
             if _is_abc_nr_percent_row(rjn):
                 break
             frag = _continuation_name_fragment(nxt)
+            uc = _norm(nxt.c4)
+            blob_hint = _norm(f"{acc_c4} {name_acc} {merged_raw} {rjn}")[:900]
             if frag:
-                name_acc = _norm(f"{name_acc} {frag}") if name_acc else frag
+                if _looks_like_wrapped_unit_suffix(frag, blob_hint):
+                    acc_c4 = _append_unit_fragment(acc_c4, frag)
+                else:
+                    name_acc = _norm(f"{name_acc} {frag}") if name_acc else frag
+            if uc:
+                acc_c4 = _append_unit_fragment(acc_c4, uc)
             if acc_q is None or acc_q <= 0:
                 if nxt.c5_qty is not None and nxt.c5_qty > 0:
                     acc_q = nxt.c5_qty
-                    acc_c4 = _norm(nxt.c4) or acc_c4
                     acc_c5t = nxt.c5_raw or acc_c5t
             merged_raw = _norm(f"{merged_raw} {rjn}")
             j += 1
+        name_acc = _salvage_estimate_name_via_raw_anchor(name_acc, merged_raw)
         out.append(
             AbcGridRow(
                 page=r.page,
@@ -1000,7 +2344,10 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
         if not merged:
             return
         name_u = merged.upper()[:ESTIMATE_ITEM_NAME_MAX_LENGTH]
-        key = ("hdr", section[:255], name_u[:2000])
+        # В одном файле локальная смета часто продублирована (тираж/выборка страниц).
+        # Ключ только по тексту секции склеивает все повторы и выкидывает баннеры
+        # («ПРОЧИЕ РАБОТЫ», «ЗЕМЛЯНЫЕ РАБОТЫ») во втором и следующих блоках той же формы.
+        key = ("hdr", section[:255], name_u[:2000], i)
         if key in dedupe:
             return
         dedupe.add(key)
@@ -1027,8 +2374,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
     while i < n:
         row = grid[i]
         raw = row.raw_joined or ""
-        c3n = _norm(row.c3)
-        probe = c3n or raw
+        probe = _row_desc_probe(row)
         low = probe.lower()
         low_raw = raw.lower()
         if _is_lsr_start(low_raw) or _is_lsr_start(low):
@@ -1090,8 +2436,10 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
             r"(?i)\bПРОЕЗДНАЯ\s+ЧАСТЬ\b",
             comb_hdr,
         ):
-            if last_zemlyanye_section:
-                section = last_zemlyanye_section
+            # Раньше подменяли section на последнюю «земляную» — позиции уезжали в другой раздел UI.
+            # Нужна строка-подзаголовок и те же позиции остаются в текущей ЛСР.
+            if section:
+                _emit_subsection_row("ПРОЕЗЖАЯ ЧАСТЬ", None)
             prev_raw_low = low_raw
             i += 1
             continue
@@ -1149,10 +2497,57 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                 or _section_title_from_lsr_header(probe)
                 or sec_src.strip()
             )
+            t_strip = title.strip()
+            peek_advance = 0
+
+            blobs_m = [_norm(sec_src), _norm(raw), _norm(probe), comb_hdr]
+            for blob_in in blobs_m:
+                if not blob_in:
+                    continue
+                m_nl = re.search(
+                    r"(?is)^\s*БЕТОННЫЕ\s+РАБОТЫ\s*(?:\.?\s*\r?\n)+\s*(Монолитный\s+оголовок)\s*\.?",
+                    blob_in,
+                )
+                if not m_nl:
+                    m_nl = re.search(
+                        r"(?i)БЕТОННЫЕ\s+РАБОТЫ[^\n\d]{0,120}?(Монолитный\s+оголовок)\s*\.?",
+                        blob_in,
+                    )
+                if m_nl:
+                    title = _norm(f"БЕТОННЫЕ РАБОТЫ {_norm(m_nl.group(1))}")
+                    t_strip = title.strip()
+                    break
+
+            if (
+                peek_advance == 0
+                and re.match(r"(?i)^БЕТОННЫЕ\s+РАБОТЫ\s*$", t_strip)
+                and i + 1 < n
+            ):
+                nrow = grid[i + 1]
+                n_raw = nrow.raw_joined or ""
+                n_probe = _row_desc_probe(nrow)
+                ns_src = n_raw if _is_section_line(n_raw) else n_probe
+                if _is_section_line(ns_src) and not _is_position_start(nrow):
+                    nt = (
+                        _section_title_from_lsr_header(ns_src)
+                        or _section_title_from_lsr_header(n_probe)
+                        or ns_src.strip()
+                    ).strip()
+                    if re.match(r"(?i)^Монолитный\s+оголовок\s*\.?\s*$", nt):
+                        title = _norm(f"{t_strip} {nt}")
+                        peek_advance = 1
+            title = _squeeze_embedded_section_title(title.strip())
+            t_strip = title
             pend = pending_razdel
             if pend:
                 _emit_subsection_row(title.strip(), pend)
-            elif lsr_id and object_name and re.search(r"ЗЕМЛЯНЫЕ|ГР-", title, re.I):
+            elif (
+                lsr_id
+                and object_name
+                and re.search(r"ЗЕМЛЯНЫЕ|ГР-", title, re.I)
+                # Banner-like subsection titles ending with ", ГР-NN" must stay intact (not merged into РАЗДЕЛ …).
+                and not re.search(r"\bГР-\d+\s*$", title.strip(), re.I)
+            ):
                 sec_tail_gr = (
                     section.split("|", 1)[-1].strip()
                     if section and "|" in section
@@ -1191,6 +2586,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                     if (
                         sec_tail
                         and len(sec_tail) > 12
+                        and _sec_tail_meaningful_for_merge(sec_tail)
                         and re.match(
                             r"(?i)^ЗЕМЛЯНЫЕ\s+РАБОТЫ\s*$",
                             body,
@@ -1205,6 +2601,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                     if (
                         sec_tail
                         and len(sec_tail) > 12
+                        and _sec_tail_meaningful_for_merge(sec_tail)
                         and re.match(
                             r"(?i)^ПРОЧИЕ\s+РАБОТЫ\s*$",
                             body,
@@ -1218,6 +2615,7 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                     if (
                         sec_tail
                         and len(sec_tail) > 12
+                        and _sec_tail_meaningful_for_merge(sec_tail)
                         and _RE_MONOLITH_CAST_BLOCK_LINE.match(body)
                         and not re.search(
                             r"(?i)\bМонолитный\s+(?:литальный|л[ие]кальный)\s+блок\b",
@@ -1226,8 +2624,13 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                     ):
                         body = _norm(f"{sec_tail} {body}")[:220]
                     _emit_subsection_row(body, None)
-            prev_raw_low = low_raw
-            i += 1
+            if peek_advance >= 1:
+                prev_raw_low = (
+                    grid[i + peek_advance].raw_joined or ""
+                ).lower()
+            else:
+                prev_raw_low = low_raw
+            i += 1 + peek_advance
             continue
         if _is_position_start(row):
             unit = _norm(_collapse_m_units(row.c4))
@@ -1258,6 +2661,27 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                 )
                 if gu:
                     unit = gu
+            unit_plain, gost_bleed = _detach_gost_bleed_from_estimate_unit(unit)
+            qual_bleed_suffix, unit_after_qual = (
+                _detach_name_quality_suffix_bleeding_into_unit(unit_plain)
+            )
+            if qual_bleed_suffix:
+                name_src = _norm(f"{name_src} {qual_bleed_suffix}")
+            if _norm(unit_after_qual):
+                unit_plain = _norm(unit_after_qual)
+            elif qual_bleed_suffix:
+                unit_plain = "м3"
+            name_src, unit_plain = _repair_abc_pdf_name_unit_after_col4_bleed(
+                name_src, unit_plain, raw
+            )
+            name_src, unit_plain = (
+                _merge_steel_standard_code_from_estimate_unit_into_name(
+                    name_src,
+                    unit_plain,
+                )
+            )
+            unit = _sanitize_pdf_import_unit(unit_plain)
+            name_src = _repair_parabolic_column_name_with_gost(name_src, gost_bleed)
             name_f = _finalize_name_col3(name_src, unit, qty)
             if name_f and unit and qty is not None and qty > 0:
                 cipher_k = _pos_cipher_cell(

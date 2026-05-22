@@ -132,14 +132,14 @@
                 <tr class="bg-slate-50">
                   <th class="px-1.5 py-2 text-center font-medium text-slate-700 w-10">№</th>
                   <th class="px-1.5 py-2 text-left font-medium text-slate-700 min-w-[7.5rem]">Тип</th>
-                  <th class="px-1.5 py-2 text-left font-medium text-slate-700 min-w-[14rem] sm:min-w-[20rem]">Наименование</th>
+                  <th class="px-1.5 py-2 text-left font-medium text-slate-700 min-w-[18rem] sm:min-w-[26rem]">Наименование</th>
                   <th class="px-1.5 py-2 text-left font-medium text-slate-700 min-w-[4rem]">Ед.</th>
-                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[6.5rem] whitespace-nowrap">Кол-во</th>
-                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[7.5rem] whitespace-nowrap">Цена, ₸</th>
-                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[8.5rem] whitespace-nowrap" title="Себестоимость по позиции">Себест., ₸</th>
-                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[5.5rem] whitespace-nowrap">Наценка %</th>
-                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[8.5rem] whitespace-nowrap" title="Цена заказчика за единицу">Заказчик/ед., ₸</th>
-                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[9rem] whitespace-nowrap">Итого, ₸</th>
+                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[3.25rem] whitespace-nowrap">Кол-во</th>
+                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[3.75rem] whitespace-nowrap">Цена, ₸</th>
+                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[4.25rem] whitespace-nowrap" title="Себестоимость по позиции">Себест., ₸</th>
+                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[2.75rem] whitespace-nowrap">Наценка %</th>
+                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[4.25rem] whitespace-nowrap" title="Цена заказчика за единицу">Заказчик/ед., ₸</th>
+                  <th class="px-1.5 py-2 text-right font-medium text-slate-700 min-w-[4.5rem] whitespace-nowrap">Итого, ₸</th>
                   <th class="px-1 py-2 min-w-[6.5rem]"></th>
                 </tr>
               </thead>
@@ -147,12 +147,13 @@
                 {% for item in items %}
                 {% if item.is_subsection_header %}
                 <tr class="estimate-subsection-banner align-middle border-y border-slate-200 bg-slate-100/90">
-                  <td colspan="11" class="px-3 py-2.5 text-center text-xs sm:text-sm font-bold uppercase tracking-tight text-slate-900">{{ item.name }}</td>
+                  <td class="px-1.5 py-2.5 bg-slate-100/90"></td>
+                  <td colspan="10" class="px-1.5 py-2.5 text-left text-xs sm:text-sm font-bold uppercase tracking-tight text-slate-900">{{ item.name }}</td>
                 </tr>
                 {% else %}
                 <tr class="estimate-row hover:bg-slate-50/50 align-top" data-estimate-form="estimate-row-{{ item.pk }}">
-                  <td class="px-1.5 py-0.5 text-center tabular-nums text-slate-600 leading-tight">{{ forloop.counter }}</td>
-                  <td class="px-1.5 py-0.5">
+                  <td class="px-1.5 py-1 text-center tabular-nums text-slate-600 leading-tight">{{ forloop.counter }}</td>
+                  <td class="px-1.5 py-1">
                     <select form="estimate-row-{{ item.pk }}" name="type" class="w-full min-w-0 rounded border border-slate-200 px-1.5 py-1 text-xs sm:text-sm leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                       <option value="material" {% if item.type == 'material' %}selected{% endif %}>Материалы</option>
                       <option value="labor" {% if item.type == 'labor' %}selected{% endif %}>Работы</option>
@@ -160,25 +161,25 @@
                       <option value="delivery" {% if item.type == 'delivery' %}selected{% endif %}>Доставка</option>
                     </select>
                   </td>
-                  <td class="px-1.5 py-0.5 align-top min-w-[12rem] sm:min-w-[20rem]">
-                    <textarea form="estimate-row-{{ item.pk }}" name="name" rows="2" placeholder="Наименование" class="js-estimate-name-auto w-full min-w-0 min-h-[2.75rem] resize-y overflow-y-auto rounded border border-slate-200 px-1.5 py-0.5 text-xs leading-snug text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">{{ item.name|strip_norm_code }}</textarea>
+                  <td class="px-1.5 py-1 align-top min-w-[18rem] sm:min-w-[26rem]">
+                    <textarea form="estimate-row-{{ item.pk }}" name="name" rows="2" placeholder="Наименование" class="js-estimate-name-auto w-full min-w-[16rem] sm:min-w-[24rem] min-h-[2.75rem] resize-y overflow-y-auto rounded border border-slate-200 px-1.5 py-0.5 text-xs leading-snug text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">{{ item.name|strip_norm_code }}</textarea>
                   </td>
-                  <td class="px-1.5 py-0.5">
+                  <td class="px-1.5 py-1">
                     <input form="estimate-row-{{ item.pk }}" type="text" name="unit" value="{{ item.unit }}" class="w-full rounded border border-slate-200 px-1.5 py-0.5 text-xs leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </td>
-                  <td class="px-1.5 py-0.5 min-w-[6.5rem]">
-                    <input form="estimate-row-{{ item.pk }}" type="text" name="quantity" value="{{ item.quantity|qty_plain }}" inputmode="decimal" class="w-full min-w-0 rounded border border-slate-200 px-1.5 py-1 text-xs sm:text-sm text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  <td class="px-1.5 py-1 align-top min-w-[3.25rem] max-w-[4rem]">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="quantity" value="{{ item.quantity|qty_plain }}" inputmode="decimal" class="w-full max-w-[4rem] ml-auto block rounded border border-slate-200 px-1 py-1 text-xs sm:text-sm text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </td>
-                  <td class="px-1.5 py-0.5 min-w-[7.5rem]">
-                    <input form="estimate-row-{{ item.pk }}" type="text" name="cost_price" value="{{ item.cost_price }}" inputmode="decimal" class="w-full min-w-0 rounded border border-slate-200 px-1.5 py-1 text-xs sm:text-sm text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  <td class="px-1.5 py-1 align-top min-w-[3.75rem] max-w-[5rem]">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="cost_price" value="{{ item.cost_price }}" inputmode="decimal" class="w-full max-w-[5rem] ml-auto block rounded border border-slate-200 px-1 py-1 text-xs sm:text-sm text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </td>
-                  <td class="px-1.5 py-0.5 text-right tabular-nums text-slate-700 align-middle text-xs sm:text-sm leading-tight js-item-total-cost whitespace-nowrap">{{ item.total_cost|floatformat:2 }}</td>
-                  <td class="px-1.5 py-0.5 min-w-[5.5rem]">
-                    <input form="estimate-row-{{ item.pk }}" type="text" name="markup_percent" value="{{ item.markup_percent }}" inputmode="decimal" class="w-full min-w-0 rounded border border-slate-200 px-1.5 py-1 text-xs sm:text-sm text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  <td class="px-1.5 py-1 text-right tabular-nums text-slate-700 align-top text-xs sm:text-sm leading-tight js-item-total-cost whitespace-nowrap">{{ item.total_cost|floatformat:2 }}</td>
+                  <td class="px-1.5 py-1 align-top min-w-[2.75rem] max-w-[3.5rem]">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="markup_percent" value="{{ item.markup_percent }}" inputmode="decimal" class="w-full max-w-[3.5rem] ml-auto block rounded border border-slate-200 px-1 py-1 text-xs sm:text-sm text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </td>
-                  <td class="px-1.5 py-0.5 text-right tabular-nums text-slate-700 align-middle text-xs sm:text-sm leading-tight js-item-sell-price whitespace-nowrap">{{ item.sell_price|floatformat:2 }}</td>
-                  <td class="px-1.5 py-0.5 text-right tabular-nums font-medium text-slate-900 align-middle text-xs sm:text-sm leading-tight js-item-total-price whitespace-nowrap">{{ item.total_price|floatformat:2 }}</td>
-                  <td class="px-1 py-0.5 text-center align-middle">
+                  <td class="px-1.5 py-1 text-right tabular-nums text-slate-700 align-top text-xs sm:text-sm leading-tight js-item-sell-price whitespace-nowrap">{{ item.sell_price|floatformat:2 }}</td>
+                  <td class="px-1.5 py-1 text-right tabular-nums font-medium text-slate-900 align-top text-xs sm:text-sm leading-tight js-item-total-price whitespace-nowrap">{{ item.total_price|floatformat:2 }}</td>
+                  <td class="px-1 py-1 text-center align-top">
                     <div class="inline-flex items-center justify-center gap-0.5">
                     <form id="estimate-row-{{ item.pk }}" method="post" action="{% url 'estimate_item_inline' project.pk section.pk item.pk %}" class="hidden" aria-hidden="true">
                       {% csrf_token %}

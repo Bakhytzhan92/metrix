@@ -9,6 +9,8 @@ type Meta = {
   writeoff_reasons: { value: string; label: string }[];
   schedule_phases: { id: number; label: string }[];
   movement_types: { value: string; label: string }[];
+  /** Справочник единиц измерения склада материалов */
+  material_units?: { value: string; label: string }[];
 };
 
 type StockRow = {
@@ -40,6 +42,45 @@ type HistRow = {
 };
 
 type CatMaterial = { id: number; name: string; unit: string };
+
+/** Дубль backend.core.models.MATERIAL_MEASURE_UNIT_CHOICES для старых кэшей meta без списка. */
+const FALLBACK_MATERIAL_UNIT_OPTIONS = [
+  { value: "шт", label: "шт" },
+  { value: "тн", label: "тн" },
+  { value: "м", label: "м" },
+  { value: "м2", label: "м²" },
+  { value: "компл.", label: "компл." },
+  { value: "м3", label: "м³" },
+  { value: "л", label: "л" },
+  { value: "т", label: "т" },
+  { value: "кг", label: "кг" },
+  { value: "км", label: "км" },
+  { value: "пог. м", label: "пог. м" },
+  { value: "усл. ед.", label: "усл. ед." },
+  { value: "упак.", label: "упак." },
+] as const;
+
+function materialMeasureUnitOpts(
+  metaList: { value: string; label: string }[] | undefined
+): { value: string; label: string }[] {
+  return metaList && metaList.length ? metaList.slice() : [...FALLBACK_MATERIAL_UNIT_OPTIONS];
+}
+
+/** Несовместимые с актуальным списком значения показываем отдельной опцией до смены. */
+function buildMaterialUnitSelectOptions(
+  canon: readonly { value: string; label: string }[],
+  stored: string
+): { value: string; label: string }[] {
+  const have = new Set(canon.map((o) => o.value));
+  if (stored && !have.has(stored)) {
+    return [{ value: stored, label: `${stored} (текущее)` }, ...canon.slice()];
+  }
+  return canon.slice();
+}
+
+function materialUnitDisplayLabel(canon: readonly { value: string; label: string }[], code: string) {
+  return canon.find((o) => o.value === code)?.label ?? code;
+}
 
 function csrf(): string {
   const m = document.cookie.match(/csrftoken=([^;]+)/);
@@ -91,8 +132,8 @@ function inlineNameInputCls() {
   return "w-full min-w-[8rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-sm font-medium text-slate-900 shadow-sm hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 }
 
-function inlineUnitInputCls() {
-  return "w-full min-w-[2.5rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-600 shadow-sm hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+function inlineUnitSelectCls() {
+  return "w-full min-w-[5rem] max-w-[9rem] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-sm text-slate-900 shadow-sm hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 }
 
 function previewTotalTenge(qtyStr: string, priceStr: string): string {
@@ -109,6 +150,7 @@ function MaterialsStockRow({
   r,
   canEdit,
   apiBase,
+  unitCanon,
   onRowSaved,
   onRowDeleted,
   onError,
@@ -117,6 +159,8 @@ function MaterialsStockRow({
   r: StockRow;
   canEdit: boolean;
   apiBase: string;
+  /** Канонический справочник единиц из API (или fallback). */
+  unitCanon: readonly { value: string; label: string }[];
   onRowSaved: (s: StockRow) => void;
   onRowDeleted: (stockId: number) => void;
   onError: (msg: string) => void;
@@ -146,6 +190,10 @@ function MaterialsStockRow({
   }, [deleteConfirmOpen]);
 
   const totalPreview = useMemo(() => previewTotalTenge(qty, price), [qty, price]);
+  const unitSelectOpts = useMemo(
+    () => buildMaterialUnitSelectOptions(unitCanon, r.unit),
+    [unitCanon, r.unit]
+  );
 
   const rollback = useCallback(() => {
     setName(r.name);
@@ -184,7 +232,7 @@ function MaterialsStockRow({
       <tr className="border-b border-slate-50 hover:bg-slate-50/60">
         <td className="px-4 py-2.5 font-medium text-slate-900">{r.name}</td>
         <td className="px-4 py-2.5 tabular-nums">{r.quantity}</td>
-        <td className="px-4 py-2.5 text-slate-500">{r.unit}</td>
+        <td className="px-4 py-2.5 text-slate-500">{materialUnitDisplayLabel(unitCanon, r.unit)}</td>
         <td className="px-4 py-2.5 tabular-nums">{r.price} ₸</td>
         <td className="px-4 py-2.5 tabular-nums font-medium text-slate-800">
           {r.total_value} ₸
@@ -311,21 +359,23 @@ function MaterialsStockRow({
         />
       </td>
       <td className="px-4 py-2 align-middle">
-        <input
-          className={inlineUnitInputCls()}
+        <select
+          className={inlineUnitSelectCls()}
           value={unit}
-          onChange={(e) => setUnit(e.target.value)}
-          onBlur={() => {
-            const u = unit.trim() || "шт";
-            if (u === r.unit) return;
-            void savePatch({ unit: u });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          onChange={(e) => {
+            const v = e.target.value;
+            setUnit(v);
+            if (v !== r.unit) void savePatch({ unit: v });
           }}
           disabled={saving}
           aria-label="Единица измерения"
-        />
+        >
+          {unitSelectOpts.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       </td>
       <td className="px-4 py-2 align-middle">
         <div className="flex items-center gap-0.5">
@@ -640,6 +690,7 @@ function App({ projectId, apiBase }: { projectId: number; apiBase: string }) {
                     r={r}
                     canEdit={!!meta.can_edit}
                     apiBase={base}
+                    unitCanon={materialMeasureUnitOpts(meta.material_units)}
                     onRowSaved={(row) =>
                       setStocks((prev) => prev.map((x) => (x.stock_id === row.stock_id ? row : x)))
                     }
@@ -849,7 +900,13 @@ function AddMaterialModal({
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500">Ед. измерения</label>
-            <input className={fieldCls()} value={unit} onChange={(e) => setUnit(e.target.value)} />
+            <select className={fieldCls()} value={unit} onChange={(e) => setUnit(e.target.value)}>
+              {materialMeasureUnitOpts(meta.material_units).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500">Цена за ед.</label>
@@ -896,7 +953,7 @@ function AddMaterialModal({
                 await onSave({
                   name: name.trim(),
                   category: "material",
-                  unit: unit.trim(),
+                  unit: unit,
                   unit_price: price,
                   initial_quantity: initialQty || "0",
                   warehouse_id: parseInt(warehouseId, 10),

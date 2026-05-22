@@ -9,7 +9,9 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from django.db.models import F, Q, Sum
+from collections import defaultdict
+
+from django.db.models import Q, Sum
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_GET, require_http_methods
@@ -30,13 +32,106 @@ def _json(body: dict[str, Any], status: int = 200) -> JsonResponse:
     return JsonResponse(body, status=status, json_dumps_params={"ensure_ascii": False})
 
 
+def _default_gsm_warehouse_for_project(
+    project: Project, warehouses: list[Warehouse]
+) -> Warehouse | None:
+    """
+    Склад по умолчанию для операций ГСМ в контексте проекта: среди складов проекта
+    выбирается тот, где суммарный остаток топлива (без «газа») больше; иначе первый по имени.
+    """
+    if not warehouses:
+        return None
+    wo = get_written_off_warehouse(project.company)
+    project_rows = [w for w in warehouses if w.project_id == project.id and w.pk != wo.pk]
+    candidates = project_rows if project_rows else [w for w in warehouses if w.pk != wo.pk]
+    if not candidates:
+        candidates = list(warehouses)
+
+    company = project.company
+    best_wh: Warehouse | None = None
+    best_sum = Decimal("-1")
+    for w in candidates:
+        agg = (
+            FuelStock.objects.filter(warehouse_id=w.id, fuel_type__company=company)
+            .exclude(fuel_type__code="gas")
+            .aggregate(s=Sum("quantity"))["s"]
+            or Decimal("0")
+        )
+        if agg > best_sum:
+            best_sum = agg
+            best_wh = w
+    return best_wh or sorted(candidates, key=lambda x: x.name)[0]
+
+
+def _gsm_warehouse_from_body_or_default(
+    body: dict[str, Any],
+    project: Project,
+    warehouses: list[Warehouse],
+    wh_ids: list[int],
+) -> Warehouse | None:
+    wh_id = body.get("warehouse_id")
+    if wh_id not in (None, ""):
+        warehouse = get_object_or_404(
+            Warehouse, pk=int(wh_id), company=project.company, is_deleted=False
+        )
+    else:
+        warehouse = _default_gsm_warehouse_for_project(project, warehouses)
+    if not warehouse or warehouse.id not in wh_ids:
+        return None
+    return warehouse
+
+
+def _gsm_warehouse_for_draw(
+    body: dict[str, Any],
+    fuel_type: FuelType,
+    quantity: Decimal,
+    project: Project,
+    warehouses: list[Warehouse],
+    wh_ids: list[int],
+) -> Warehouse | None:
+    """
+    Склад для выдачи/списания: явный warehouse_id в теле запроса или
+    первый склад проекта, где остаток >= quantity (сначала основной ГСМ-склад,
+    затем остальные по алфавиту).
+    """
+    wh_id = body.get("warehouse_id")
+    if wh_id not in (None, ""):
+        warehouse = get_object_or_404(
+            Warehouse, pk=int(wh_id), company=project.company, is_deleted=False
+        )
+        if warehouse.id not in wh_ids:
+            return None
+        return warehouse
+
+    preferred = _default_gsm_warehouse_for_project(project, warehouses)
+    in_scope = [w for w in warehouses if w.id in wh_ids]
+    ordered: list[Warehouse] = []
+    seen: set[int] = set()
+    if preferred and preferred.id in wh_ids:
+        ordered.append(preferred)
+        seen.add(preferred.id)
+    for w in sorted(in_scope, key=lambda x: x.name):
+        if w.id in seen:
+            continue
+        ordered.append(w)
+
+    for w in ordered:
+        try:
+            st = FuelStock.objects.get(warehouse=w, fuel_type=fuel_type)
+        except FuelStock.DoesNotExist:
+            continue
+        if (st.quantity or Decimal("0")) >= quantity:
+            return w
+    return None
+
+
 def _fuel_dashboard_cards(
     company, wh_ids: list[int]
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Карточки основных видов топлива: остаток по складам проекта, расход за месяц, даты."""
     from django.db.models import Sum
 
-    CARD_CODES = ("diesel", "ai92", "ai95", "gas")
+    CARD_CODES = ("ai92", "ai95", "diesel")
     ensure_default_fuel_types(company)
     alerts: list[str] = []
     cards: list[dict[str, Any]] = []
@@ -89,12 +184,6 @@ def _fuel_dashboard_cards(
             .order_by("-date", "-created_at")
             .first()
         )
-        wh_parts = []
-        for s in stocks:
-            if s.quantity and s.quantity > 0:
-                wh_parts.append(
-                    f"{s.warehouse.name}: {_fmt_qty(s.quantity)} {ft.unit}"
-                )
         low = ft.unit == "л" and balance < Decimal("500")
         if low:
             alerts.append(f"Низкий остаток «{ft.name}»: {_fmt_qty(balance)} {ft.unit}")
@@ -107,8 +196,6 @@ def _fuel_dashboard_cards(
                 "balance": _fmt_qty(balance),
                 "avg_price": _fmt_money(avg_price),
                 "month_out": _fmt_qty(month_out),
-                "warehouse_hint": "; ".join(wh_parts[:3])
-                + ("…" if len(wh_parts) > 3 else ""),
                 "last_issue_date": last_issue.date.isoformat() if last_issue else "",
                 "last_writeoff_date": last_wo.date.isoformat() if last_wo else "",
                 "low_balance": low,
@@ -186,8 +273,10 @@ def api_project_gsm_meta(request: HttpRequest, pk: int) -> JsonResponse:
     company = project.company
     ensure_default_fuel_types(company)
     wh_ids_list = [w.id for w in warehouses]
+    gw = _default_gsm_warehouse_for_project(project, warehouses)
     types = list(
         FuelType.objects.filter(company=company)
+        .exclude(code="gas")
         .order_by("code")
         .values("id", "code", "name", "unit")
     )
@@ -219,21 +308,17 @@ def api_project_gsm_meta(request: HttpRequest, pk: int) -> JsonResponse:
         }
         for e in equipment
     ]
-    projects = list(
-        Project.objects.filter(company=company)
-        .exclude(status="archived")
-        .order_by("name")
-        .values("id", "name")[:500]
-    )
     fuel_cards, fuel_alerts = _fuel_dashboard_cards(company, wh_ids_list)
     return _json(
         {
             "ok": True,
             "can_edit": _can_edit(request.user, company),
             "warehouses": [{"id": w.id, "name": w.name} for w in warehouses],
+            "gsm_warehouse": (
+                {"id": gw.id, "name": gw.name} if gw else None
+            ),
             "fuel_types": types,
             "equipment": eq_json,
-            "projects": projects,
             "fuel_cards": fuel_cards,
             "fuel_alerts": fuel_alerts,
             "recipient_types": [
@@ -260,65 +345,64 @@ def api_project_gsm_stocks(request: HttpRequest, pk: int) -> JsonResponse:
     project, _, wh_ids = data
     company = project.company
     ensure_default_fuel_types(company)
-    q = (request.GET.get("q") or "").strip().lower()
-    wh_f = request.GET.get("warehouse")
+    q_raw = (request.GET.get("q") or "").strip()
+    q = q_raw.lower()
     ft_f = request.GET.get("fuel_type")
-    sort = request.GET.get("sort") or "fuel"
-    order = request.GET.get("order") or "asc"
+    sort = (request.GET.get("sort") or "fuel").strip()
+    order = (request.GET.get("order") or "asc").strip()
 
     qs = FuelStock.objects.filter(
         warehouse_id__in=wh_ids, fuel_type__company=company
-    ).select_related("fuel_type", "warehouse")
-    if q:
+    ).exclude(fuel_type__code="gas").select_related("fuel_type")
+    if q_raw:
         qs = qs.filter(
-            Q(fuel_type__name__icontains=q) | Q(fuel_type__code__icontains=q)
+            Q(fuel_type__name__icontains=q_raw) | Q(fuel_type__code__icontains=q_raw)
         )
-    if wh_f and str(wh_f).isdigit():
-        qs = qs.filter(warehouse_id=int(wh_f))
     if ft_f and str(ft_f).isdigit():
         qs = qs.filter(fuel_type_id=int(ft_f))
 
-    from django.db.models import DecimalField, ExpressionWrapper
-
-    qs = qs.annotate(
-        line_total=ExpressionWrapper(
-            F("quantity") * F("price_avg"),
-            output_field=DecimalField(max_digits=24, decimal_places=8),
-        )
-    )
-    sort_map = {
-        "fuel": "fuel_type__name",
-        "quantity": "quantity",
-        "price": "price_avg",
-        "total": "line_total",
-        "warehouse": "warehouse__name",
-    }
-    col = sort_map.get(sort, "fuel_type__name")
-    if sort == "total":
-        qs = qs.order_by(f"{'-' if order == 'desc' else ''}line_total")
-    elif order == "desc":
-        qs = qs.order_by(f"-{col}")
-    else:
-        qs = qs.order_by(col)
-
-    rows = []
+    buckets: defaultdict[int, list[FuelStock]] = defaultdict(list)
     for s in qs:
-        qty = s.quantity or Decimal("0")
-        price = s.price_avg or Decimal("0")
-        total = qty * price
+        buckets[s.fuel_type_id].append(s)
+
+    rows: list[dict[str, Any]] = []
+    for _ft_id, items in buckets.items():
+        ft = items[0].fuel_type
+        qty = sum((s.quantity or Decimal("0") for s in items), Decimal("0"))
+        if qty > 0:
+            price_avg = (
+                sum(
+                    (s.quantity or Decimal("0")) * (s.price_avg or Decimal("0"))
+                    for s in items
+                )
+                / qty
+            )
+        else:
+            price_avg = Decimal("0")
+        total = qty * price_avg
+        rep = min(items, key=lambda x: x.id)
         rows.append(
             {
-                "stock_id": s.id,
-                "fuel_type_id": s.fuel_type_id,
-                "fuel_name": s.fuel_type.name,
-                "unit": s.fuel_type.unit,
+                "stock_id": rep.id,
+                "fuel_type_id": ft.id,
+                "fuel_name": ft.name,
+                "unit": ft.unit,
                 "quantity": _fmt_qty(qty),
-                "price": _fmt_money(price),
+                "price": _fmt_money(price_avg),
                 "total_value": _fmt_money(total),
-                "warehouse_id": s.warehouse_id,
-                "warehouse_name": s.warehouse.name,
             }
         )
+
+    rev = order == "desc"
+    if sort == "quantity":
+        rows.sort(key=lambda r: Decimal(r["quantity"]), reverse=rev)
+    elif sort == "price":
+        rows.sort(key=lambda r: Decimal(r["price"]), reverse=rev)
+    elif sort == "total":
+        rows.sort(key=lambda r: Decimal(r["total_value"]), reverse=rev)
+    else:
+        rows.sort(key=lambda r: (r["fuel_name"] or "").lower(), reverse=rev)
+
     return _json({"ok": True, "stocks": rows})
 
 
@@ -338,7 +422,7 @@ def api_project_gsm_history(request: HttpRequest, pk: int) -> JsonResponse:
     proj_hf = request.GET.get("project_id")
     qs = FuelTransaction.objects.filter(
         warehouse_id__in=wh_ids, fuel_type__company=company
-    ).select_related("fuel_type", "warehouse", "user", "target_project", "equipment")
+    ).exclude(fuel_type__code="gas").select_related("fuel_type", "warehouse", "user", "target_project", "equipment")
     if mt and mt in dict(FuelTransaction.TYPE_CHOICES):
         qs = qs.filter(movement_type=mt)
     if df:
@@ -365,7 +449,6 @@ def api_project_gsm_history(request: HttpRequest, pk: int) -> JsonResponse:
                 "unit": m.fuel_type.unit,
                 "quantity": _fmt_qty(m.quantity or Decimal("0")),
                 "total": _fmt_money(m.total or Decimal("0")),
-                "warehouse_name": m.warehouse.name,
                 "username": m.user.get_username() if m.user else None,
                 "driver_name": m.driver_name,
                 "equipment_label": (
@@ -406,7 +489,7 @@ def api_project_gsm_analytics(request: HttpRequest, pk: int) -> JsonResponse:
         warehouse_id__in=wh_ids,
         fuel_type__company=company,
         movement_type__in=[FuelTransaction.TYPE_ISSUE, FuelTransaction.TYPE_WRITEOFF],
-    )
+    ).exclude(fuel_type__code="gas")
     if df:
         qs = qs.filter(date__gte=df)
     if dt:
@@ -479,18 +562,20 @@ def api_project_gsm_incoming(request: HttpRequest, pk: int) -> JsonResponse:
     err, data = _project_and_warehouses(request, pk)
     if err:
         return err
-    project, _, wh_ids = data
+    project, warehouses, wh_ids = data
     company = project.company
     if not _can_edit(request.user, company):
         return _json({"ok": False, "error": "forbidden"}, status=403)
     body = json.loads(request.body or b"{}")
     ft_id = body.get("fuel_type_id")
     fuel_type = get_object_or_404(FuelType, pk=int(ft_id), company=company)
-    wh_id = body.get("warehouse_id")
-    warehouse = get_object_or_404(
-        Warehouse, pk=int(wh_id), company=company, is_deleted=False
-    )
-    if warehouse.id not in wh_ids:
+    if fuel_type.code == "gas":
+        return _json(
+            {"ok": False, "error": "Вид топлива «Газ» не используется"},
+            status=400,
+        )
+    warehouse = _gsm_warehouse_from_body_or_default(body, project, warehouses, wh_ids)
+    if warehouse is None:
         return _json({"ok": False, "error": "invalid_warehouse"}, status=400)
     qty = _parse_decimal(body.get("quantity"))
     price = _parse_decimal(body.get("price")) or Decimal("0")
@@ -519,22 +604,32 @@ def api_project_gsm_issue(request: HttpRequest, pk: int) -> JsonResponse:
     err, data = _project_and_warehouses(request, pk)
     if err:
         return err
-    project, _, wh_ids = data
+    project, warehouses, wh_ids = data
     company = project.company
     if not _can_edit(request.user, company):
         return _json({"ok": False, "error": "forbidden"}, status=403)
     body = json.loads(request.body or b"{}")
     ft_id = body.get("fuel_type_id")
     fuel_type = get_object_or_404(FuelType, pk=int(ft_id), company=company)
-    wh_id = body.get("warehouse_id")
-    warehouse = get_object_or_404(
-        Warehouse, pk=int(wh_id), company=company, is_deleted=False
-    )
-    if warehouse.id not in wh_ids:
-        return _json({"ok": False, "error": "invalid_warehouse"}, status=400)
+    if fuel_type.code == "gas":
+        return _json(
+            {"ok": False, "error": "Вид топлива «Газ» не используется"},
+            status=400,
+        )
     qty = _parse_decimal(body.get("quantity"))
     if not qty or qty <= 0:
         return _json({"ok": False, "error": "bad_quantity"}, status=400)
+    warehouse = _gsm_warehouse_for_draw(
+        body, fuel_type, qty, project, warehouses, wh_ids
+    )
+    if warehouse is None:
+        return _json(
+            {
+                "ok": False,
+                "error": "Недостаточно топлива на складах проекта или нет строки остатка",
+            },
+            status=400,
+        )
     rtype = (body.get("recipient_type") or "")[:20]
     if rtype not in dict(FuelTransaction.RECIPIENT_CHOICES):
         return _json({"ok": False, "error": "bad_recipient_type"}, status=400)
@@ -600,22 +695,32 @@ def api_project_gsm_writeoff(request: HttpRequest, pk: int) -> JsonResponse:
     err, data = _project_and_warehouses(request, pk)
     if err:
         return err
-    project, _, wh_ids = data
+    project, warehouses, wh_ids = data
     company = project.company
     if not _can_edit(request.user, company):
         return _json({"ok": False, "error": "forbidden"}, status=403)
     body = json.loads(request.body or b"{}")
     ft_id = body.get("fuel_type_id")
     fuel_type = get_object_or_404(FuelType, pk=int(ft_id), company=company)
-    wh_id = body.get("warehouse_id")
-    warehouse = get_object_or_404(
-        Warehouse, pk=int(wh_id), company=company, is_deleted=False
-    )
-    if warehouse.id not in wh_ids:
-        return _json({"ok": False, "error": "invalid_warehouse"}, status=400)
+    if fuel_type.code == "gas":
+        return _json(
+            {"ok": False, "error": "Вид топлива «Газ» не используется"},
+            status=400,
+        )
     qty = _parse_decimal(body.get("quantity"))
     if not qty or qty <= 0:
         return _json({"ok": False, "error": "bad_quantity"}, status=400)
+    warehouse = _gsm_warehouse_for_draw(
+        body, fuel_type, qty, project, warehouses, wh_ids
+    )
+    if warehouse is None:
+        return _json(
+            {
+                "ok": False,
+                "error": "Недостаточно топлива на складах проекта или нет строки остатка",
+            },
+            status=400,
+        )
     reason = (body.get("writeoff_reason") or "")[:20]
     try:
         apply_fuel_writeoff(
@@ -677,7 +782,7 @@ def api_project_gsm_timeseries(request: HttpRequest, pk: int) -> JsonResponse:
             FuelTransaction.TYPE_ISSUE,
             FuelTransaction.TYPE_WRITEOFF,
         ],
-    )
+    ).exclude(fuel_type__code="gas")
     if df:
         qs = qs.filter(date__gte=df)
     if dt:

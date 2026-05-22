@@ -259,7 +259,8 @@
                   {% with item=row.item %}
                   {% if item.is_subsection_header %}
                   <tr class="bg-slate-100/90 border-y border-slate-200">
-                    <td colspan="5" class="px-3 py-2 text-center text-xs font-bold uppercase tracking-tight text-slate-900">{{ item.name }}</td>
+                    <td class="bg-slate-100/90"></td>
+                    <td colspan="4" class="px-3 py-2 text-left text-xs font-bold uppercase tracking-tight text-slate-900">{{ item.name }}</td>
                   </tr>
                   {% else %}
                   <tr class="hover:bg-indigo-50/50 cursor-pointer transition-colors supply-pick-row" data-supply-pick-row>

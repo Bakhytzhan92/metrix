@@ -11,7 +11,6 @@ DEFAULT_FUEL_TYPES: tuple[tuple[str, str, str], ...] = (
     ("ai92", "АИ-92", "л"),
     ("ai95", "АИ-95", "л"),
     ("diesel", "ДТ", "л"),
-    ("gas", "Газ", "м³"),
     ("oil", "Масло", "л"),
 )
 

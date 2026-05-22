@@ -17,7 +17,16 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from .access_utils import has_permission
 from .inventory_services import get_written_off_warehouse
-from .models import Material, Project, ProjectSchedulePhase, Stock, StockMovement, Warehouse
+from .models import (
+    MATERIAL_MEASURE_UNIT_CHOICES,
+    Material,
+    Project,
+    ProjectSchedulePhase,
+    Stock,
+    StockMovement,
+    Warehouse,
+    coerce_material_measure_unit,
+)
 from .rbac import permission_required
 from .warehouse_services import (
     apply_incoming,
@@ -149,6 +158,9 @@ def api_project_materials_meta(request: HttpRequest, pk: int) -> JsonResponse:
             "writeoff_reasons": [{"value": k, "label": str(v)} for k, v in StockMovement.WRITEOFF_REASON_CHOICES],
             "movement_types": [{"value": k, "label": str(v)} for k, v in StockMovement.TYPE_CHOICES],
             "schedule_phases": phases,
+            "material_units": [
+                {"value": val, "label": lbl} for val, lbl in MATERIAL_MEASURE_UNIT_CHOICES
+            ],
         }
     )
 
@@ -326,9 +338,19 @@ def api_project_materials_stock_patch(
             name_dirty = True
 
     if "unit" in body:
-        unit = (body.get("unit") or "шт").strip()[:30] or "шт"
-        if unit != mat.unit:
-            mat.unit = unit
+        raw_u = body.get("unit")
+        canonical = coerce_material_measure_unit(raw_u)
+        if canonical is None:
+            cand = ("" if raw_u is None else str(raw_u)).strip()[:30]
+            if cand and cand == mat.unit:
+                canonical = mat.unit
+            else:
+                return _json(
+                    {"ok": False, "error": "Неверная единица измерения — выберите из списка"},
+                    status=400,
+                )
+        if canonical != mat.unit:
+            mat.unit = canonical
             unit_dirty = True
 
     if "quantity" in body:
@@ -468,7 +490,12 @@ def api_project_materials_create(request: HttpRequest, pk: int) -> JsonResponse:
     name = (data.get("name") or "").strip()
     if not name:
         return _json({"ok": False, "error": "name_required"}, status=400)
-    unit = (data.get("unit") or "шт").strip()[:30] or "шт"
+    unit = coerce_material_measure_unit(data.get("unit"))
+    if unit is None:
+        return _json(
+            {"ok": False, "error": "Укажите единицу измерения из списка"},
+            status=400,
+        )
     wh_id = data.get("warehouse_id")
     warehouse = get_object_or_404(Warehouse, pk=int(wh_id), company=company, is_deleted=False)
     if warehouse.id not in wh_ids:

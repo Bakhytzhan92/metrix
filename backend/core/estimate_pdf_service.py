@@ -64,7 +64,9 @@ def apply_local_estimate_rows(
     items_created = 0
 
     with transaction.atomic():
-        for r in rows:
+        # row_idx — порядок строк из парсера; одинаковые названия баннеров
+        # («ПРОЧИЕ РАБОТЫ», «ЗЕМЛЯНЫЕ РАБОТЫ») в разных местах документа — разные элементы списка.
+        for row_idx, r in enumerate(rows):
             sec_name = (r.get("section") or "Локальная смета").strip()[:255]
             is_hdr = r.get("is_subsection_header") is True
             name = (r.get("name") or "").strip()[:ESTIMATE_ITEM_NAME_MAX_LENGTH]
@@ -73,17 +75,10 @@ def apply_local_estimate_rows(
                 if not name:
                     continue
                 unit = ((r.get("unit") or "—") or "—").strip()[:30] or "—"
-                fk_h = ("hdr", sec_name, name[:2000])
+                fk_h = ("hdr", sec_name, name[:2000], row_idx)
                 if fk_h in file_seen:
                     continue
                 file_seen.add(fk_h)
-                if EstimateItem.objects.filter(
-                    section__project=project,
-                    section__name=sec_name,
-                    name=name,
-                    is_subsection_header=True,
-                ).exists():
-                    continue
                 section = EstimateSection.objects.filter(
                     project=project, name=sec_name
                 ).first()
