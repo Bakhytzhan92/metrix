@@ -1,4 +1,5 @@
 {% extends "core/project/project_layout.html" %}
+{% load static %}
 {% load estimate_extras %}
 
 {% block project_content %}
@@ -74,12 +75,16 @@
             </button>
             {% endif %}
           </div>
-          <p class="text-xs text-ink-muted mt-1 max-w-3xl">Прокрутка всего списка одной полосой. Пересчёт строк при количестве, цене и наценке. Наименование и ресурсы сохраняются при смене поля и кнопкой «Сохранить» (все строки сразу). Новая строка — «+ позиция» у раздела.</p>
+          <p class="text-xs text-ink-muted mt-1 max-w-3xl">{% if use_estimate_virtual %}Большая смета: таблица виртуализирована (рендерятся только видимые строки). {% endif %}Прокрутка всего списка одной полосой. Пересчёт строк при количестве, цене и наценке. Наименование и ресурсы сохраняются при смене поля и кнопкой «Сохранить» (все строки сразу). Новая строка — «+ позиция» у раздела.</p>
         </div>
       </div>
     </div>
     {% if sections %}
     <div id="estimate-sections-scroll" class="max-h-[min(70vh,52rem)] overflow-y-auto overflow-x-hidden overscroll-y-contain divide-y divide-line/80 shadow-inner">
+      {% if use_estimate_virtual %}
+      {{ estimate_virtual_payload|json_script:"estimate-virtual-bootstrap" }}
+      <div id="estimate-virtual-root"></div>
+      {% else %}
       {% for section in sections %}
       {% with items=section.items.all %}
       <div class="estimate-section group border-0" id="section-{{ section.pk }}" data-section-order="{{ section.order }}">
@@ -215,6 +220,7 @@
       </div>
       {% endwith %}
       {% endfor %}
+      {% endif %}
     </div>
     <div class="estimate-grand-total px-4 py-4 bg-slate-100/90 border-t-2 border-slate-200">
         <div class="flex flex-wrap items-center justify-between gap-2">
@@ -435,6 +441,7 @@
 </div>
 <script>
 (function () {
+  var ESTIMATE_VIRTUAL = {{ use_estimate_virtual|yesno:"true,false" }};
   var SAVE_DEBOUNCE_MS = 320;
   var SECTION_RECALC_DEBOUNCE_MS = 200;
   var saveTimers = {};
@@ -737,6 +744,7 @@
     cancelScheduledSave(formEl.id);
     return saveRowPromise(formEl, false);
   }
+  if (!ESTIMATE_VIRTUAL) {
   document.querySelectorAll('form[id^="estimate-row-"]').forEach(function (formEl) {
     document.querySelectorAll('[form="' + formEl.id + '"]').forEach(function (input) {
       wireEstimateNumericZeroUX(input);
@@ -769,6 +777,7 @@
     });
   });
   document.querySelectorAll("textarea.js-estimate-name-auto").forEach(fitEstimateNameTa);
+  }
   document.querySelectorAll(".js-estimate-vat-checkbox").forEach(function (cb) {
     cb.addEventListener("change", function () {
       syncVatCheckboxes(this);
@@ -777,15 +786,28 @@
     });
   });
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "hidden") flushPendingSavesKeepalive();
+    if (document.visibilityState === "hidden") {
+      if (window.__metrixEstimateVirtual) window.__metrixEstimateVirtual.flushKeepalive();
+      else flushPendingSavesKeepalive();
+    }
   });
-  window.addEventListener("pagehide", flushPendingSavesKeepalive);
-  window.addEventListener("blur", flushPendingSavesKeepalive);
-  window.addEventListener("beforeunload", flushPendingSavesKeepalive);
+  window.addEventListener("pagehide", function () {
+    if (window.__metrixEstimateVirtual) window.__metrixEstimateVirtual.flushKeepalive();
+    else flushPendingSavesKeepalive();
+  });
+  window.addEventListener("blur", function () {
+    if (window.__metrixEstimateVirtual) window.__metrixEstimateVirtual.flushKeepalive();
+    else flushPendingSavesKeepalive();
+  });
+  window.addEventListener("beforeunload", function () {
+    if (window.__metrixEstimateVirtual) window.__metrixEstimateVirtual.flushKeepalive();
+    else flushPendingSavesKeepalive();
+  });
   document.addEventListener(
     "click",
     function (ev) {
-      if (!document.querySelector('form[id^="estimate-row-"]')) return;
+      if (!document.querySelector('form[id^="estimate-row-"]') && !window.__metrixEstimateVirtual)
+        return;
       var a = ev.target.closest("a[href]");
       if (!a) return;
       if (ev.defaultPrevented) return;
@@ -805,10 +827,19 @@
       var cur = window.location.pathname + window.location.search;
       if (next === cur) return;
       ev.preventDefault();
-      flushPendingSavesBeforeNavigate().then(function (allSaved) {
-        if (!allSaved) return;
+      function goNav() {
         window.location.assign(url.pathname + url.search + url.hash);
-      });
+      }
+      if (window.__metrixEstimateVirtual) {
+        window.__metrixEstimateVirtual.flushBeforeNavigate().then(function (ok) {
+          if (ok) goNav();
+        });
+      } else {
+        flushPendingSavesBeforeNavigate().then(function (allSaved) {
+          if (!allSaved) return;
+          goNav();
+        });
+      }
     },
     true
   );
@@ -816,6 +847,20 @@
   if (saveAllBtn) {
     saveAllBtn.addEventListener("click", function () {
       var label = saveAllBtn.textContent;
+      if (window.__metrixEstimateVirtual) {
+        saveAllBtn.disabled = true;
+        saveAllBtn.textContent = "Сохранение…";
+        window.__metrixEstimateVirtual.saveAllForce().then(function (ok) {
+          saveAllBtn.disabled = false;
+          saveAllBtn.textContent = ok ? "Сохранено" : label;
+          if (ok) {
+            setTimeout(function () {
+              saveAllBtn.textContent = label;
+            }, 2000);
+          }
+        });
+        return;
+      }
       document.querySelectorAll('form[id^="estimate-row-"]').forEach(function (f) {
         cancelScheduledSave(f.id);
       });
@@ -1098,6 +1143,7 @@
     }
   })();
 
+  if (!ESTIMATE_VIRTUAL) {
   function renumberEstimateDataRowIndices() {
     document.querySelectorAll(".estimate-section").forEach(function (sec) {
       var n = 0;
@@ -1109,6 +1155,7 @@
     });
   }
   renumberEstimateDataRowIndices();
+  }
 })();
 </script>
 <script>
@@ -1313,4 +1360,14 @@
   }
 })();
 </script>
+{% if use_estimate_virtual %}
+<script defer src="{% static 'core/estimate/virtual-table.js' %}"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  if (window.MetrixEstimateVirtualMount) {
+    window.MetrixEstimateVirtualMount("estimate-virtual-root", "estimate-virtual-bootstrap");
+  }
+});
+</script>
+{% endif %}
 {% endblock %}

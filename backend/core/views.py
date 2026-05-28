@@ -267,6 +267,107 @@ def project_analytics(request: HttpRequest, pk: int) -> HttpResponse:
     return render(request, "core/project/analytics.html", {"project": project, "active_tab": "analytics"})
 
 
+ESTIMATE_VIRTUAL_ROW_THRESHOLD = 120
+
+
+def _estimate_sheet_row_count(sections) -> int:
+    return sum(len(s.items.all()) for s in sections)
+
+
+def _estimate_virtual_payload(request: HttpRequest, project, sections):
+    """JSON для клиентской виртуализации строк сметы (React + react-window)."""
+    from decimal import Decimal
+
+    from django.middleware.csrf import get_token
+
+    from .templatetags.estimate_extras import qty_plain, strip_norm_code
+
+    badge = 0
+    out_sections = []
+    for sec in sections:
+        badge += 1
+        rows = []
+        ordinal = 0
+        items_list = list(sec.items.all())
+        sc_dec = Decimal("0")
+        sp_dec = Decimal("0")
+        item_count = 0
+        for item in items_list:
+            if item.is_subsection_header:
+                rows.append(
+                    {
+                        "kind": "banner",
+                        "key": f"h-{item.pk}",
+                        "title": item.name or "",
+                    }
+                )
+                continue
+            item_count += 1
+            ordinal += 1
+            tc = item.total_cost or Decimal("0")
+            tp = item.total_price or Decimal("0")
+            sc_dec += tc
+            sp_dec += tp
+            rows.append(
+                {
+                    "kind": "item",
+                    "key": f"i-{item.pk}",
+                    "id": item.pk,
+                    "ordinal": ordinal,
+                    "type": item.type,
+                    "name": strip_norm_code(item.name or ""),
+                    "unit": item.unit or "",
+                    "quantity": qty_plain(item.quantity),
+                    "cost_price": str(item.cost_price),
+                    "markup_percent": str(item.markup_percent),
+                    "sell_price": f"{item.sell_price:.2f}",
+                    "total_cost": f"{item.total_cost:.2f}",
+                    "total_price": f"{item.total_price:.2f}",
+                    "urls": {
+                        "save": reverse(
+                            "estimate_item_inline",
+                            args=[project.pk, sec.pk, item.pk],
+                        ),
+                        "delete": reverse(
+                            "estimate_item_delete",
+                            args=[project.pk, sec.pk, item.pk],
+                        ),
+                        "supply": (
+                            f"{reverse('project_supply', args=[project.pk])}"
+                            f"?tab=requests&estimate_item={item.pk}"
+                            f"#supply-create-request"
+                        ),
+                    },
+                }
+            )
+        out_sections.append(
+            {
+                "id": sec.pk,
+                "order": sec.order,
+                "name": sec.name,
+                "displayBadge": badge,
+                "item_count": item_count,
+                "section_total_cost": f"{sc_dec:.2f}",
+                "section_total_price": f"{sp_dec:.2f}",
+                "save_url": reverse(
+                    "estimate_section_inline", args=[project.pk, sec.pk]
+                ),
+                "delete_url": reverse(
+                    "estimate_section_delete", args=[project.pk, sec.pk]
+                ),
+                "quick_add_action": reverse(
+                    "estimate_item_quick_add", args=[project.pk, sec.pk]
+                ),
+                "rows": rows,
+            }
+        )
+    return {
+        "project_id": project.pk,
+        "csrf_token": get_token(request),
+        "sections": out_sections,
+    }
+
+
 def _get_estimate_totals(project):
     """Итоги сметы по проекту: total_cost, total_price, markup, vat, client_total."""
     from decimal import Decimal, ROUND_HALF_UP
@@ -309,18 +410,22 @@ def project_estimate(request: HttpRequest, pk: int) -> HttpResponse:
         .order_by("order", "id")
     )
     totals = _get_estimate_totals(project)
-    return render(
-        request,
-        "core/project/estimate.html",
-        {
-            "project": project,
-            "active_tab": "estimate",
-            "sections": sections,
-            "totals": totals,
-            "section_form": EstimateSectionForm(),
-            "item_form": EstimateItemForm(),
-        },
-    )
+    rows_total = _estimate_sheet_row_count(sections)
+    use_virtual = rows_total >= ESTIMATE_VIRTUAL_ROW_THRESHOLD
+    ctx = {
+        "project": project,
+        "active_tab": "estimate",
+        "sections": sections,
+        "totals": totals,
+        "section_form": EstimateSectionForm(),
+        "item_form": EstimateItemForm(),
+        "use_estimate_virtual": use_virtual,
+    }
+    if use_virtual:
+        ctx["estimate_virtual_payload"] = _estimate_virtual_payload(
+            request, project, sections
+        )
+    return render(request, "core/project/estimate.html", ctx)
 
 
 @login_required
