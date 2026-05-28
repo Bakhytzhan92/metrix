@@ -21,6 +21,11 @@ import {
 } from "./math";
 import type { BootstrapItem, BootstrapSection, EstimateVirtualPayload } from "./types";
 
+/** Наименование — одна строка; перенос только визуально в ячейке. */
+function flattenEstimateName(name: string): string {
+  return (name || "").replace(/\s*\n+\s*/g, " ").replace(/\s+/g, " ").trim();
+}
+
 /** Фиксированная высота строки для react-window — задаёт высоту и поля «наименование» (flex-1). */
 const ROW_H = 40;
 const BANNER_H = 34;
@@ -130,16 +135,23 @@ const ItemRowInner = memo(
             ref={taRef}
             form={formId}
             rows={2}
+            wrap="soft"
             name="name"
             placeholder="Наименование"
-            className="js-estimate-name-auto min-h-0 flex-1 basis-0 w-full resize-none overflow-y-auto rounded border border-slate-200 px-1 py-0.5 text-xs leading-snug text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 box-border"
+            className="js-estimate-name-auto min-h-0 flex-1 basis-0 w-full resize-none overflow-y-auto break-words rounded border border-slate-200 px-1 py-0.5 text-xs leading-snug text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 box-border"
             value={state.name}
             onInput={() => {
-              onChange(itemId, { name: taRef.current?.value ?? "" });
+              const raw = taRef.current?.value ?? "";
+              const flat = flattenEstimateName(raw);
+              if (taRef.current && taRef.current.value !== flat) {
+                taRef.current.value = flat;
+              }
+              onChange(itemId, { name: flat });
               scheduleDebouncedSave(itemId);
             }}
             onChange={(e) => {
-              onChange(itemId, { name: e.target.value });
+              const flat = flattenEstimateName(e.target.value);
+              onChange(itemId, { name: flat });
               scheduleDebouncedSave(itemId);
             }}
             onBlur={() => onBlurCommit(itemId)}
@@ -727,7 +739,7 @@ export function EstimateVirtualApp({
         m[r.id] = {
           ordinal: r.ordinal,
           type: r.type,
-          name: r.name,
+          name: flattenEstimateName(r.name),
           unit: r.unit,
           quantity: r.quantity,
           cost_price: r.cost_price,

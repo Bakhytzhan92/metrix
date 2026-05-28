@@ -167,7 +167,7 @@
                     </select>
                   </td>
                   <td class="px-1.5 py-1 align-top min-w-[18rem] sm:min-w-[26rem]">
-                    <textarea form="estimate-row-{{ item.pk }}" name="name" rows="2" placeholder="Наименование" class="js-estimate-name-auto w-full min-w-[16rem] sm:min-w-[24rem] min-h-[2.75rem] resize-y overflow-y-auto rounded border border-slate-200 px-1.5 py-0.5 text-xs leading-snug text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">{{ item.name|strip_norm_code }}</textarea>
+                    <textarea form="estimate-row-{{ item.pk }}" name="name" rows="2" wrap="soft" placeholder="Наименование" class="js-estimate-name-auto w-full min-w-[16rem] sm:min-w-[24rem] min-h-[2.75rem] resize-y overflow-y-auto break-words rounded border border-slate-200 px-1.5 py-0.5 text-xs leading-snug text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">{{ item.name|strip_norm_code }}</textarea>
                   </td>
                   <td class="px-1.5 py-1">
                     <input form="estimate-row-{{ item.pk }}" type="text" name="unit" value="{{ item.unit }}" class="w-full rounded border border-slate-200 px-1.5 py-0.5 text-xs leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
@@ -489,6 +489,9 @@
     var n = parseFloat(t);
     return isFinite(n) && n === 0;
   }
+  function flattenEstimateName(val) {
+    return String(val || "").replace(/\s*\n+\s*/g, " ").replace(/\s+/g, " ").trim();
+  }
   function fitEstimateNameTa(ta) {
     if (!ta || ta.tagName !== "TEXTAREA" || !ta.classList.contains("js-estimate-name-auto")) return;
     ta.style.height = "auto";
@@ -751,6 +754,8 @@
       input.addEventListener("input", function () {
         formEl.dataset.estimateDirty = "1";
         if (input.name === "name" && input.classList.contains("js-estimate-name-auto")) {
+          var flatName = flattenEstimateName(input.value);
+          if (input.value !== flatName) input.value = flatName;
           fitEstimateNameTa(input);
         } else {
           var row = getRowForForm(formEl);
@@ -763,6 +768,8 @@
       input.addEventListener("change", function () {
         formEl.dataset.estimateDirty = "1";
         if (input.name === "name" && input.classList.contains("js-estimate-name-auto")) {
+          var flatName = flattenEstimateName(input.value);
+          if (input.value !== flatName) input.value = flatName;
           fitEstimateNameTa(input);
         }
         recalcFromForm(formEl);
@@ -776,7 +783,10 @@
       });
     });
   });
-  document.querySelectorAll("textarea.js-estimate-name-auto").forEach(fitEstimateNameTa);
+  document.querySelectorAll("textarea.js-estimate-name-auto").forEach(function (ta) {
+    ta.value = flattenEstimateName(ta.value);
+    fitEstimateNameTa(ta);
+  });
   }
   document.querySelectorAll(".js-estimate-vat-checkbox").forEach(function (cb) {
     cb.addEventListener("change", function () {

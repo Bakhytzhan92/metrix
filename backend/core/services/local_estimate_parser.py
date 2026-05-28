@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 import re
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Union
 
 import pdfplumber
+
+logger = logging.getLogger(__name__)
 
 from core.models import ESTIMATE_ITEM_NAME_MAX_LENGTH
 
@@ -126,12 +129,62 @@ MAX_QTY = 1_000_000.0
 _LOOSE_PROJECT_QTY_INT_CAP = 25_000
 _EQ_COEFF_MAX = 2.5
 Y_CLUSTER_TOL = 2.5
+# Col.3: слова на краях часто попадают в соседние колонки по центроиду.
+C3_LEFT_PAD = 28.0
+C3_RIGHT_PAD = 32.0
 
 
 def _norm(s: str) -> str:
     s = s.replace("\u00a0", " ").replace("\r", " ")
     s = re.sub(r"\s+", " ", s.strip())
     return s
+
+
+def _soft_norm(s: str) -> str:
+    """Нормализация наименований: сохраняет логические переносы строк из PDF."""
+    if not s:
+        return ""
+    s = s.replace("\u00a0", " ").replace("\r", "")
+    lines: list[str] = []
+    for line in s.split("\n"):
+        line = re.sub(r"[ \t]+", " ", line.strip())
+        if line:
+            lines.append(line)
+    out = "\n".join(lines)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
+
+
+def _collapse_m_units_multiline(s: str) -> str:
+    if not s or "\n" not in s:
+        return _collapse_m_units(s)
+    return "\n".join(_collapse_m_units(line) for line in s.split("\n"))
+
+
+def _flatten_name_display(name: str) -> str:
+    """Одна строка для БД/UI: без переносов PDF, только пробелы между фрагментами."""
+    if not name:
+        return ""
+    s = name.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    s = re.sub(r"[ \t]+", " ", s)
+    return s.strip()
+
+
+def _join_name_lines(acc: str, frag: str) -> str:
+    a = (acc or "").strip()
+    f = (frag or "").strip()
+    if not a:
+        return _flatten_name_display(f)
+    if not f:
+        return _flatten_name_display(a)
+    return _flatten_name_display(f"{a} {f}")
+
+
+def _log_name_debug(stage: str, **fields: Any) -> None:
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    parts = " ".join(f"{key}={value!r}" for key, value in fields.items())
+    logger.debug("local_estimate_parser name %s: %s", stage, parts)
 
 
 def _collapse_m_units(s: str) -> str:
@@ -345,20 +398,198 @@ def _word_xc(w: dict) -> float:
     return (float(w["x0"]) + float(w["x1"])) / 2.0
 
 
+def _word_column_overlap_ratio(ww: dict, lo: float, hi: float) -> float:
+    x0, x1 = float(ww["x0"]), float(ww["x1"])
+    overlap = min(x1, hi) - max(x0, lo)
+    if overlap <= 0:
+        return 0.0
+    return overlap / max(x1 - x0, 0.001)
+
+
+def _is_col2_metadata_token(text: str) -> bool:
+    """Отдельное слово/токен метаданных col.2 (не текст наименования)."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if re.match(r"(?i)^ТЧ$", t):
+        return True
+    if re.match(r"(?i)^табл\.$", t):
+        return True
+    if re.match(r"(?i)^РСНБ$", t):
+        return True
+    if re.match(r"(?i)^Кзтр$", t):
+        return True
+    if re.match(r"(?i)^Кэм$", t):
+        return True
+    if re.match(r"(?i)^п\.", t):
+        return True
+    compact = re.sub(r"\s+", "", t)
+    if re.fullmatch(r"\d+-\d+-\d+(?:'[^']*')*", compact):
+        return True
+    return False
+
+
+def _name_column_zone(bounds: list[float]) -> tuple[float, float]:
+    return bounds[2] - C3_LEFT_PAD, bounds[3] + C3_RIGHT_PAD
+
+
+def _extract_name_column_words(
+    ws: list[dict],
+    bounds: list[float],
+) -> list[dict]:
+    """
+    Col.3: слова зоны наименования с расширенными bounds.
+    Не забираем метаданные col.2; не теряем крайние слова («96 кВт», «На», «мощностью»).
+    """
+    c3_lo, c3_hi = _name_column_zone(bounds)
+    col2_hi = bounds[2]
+    picked: list[dict] = []
+    for ww in ws:
+        text = (ww.get("text") or "").strip()
+        if not text:
+            continue
+        x0, x1 = float(ww["x0"]), float(ww["x1"])
+        xc = _word_xc(ww)
+        overlap_c3 = min(x1, c3_hi) - max(x0, c3_lo)
+        if overlap_c3 <= 0:
+            continue
+        ratio_c3 = overlap_c3 / max(x1 - x0, 0.001)
+        if ratio_c3 < 0.15:
+            continue
+        if _is_col2_metadata_token(text) and xc < col2_hi:
+            continue
+        overlap_c2 = min(x1, col2_hi) - max(x0, bounds[1])
+        if overlap_c2 > 0 and x1 <= col2_hi + 0.5:
+            if _is_col2_metadata_token(text):
+                continue
+        # Чисто числовые токены col.4–5 (кол-во, цены) — не в наименование
+        if xc >= bounds[3] + 2.0 and re.fullmatch(
+            r"[\d\s.,]+",
+            text.replace("\u00a0", " "),
+        ):
+            continue
+        picked.append(ww)
+    return picked
+
+
+def _split_row_words_by_columns(
+    ws: list[dict],
+    bounds: list[float],
+) -> list[list[dict]]:
+    """Распределить слова строки по колонкам 1…5; col.3 с расширенными bounds."""
+    cols: list[list[dict]] = [[] for _ in range(5)]
+    name_words = _extract_name_column_words(ws, bounds)
+    cols[2] = list(name_words)
+    assigned = {id(w) for w in name_words}
+    for ww in ws:
+        if id(ww) in assigned:
+            continue
+        scores: list[float] = []
+        for j in range(5):
+            if j == 2:
+                scores.append(0.0)
+                continue
+            lo, hi = bounds[j], bounds[j + 1]
+            scores.append(_word_column_overlap_ratio(ww, lo, hi))
+        best = max(range(5), key=lambda j: scores[j])
+        if best == 2:
+            continue
+        if scores[best] < 0.28:
+            continue
+        cols[best].append(ww)
+    return cols
+
+
+def _multiline_text_from_words(words: list[dict]) -> str:
+    if not words:
+        return ""
+    by_y: dict[float, list[dict]] = {}
+    for ww in words:
+        by_y.setdefault(_word_line_key(ww), []).append(ww)
+    lines: list[str] = []
+    for yk in sorted(by_y.keys()):
+        parts: list[str] = []
+        for ww in sorted(by_y[yk], key=lambda x: float(x["x0"])):
+            t = ww.get("text") or ""
+            if t:
+                parts.append(t)
+        if parts:
+            lines.append(" ".join(parts))
+    if not lines:
+        return ""
+    return _soft_norm("\n".join(lines))
+
+
+def _word_in_column(
+    ww: dict,
+    lo: float,
+    hi: float,
+    *,
+    right_pad: float = 0.0,
+) -> bool:
+    """Слово принадлежит ячейке: x0 внутри колонки или заметное перекрытие."""
+    x0 = float(ww["x0"])
+    x1 = float(ww["x1"])
+    hi_eff = hi + right_pad
+    if x0 >= lo and x0 < hi_eff:
+        return True
+    xc = _word_xc(ww)
+    if lo <= xc < hi:
+        return True
+    overlap = min(x1, hi_eff) - max(x0, lo)
+    if overlap <= 0:
+        return False
+    width = max(x1 - x0, 0.001)
+    return overlap / width >= 0.45
+
+
 def _word_line_key(w: dict, tol: float = Y_CLUSTER_TOL) -> float:
     return (
         round((float(w["top"]) + float(w["bottom"])) / 2.0 / tol) * tol
     )
 
 
-def _cell_text_from_words(ws: list[dict], lo: float, hi: float) -> str:
-    parts: list[str] = []
-    for ww in sorted(ws, key=lambda x: float(x["x0"])):
-        if lo <= _word_xc(ww) < hi:
+def _cell_text_from_words(
+    ws: list[dict],
+    lo: float,
+    hi: float,
+    *,
+    right_pad: float = 0.0,
+) -> str:
+    """
+    Текст ячейки АВС: слова группируются по Y (визуальные строки),
+    внутри строки сортируются по X, строки склеиваются через \\n.
+    """
+    cell_words = [
+        ww for ww in ws if _word_in_column(ww, lo, hi, right_pad=right_pad)
+    ]
+    if not cell_words:
+        return ""
+    by_y: dict[float, list[dict]] = {}
+    for ww in cell_words:
+        yk = _word_line_key(ww)
+        by_y.setdefault(yk, []).append(ww)
+    lines: list[str] = []
+    for yk in sorted(by_y.keys()):
+        parts: list[str] = []
+        for ww in sorted(by_y[yk], key=lambda x: float(x["x0"])):
             t = ww.get("text") or ""
             if t:
                 parts.append(t)
-    return _norm(" ".join(parts)) if parts else ""
+        if parts:
+            lines.append(" ".join(parts))
+    if not lines:
+        return ""
+    text = _soft_norm("\n".join(lines))
+    if len(lines) > 1:
+        _log_name_debug(
+            "cell_lines",
+            bounds=(lo, hi),
+            right_pad=right_pad,
+            line_count=len(lines),
+            reconstructed=text,
+        )
+    return text
 
 
 def _parse_qty_cell(s: str) -> float | None:
@@ -503,7 +734,14 @@ def _iter_grid_rows_pdfplumber(pdf: Any) -> list[AbcGridRow]:
                 continue
             c1 = _cell_text_from_words(ws, bounds[0], bounds[1])
             c2 = _cell_text_from_words(ws, bounds[1], bounds[2])
-            c3 = _cell_text_from_words(ws, bounds[2], bounds[3])
+            col_words = _split_row_words_by_columns(ws, bounds)
+            c3 = _multiline_text_from_words(col_words[2])
+            if len(col_words[2]) > 3:
+                _log_name_debug(
+                    "c3_words",
+                    word_count=len(col_words[2]),
+                    c3=c3,
+                )
             c4 = _cell_text_from_words(ws, bounds[3], bounds[4])
             c5t = _cell_text_from_words(ws, bounds[4], bounds[5])
             q5 = _parse_qty_cell(c5t)
@@ -522,8 +760,8 @@ def _iter_grid_rows_pdfplumber(pdf: Any) -> list[AbcGridRow]:
     return out
 
 
-def _strip_price_tail(name: str) -> str:
-    n = _norm(name)
+def _strip_price_tail_line(n: str) -> str:
+    n = _norm(n)
     if not n:
         return n
     dec_token = r"(?:\d{1,3}(?:\s\d{3})*[.,]\d{1,3}|\d+[.,]\d{1,3})"
@@ -534,6 +772,16 @@ def _strip_price_tail(name: str) -> str:
     if m:
         return _norm(m.group("head"))
     return n
+
+
+def _strip_price_tail(name: str) -> str:
+    if not name:
+        return name
+    if "\n" not in name:
+        return _strip_price_tail_line(name)
+    lines = name.split("\n")
+    lines[-1] = _strip_price_tail_line(lines[-1])
+    return _soft_norm("\n".join(lines))
 
 
 def _name_from_pos_raw_joined(raw: str) -> str:
@@ -557,9 +805,9 @@ def _name_from_pos_raw_joined(raw: str) -> str:
         maxsplit=1,
     )[0]
     tail = _strip_price_tail(
-        _norm(tail),
+        _soft_norm(tail),
     )
-    return _norm(tail)
+    return _soft_norm(tail)
 
 
 def _is_abc_price_row(raw: str) -> bool:
@@ -598,58 +846,157 @@ def _is_abc_nr_percent_row(raw: str) -> bool:
     return False
 
 
-def _continuation_name_fragment(nxt: AbcGridRow) -> str:
-    """Текст продолжения наименования из кол.2+3 (РСНБ/Кзтр часто в col2)."""
-    t2 = _norm(nxt.c2)
-    t3 = _norm(nxt.c3)
-    if not t2 and not t3:
+_SERVICE_METADATA_LEADING = (
+    r"(?i)^РСНБ\s+РК\s*\d{4}(?:\s*г\.?)?\s*",
+    r"(?i)^Кзтр\s+и\s*Кэм\s*=\s*[\d.,]+\s*",
+    r"(?i)^Кзтр\s*=\s*[\d.,]+(?:\s*[;,]\s*)?",
+    r"(?i)^Кэм\s*=\s*[\d.,]+\s*",
+    r"(?i)^ТЧ\s+\d+\s+табл\.\s*\d+\s*",
+    r"(?i)^п\.\d+\.\d+(?:\s+Кэм\s*=\s*[\d.,]+)?\s*",
+    r"(?i)^Изм\.\s*и\s*доп\.\s*вып\.?\s*\d*\s*",
+)
+
+
+def _is_pure_service_metadata_line(line: str) -> bool:
+    """Строка целиком — служебная метадата col.2 (ТЧ, п.3.31, РСНБ…)."""
+    t = _norm(line)
+    if not t:
+        return True
+    if re.fullmatch(r"\d+-\d+-\d+(?:'[^']*')*", re.sub(r"\s+", "", t)):
+        return True
+    if re.fullmatch(
+        r"(?i)(?:РСНБ\s+РК\s*\d{4}(?:\s*г\.?)?|"
+        r"Кзтр\s+и\s*Кэм\s*=\s*[\d.,]+|"
+        r"Кзтр\s*=\s*[\d.,]+|"
+        r"Кэм\s*=\s*[\d.,]+|"
+        r"ТЧ\s+\d+\s+табл\.\s*\d+|"
+        r"п\.\d+\.\d+(?:\s+Кэм\s*=\s*[\d.,]+)?)",
+        t,
+    ):
+        return True
+    return False
+
+
+def _strip_service_metadata_from_line(line: str) -> str:
+    """Убрать служебные префиксы, случайно попавшие в col.3."""
+    s = line.strip()
+    if not s:
         return ""
-    if t2 and re.match(
-        r"^\d+-\d+-\d+",
-        t2.strip(),
-    ) and not re.search(
-        r"[А-Яа-яЁё]",
-        t2,
-    ):
-        return t3
-    compact2 = re.sub(
-        r"\s+",
-        "",
-        t2,
-    )
-    if compact2 and re.fullmatch(
-        r"\d+-\d+-\d+(?:'[^']*')*",
-        compact2,
-    ):
-        return t3
-    if t2 and t3:
-        return _norm(
-            f"{t2} {t3}",
+    changed = True
+    while changed and s:
+        changed = False
+        for pat in _SERVICE_METADATA_LEADING:
+            s2 = re.sub(pat, "", s).strip()
+            if s2 != s:
+                s = s2
+                changed = True
+    return s
+
+
+def _is_name_unit_suffix_line(line: str) -> bool:
+    """Короткие хвосты единиц: «м/.», «/20 м/.» — не трогать cleaner'ом."""
+    s = line.strip()
+    if not s:
+        return False
+    if re.fullmatch(r"(?i)/?\d*\s*м/\.?", s):
+        return True
+    if re.fullmatch(r"(?i)м/\.", s):
+        return True
+    if len(s) <= 12 and re.search(r"(?i)/\d+\s*м/\.?$", s):
+        return True
+    return False
+
+
+def _merge_split_unit_suffix_lines(lines: list[str]) -> list[str]:
+    """«… /20» + «м/.» → «/20 м/.» как в оригинальной смете."""
+    if len(lines) < 2:
+        return lines
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if (
+            i + 1 < len(lines)
+            and re.search(r"/\d+\s*$", line)
+            and re.fullmatch(r"(?i)м/\.", lines[i + 1].strip())
+        ):
+            out.append(f"{line.rstrip()} {lines[i + 1].strip()}")
+            i += 2
+            continue
+        out.append(line)
+        i += 1
+    return out
+
+
+def _continuation_name_fragment(nxt: AbcGridRow) -> str:
+    """Текст продолжения наименования — только col.3, без метаданных col.2."""
+    raw_t3 = _soft_norm(nxt.c3)
+    if not raw_t3:
+        _log_name_debug(
+            "cont_skip_empty",
+            c2=nxt.c2,
+            c3=nxt.c3,
         )
-    return t2 or t3
+        return ""
+    lines_out: list[str] = []
+    removed: list[str] = []
+    for line in raw_t3.split("\n"):
+        cleaned = _strip_service_metadata_from_line(line)
+        if not cleaned:
+            if line.strip():
+                removed.append(line.strip())
+            continue
+        if _is_pure_service_metadata_line(cleaned):
+            removed.append(cleaned)
+            continue
+        lines_out.append(cleaned)
+    if removed:
+        _log_name_debug(
+            "cont_service_removed",
+            removed=removed,
+            c2=nxt.c2,
+        )
+    if not lines_out:
+        return ""
+    return _soft_norm("\n".join(lines_out))
 
 
 def _abc_merge_name_from_cells(r: AbcGridRow) -> str:
     ph = r.pos_head()
     m = _match_position_head(ph)
-    prefix = _norm(
+    prefix = _soft_norm(
         m.group(3) or "",
     ) if m else ""
-    c3 = _norm(
+    c3 = _soft_norm(
         r.c3,
     )
+    if c3:
+        c3_lines = []
+        for line in c3.split("\n"):
+            cl = _strip_service_metadata_from_line(line)
+            if cl and not _is_pure_service_metadata_line(cl):
+                c3_lines.append(cl)
+        c3 = _soft_norm("\n".join(c3_lines))
     if prefix and c3:
-        return _norm(
+        c3_first = c3.split("\n", 1)[0]
+        if c3.startswith(prefix) or c3_first.startswith(prefix):
+            return c3
+        pref = prefix.rstrip(".")
+        if pref and c3_first.startswith(pref):
+            return c3
+        return _soft_norm(
             f"{prefix} {c3}",
         )
     return prefix or c3
 
 
-def _strip_abc_branding_and_column_tail(name: str) -> str:
+def _strip_abc_branding_and_column_tail_line(name: str) -> str:
     """
     Мусор из шапки/колонтитула АВС: «(Программный) комплекс АВС (редакция…)»,
     цепочки «1 2 3 …» и короткие хвосты «2 3» после точки/скобки.
     """
+    if _is_name_unit_suffix_line(name):
+        return name.strip()
     n = _norm(name)
     if not n:
         return n
@@ -684,33 +1031,21 @@ def _strip_abc_branding_and_column_tail(name: str) -> str:
     return n
 
 
-def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
-    """
-    Наименование — только кол.3. Убираем типичные хвосты и дубли ед./кол-ва.
-    """
-    n = _norm(_collapse_m_units(name))
-    if not n:
-        return n
-    while True:
-        n2 = re.sub(
-            r"^--\s*[\d\s.,]+(?:\s*[–-]\s*[\d\s.,]+)?\s*--\s*",
-            "",
-            n,
-        )
-        if n2 == n:
-            break
-        n = _norm(n2)
-    n = re.sub(r"(?:^|\s)СП\s*-\s*\d+\s*%\s*", " ", n, flags=re.I)
-    n = re.sub(r"Страниц\s*-\s*\d+", "", n, flags=re.I)
-    # «Изм. и доп. вып. 26» из колонки шифра — убираем вместе с номером выпуска
-    n = re.sub(r"(?i)\s*Изм\.\s*и\s*доп\.\s*вып\.?\s*\d*\s*", " ", n)
-    # Если номер выпуска оторвался и остался хвостом «... материалов. 26»
-    n = re.sub(r"(?<=\.)\s+\d{1,3}\s*$", "", n)
-    n = re.sub(r"(?i)\s*РСНБ\s+РК\s*\d{4}(?:\s*г\.?)?\s*", " ", n)
-    n = re.sub(r"(?i)\s*Кзтр\s+и\s+Кэм\s*=\s*[\d.,]+\s*", " ", n)
-    n = re.sub(r"(?i)\s*Кзтр\s*=\s*[\d.,]+(?:\s*[;,]\s*)?", " ", n)
-    n = re.sub(r"(?i)\s*Кэм\s*=\s*[\d.,]+\s*", " ", n)
-    n = _strip_abc_branding_and_column_tail(n)
+def _strip_abc_branding_and_column_tail(name: str) -> str:
+    if not name:
+        return name
+    if "\n" not in name:
+        return _strip_abc_branding_and_column_tail_line(name)
+    lines = [
+        _strip_abc_branding_and_column_tail_line(line)
+        for line in name.split("\n")
+    ]
+    return _soft_norm("\n".join(line for line in lines if line))
+
+
+def _finalize_name_col3_last_line(n: str, unit: str, qty: float | None) -> str:
+    if _is_name_unit_suffix_line(n):
+        return re.sub(r"[ \t]+", " ", n).strip()
     n = _strip_price_tail(n)
     n = re.sub(r"(?i)\s+ПРОЧИЕ\s+РАБОТЫ\s*$", "", n)
     n = re.sub(
@@ -718,23 +1053,13 @@ def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
         "",
         n,
     )
-    # Подзаголовок сметы оторвал «мм» от «…диаметром от A до B»
-    if re.search(r"(?i)диаметром\s+от\s+\d+\s+до\s+\d+", n) and not re.search(
-        r"(?i)диаметром\s+от\s+\d+\s+до\s+\d+.*\bмм\b",
-        n,
-    ):
-        n = re.sub(
-            r"(?i)(диаметром\s+от\s+\d+\s+до\s+)(\d+)\s*\.?\s*$",
-            r"\1\2 мм.",
-            n,
-        )
-    # «т 2 264050 3» — хвост из колонок стоимости
     n = re.sub(r"(?i)(?<=[а-яё.)])\s+т\s+[\d\s,./-]+$", "", n)
     n = re.sub(
         r"(?i)\s+т[\s·]*км\s+[\d\s,./-]+(?:\s+--[\d\s,./-]*)*\s*$",
         "",
         n,
     )
+    n = re.sub(r"(?<=\.)\s+\d{1,3}\s*$", "", n)
     u = _norm(_collapse_m_units(unit))
     if u and qty is not None and qty > 0:
         ql = str(qty).rstrip("0").rstrip(".") if isinstance(qty, float) else str(qty)
@@ -752,20 +1077,72 @@ def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
                 continue
             suf = f"{ul} {qv.lower()}"
             if nl.endswith(suf):
-                n = _norm(n[: -len(suf)])
+                n = n[: -len(suf)].rstrip(" ,.;")
                 nl = n.lower()
                 break
         for qv in variants:
             suf = f"{u} {qv}".lower()
             if nl.endswith(suf):
-                n = _norm(n[: -len(suf)])
+                n = n[: -len(suf)].rstrip(" ,.;")
                 break
     if u:
         nl = n.lower()
         ul = u.lower()
         if nl.endswith(ul):
-            n = _norm(n[: -len(u)]).rstrip(" ,.;")
-    return _norm(n)
+            n = n[: -len(u)].rstrip(" ,.;")
+    return re.sub(r"[ \t]+", " ", n).strip()
+
+
+def _finalize_name_col3(name: str, unit: str, qty: float | None) -> str:
+    """
+    Наименование — только кол.3. Убираем типичные хвосты и дубли ед./кол-ва.
+    Сохраняет переносы строк из PDF.
+    """
+    n = _soft_norm(_collapse_m_units_multiline(name))
+    if not n:
+        return n
+    while True:
+        n2 = re.sub(
+            r"^--\s*[\d\s.,]+(?:\s*[–-]\s*[\d\s.,]+)?\s*--\s*",
+            "",
+            n,
+        )
+        if n2 == n:
+            break
+        n = _soft_norm(n2)
+    lines = n.split("\n")
+    cleaned: list[str] = []
+    for line in lines:
+        line = _strip_service_metadata_from_line(line)
+        if not line or _is_pure_service_metadata_line(line):
+            continue
+        line = re.sub(r"(?:^|\s)СП\s*-\s*\d+\s*%\s*", " ", line, flags=re.I)
+        line = re.sub(r"Страниц\s*-\s*\d+", "", line, flags=re.I)
+        if not _is_name_unit_suffix_line(line):
+            line = _strip_abc_branding_and_column_tail_line(line)
+        line = re.sub(r"[ \t]+", " ", line).strip()
+        if line:
+            cleaned.append(line)
+    cleaned = _merge_split_unit_suffix_lines(cleaned)
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        n = _finalize_name_col3_last_line(cleaned[0], unit, qty)
+    else:
+        head = "\n".join(cleaned[:-1])
+        tail = _finalize_name_col3_last_line(cleaned[-1], unit, qty)
+        n = f"{head}\n{tail}" if tail else head
+    if re.search(r"(?i)диаметром\s+от\s+\d+\s+до\s+\d+", n) and not re.search(
+        r"(?i)диаметром\s+от\s+\d+\s+до\s+\d+.*\bмм\b",
+        _norm(n),
+    ):
+        n = re.sub(
+            r"(?i)(диаметром\s+от\s+\d+\s+до\s+)(\d+)\s*\.?\s*$",
+            r"\1\2 мм.",
+            n,
+            flags=re.M,
+        )
+    return _flatten_name_display(n)
 
 
 _SECTION_MARKERS_IN_MIXED_LSR_LINE = (
@@ -1058,10 +1435,16 @@ def _merge_continuation_rows(rows: list[AbcGridRow]) -> list[AbcGridRow]:
             i += 1
             continue
         j = i + 1
-        name_acc = _name_from_pos_raw_joined(
-            r.raw_joined or "",
-        ) or _abc_merge_name_from_cells(
+        name_acc = _abc_merge_name_from_cells(
             r,
+        ) or _name_from_pos_raw_joined(
+            r.raw_joined or "",
+        )
+        _log_name_debug(
+            "merge_start",
+            pos=_pos_line_no(r),
+            raw_c3=r.c3,
+            name_acc=name_acc,
         )
         acc_c4 = _norm(r.c4)
         acc_q = r.c5_qty
@@ -1076,11 +1459,19 @@ def _merge_continuation_rows(rows: list[AbcGridRow]) -> list[AbcGridRow]:
                 break
             if _is_abc_price_row(rjn):
                 break
-            if _is_abc_nr_percent_row(rjn):
+            if _is_abc_nr_percent_row(rjn) or _is_abc_nr_percent_row(
+                _norm(nxt.c3 or ""),
+            ):
                 break
             frag = _continuation_name_fragment(nxt)
             if frag:
-                name_acc = _norm(f"{name_acc} {frag}") if name_acc else frag
+                name_acc = _join_name_lines(name_acc, frag) if name_acc else frag
+                _log_name_debug(
+                    "merge_cont",
+                    pos=_pos_line_no(r),
+                    frag=frag,
+                    merged=name_acc,
+                )
             if acc_q is None or acc_q <= 0:
                 if nxt.c5_qty is not None and nxt.c5_qty > 0:
                     acc_q = nxt.c5_qty
@@ -1088,6 +1479,11 @@ def _merge_continuation_rows(rows: list[AbcGridRow]) -> list[AbcGridRow]:
                     acc_c5t = nxt.c5_raw or acc_c5t
             merged_raw = _norm(f"{merged_raw} {rjn}")
             j += 1
+        _log_name_debug(
+            "merge_done",
+            pos=_pos_line_no(r),
+            final=name_acc,
+        )
         out.append(
             AbcGridRow(
                 page=r.page,
@@ -1489,18 +1885,18 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                     qty = q2
                     if u2:
                         unit = u2
-            name_src = _norm(row.c3)
+            name_src = _soft_norm(row.c3)
             if not name_src:
-                name_src = _name_from_pos_raw_joined(
-                    raw,
-                ) or _abc_merge_name_from_cells(
+                name_src = _abc_merge_name_from_cells(
                     row,
+                ) or _name_from_pos_raw_joined(
+                    raw,
                 )
             if not name_src:
                 m = _match_position_head(row.pos_head())
                 if m:
                     g3 = m.group(3) or ""
-                    name_src = _strip_price_tail(_norm(g3))
+                    name_src = _strip_price_tail(_soft_norm(g3))
             if (not unit) and qty is not None and qty > 0:
                 gu = _infer_unit_from_cell_text(
                     raw,
@@ -1510,6 +1906,15 @@ def parse_pdf_grid_to_items(data: bytes, dedupe: set) -> list[dict[str, Any]]:
                 if gu:
                     unit = gu
             name_f = _finalize_name_col3(name_src, unit, qty)
+            _log_name_debug(
+                "final",
+                pos=_pos_line_no(row),
+                raw_c3=row.c3,
+                name_src=name_src,
+                name_f=name_f,
+                unit=unit,
+                qty=qty,
+            )
             if name_f and unit and qty is not None and qty > 0:
                 cipher_k = _pos_cipher_cell(
                     row,
