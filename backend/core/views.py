@@ -268,6 +268,7 @@ def project_analytics(request: HttpRequest, pk: int) -> HttpResponse:
 
 
 ESTIMATE_VIRTUAL_ROW_THRESHOLD = 120
+SCHEDULE_VIRTUAL_ROW_THRESHOLD = 1
 
 
 def _estimate_sheet_row_count(sections) -> int:
@@ -755,6 +756,262 @@ def _item_schedule_duration_days(item: EstimateItem) -> int | None:
     return None
 
 
+def _schedule_display_item_passes_filters(
+    item: EstimateItem,
+    *,
+    show_materials: bool,
+) -> bool:
+    if not show_materials and item.type == EstimateItem.TYPE_MATERIAL:
+        return False
+    return True
+
+
+def _schedule_task_passes_filters(
+    task: EstimateItem,
+    *,
+    status: str,
+    assignee_id: int | None,
+    d_from: date | None,
+    d_to: date | None,
+) -> bool:
+    if status and task.schedule_status != status:
+        return False
+    if assignee_id is not None and task.schedule_assignee_id != assignee_id:
+        return False
+    if d_from or d_to:
+        if task.schedule_start and task.schedule_end:
+            if d_from and task.schedule_end < d_from:
+                return False
+            if d_to and task.schedule_start > d_to:
+                return False
+        elif status or assignee_id is not None or d_from or d_to:
+            return False
+    return True
+
+
+def _schedule_summarize_children(children: list[EstimateItem]) -> dict:
+    from decimal import Decimal
+
+    item_count = 0
+    total_price = Decimal("0")
+    by_unit: dict[str, Decimal] = {}
+    for child in children:
+        if child.is_subsection_header:
+            continue
+        item_count += 1
+        total_price += child.total_price or Decimal("0")
+        unit = (child.unit or "—").strip() or "—"
+        qty = child.quantity or Decimal("0")
+        by_unit[unit] = by_unit.get(unit, Decimal("0")) + qty
+
+    vol_parts: list[str] = []
+    for unit, qty in sorted(by_unit.items(), key=lambda x: x[0]):
+        qf = qty
+        if qf == qf.to_integral_value():
+            qs = str(int(qf))
+        else:
+            qs = f"{qf:.4f}".rstrip("0").rstrip(".")
+        vol_parts.append(f"{qs} {unit}")
+
+    suggested_days: int | None = None
+    if item_count > 0:
+        suggested_days = max(1, min(90, (item_count + 4) // 5))
+
+    return {
+        "item_count": item_count,
+        "total_volume": " • ".join(vol_parts[:4]),
+        "total_cost": f"{total_price:.2f}",
+        "suggested_days": suggested_days,
+    }
+
+
+def _schedule_group_visible_items(
+    items: list[EstimateItem],
+    *,
+    show_materials: bool,
+) -> list[EstimateItem]:
+    return [
+        it
+        for it in items
+        if it.is_subsection_header
+        or _schedule_display_item_passes_filters(it, show_materials=show_materials)
+    ]
+
+
+def _build_schedule_task_rows(
+    section_blocks: list[tuple[EstimateSection, list[EstimateItem]]],
+    *,
+    status: str,
+    assignee_id: int | None,
+    d_from: date | None,
+    d_to: date | None,
+    show_materials: bool,
+) -> tuple[list[dict], list[date], list[date]]:
+    """График по группам работ (is_subsection_header), позиции сметы — read-only."""
+    schedule_rows: list[dict] = []
+    row_idx = 0
+    project_starts: list[date] = []
+    project_ends: list[date] = []
+
+    task_items: list[EstimateItem] = []
+    for _sec, vis in section_blocks:
+        for it in vis:
+            if it.is_subsection_header:
+                task_items.append(it)
+
+    for section, visible_items in section_blocks:
+        vis = _schedule_group_visible_items(
+            visible_items,
+            show_materials=show_materials,
+        )
+        if not vis:
+            continue
+
+        has_tasks = any(it.is_subsection_header for it in vis)
+        has_orphan_items = any(
+            not it.is_subsection_header for it in vis
+        ) and not has_tasks
+
+        if has_tasks or has_orphan_items:
+            schedule_rows.append(
+                {
+                    "kind": "estimate_section",
+                    "row_index": row_idx,
+                    "id": f"es-{section.pk}",
+                    "section_id": section.pk,
+                    "item_id": None,
+                    "name": section.name,
+                    "number": "",
+                    "quantity": "",
+                    "unit": "",
+                    "schedule_start": None,
+                    "schedule_end": None,
+                    "duration_days": None,
+                    "status": "",
+                    "assignee_id": None,
+                    "predecessor_id": None,
+                    "successor_id": None,
+                    "item_count": 0,
+                    "total_volume": "",
+                    "total_cost": "",
+                    "suggested_days": None,
+                }
+            )
+            row_idx += 1
+
+        groups: list[tuple[EstimateItem | None, list[EstimateItem]]] = []
+        current_task: EstimateItem | None = None
+        current_children: list[EstimateItem] = []
+
+        for it in vis:
+            if it.is_subsection_header:
+                if current_task is not None or current_children:
+                    groups.append((current_task, current_children))
+                current_task = it
+                current_children = []
+            else:
+                current_children.append(it)
+        if current_task is not None or current_children:
+            groups.append((current_task, current_children))
+
+        for task, children in groups:
+            if task is None:
+                for child in children:
+                    schedule_rows.append(
+                        {
+                            "kind": "item",
+                            "row_index": row_idx,
+                            "id": f"i-{child.pk}",
+                            "section_id": section.pk,
+                            "task_id": None,
+                            "item_id": child.pk,
+                            "name": child.name or "—",
+                            "number": "",
+                            "quantity": str(child.quantity).rstrip("0").rstrip(".")
+                            if child.quantity
+                            else "",
+                            "unit": child.unit or "",
+                            "type": child.type,
+                            "total_price": f"{child.total_price:.2f}",
+                        }
+                    )
+                    row_idx += 1
+                continue
+
+            if not _schedule_task_passes_filters(
+                task,
+                status=status,
+                assignee_id=assignee_id,
+                d_from=d_from,
+                d_to=d_to,
+            ):
+                continue
+
+            summary = _schedule_summarize_children(children)
+            dur = _item_schedule_duration_days(task)
+            if task.schedule_start and task.schedule_end:
+                project_starts.append(task.schedule_start)
+                project_ends.append(task.schedule_end)
+
+            succ_id: int | None = None
+            for oit in task_items:
+                if oit.pk != task.pk and oit.schedule_predecessor_id == task.pk:
+                    succ_id = oit.pk
+                    break
+
+            schedule_rows.append(
+                {
+                    "kind": "task",
+                    "row_index": row_idx,
+                    "id": f"t-{task.pk}",
+                    "section_id": section.pk,
+                    "task_id": task.pk,
+                    "item_id": task.pk,
+                    "name": task.name or "—",
+                    "number": "",
+                    "quantity": "",
+                    "unit": "",
+                    "type": task.type,
+                    "schedule_start": task.schedule_start.isoformat()
+                    if task.schedule_start
+                    else None,
+                    "schedule_end": task.schedule_end.isoformat()
+                    if task.schedule_end
+                    else None,
+                    "duration_days": dur,
+                    "status": task.schedule_status,
+                    "assignee_id": task.schedule_assignee_id,
+                    "predecessor_id": task.schedule_predecessor_id,
+                    "successor_id": succ_id,
+                    **summary,
+                }
+            )
+            row_idx += 1
+
+            for child in children:
+                schedule_rows.append(
+                    {
+                        "kind": "item",
+                        "row_index": row_idx,
+                        "id": f"i-{child.pk}",
+                        "section_id": section.pk,
+                        "task_id": task.pk,
+                        "item_id": child.pk,
+                        "name": child.name or "—",
+                        "number": "",
+                        "quantity": str(child.quantity).rstrip("0").rstrip(".")
+                        if child.quantity
+                        else "",
+                        "unit": child.unit or "",
+                        "type": child.type,
+                        "total_price": f"{child.total_price:.2f}",
+                    }
+                )
+                row_idx += 1
+
+    return schedule_rows, project_starts, project_ends
+
+
 def _schedule_item_passes_filters(
     item: EstimateItem,
     *,
@@ -812,14 +1069,49 @@ def _schedule_item_api_response(item: EstimateItem) -> dict:
     return _schedule_item_api_response_dict(item)
 
 
-@login_required
-def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
-    project, err = _get_project_or_403(request, pk)
-    if err:
-        return err
+def _slim_schedule_row_for_virtual(row: dict) -> dict:
+    """Минимальный набор полей для клиентского графика (меньше JSON)."""
+    kind = row.get("kind")
+    if kind == "estimate_section":
+        return {
+            "kind": kind,
+            "section_id": row["section_id"],
+            "name": row["name"],
+        }
+    if kind == "item":
+        return {
+            "kind": kind,
+            "section_id": row["section_id"],
+            "task_id": row.get("task_id"),
+            "item_id": row["item_id"],
+            "name": row["name"],
+            "quantity": row.get("quantity") or "",
+            "unit": row.get("unit") or "",
+        }
+    if kind == "task":
+        return {
+            "kind": kind,
+            "section_id": row["section_id"],
+            "item_id": row["item_id"],
+            "name": row["name"],
+            "schedule_start": row.get("schedule_start"),
+            "schedule_end": row.get("schedule_end"),
+            "duration_days": row.get("duration_days"),
+            "status": row.get("status") or "planned",
+            "assignee_id": row.get("assignee_id"),
+            "predecessor_id": row.get("predecessor_id"),
+            "successor_id": row.get("successor_id"),
+            "item_count": row.get("item_count"),
+            "suggested_days": row.get("suggested_days"),
+        }
+    return row
 
-    sched_pred_radius = 15
 
+def _load_project_schedule(
+    request: HttpRequest,
+    project,
+) -> dict:
+    """Общая загрузка строк графика и фильтров (страница + JSON API)."""
     show_materials = request.GET.get("materials", "1") != "0"
     st = request.GET.get("status", "").strip()
     if st not in dict(EstimateItem.SCHEDULE_STATUS_CHOICES):
@@ -843,31 +1135,12 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
 
     section_blocks: list[tuple[EstimateSection, list[EstimateItem]]] = []
     for section in sections:
-        visible_items = [
-            it
-            for it in section.items.all()
-            if _schedule_item_passes_filters(
-                it,
-                status=st,
-                assignee_id=filter_assignee_id,
-                d_from=d_from,
-                d_to=d_to,
-                show_materials=show_materials,
-            )
-        ]
-        if visible_items:
-            section_blocks.append((section, visible_items))
-
-    item_seq: list[EstimateItem] = []
-    for _sec, vis in section_blocks:
-        item_seq.extend(vis)
-
-    item_flat_index = {it.pk: idx for idx, it in enumerate(item_seq)}
-    pred_label_cache: dict[int, str] = {
-        it.pk: f"{sec.name}: {(it.name or '—')[:120]}"
-        for sec, vis in section_blocks
-        for it in vis
-    }
+        all_items = list(section.items.all())
+        if _schedule_group_visible_items(
+            all_items,
+            show_materials=show_materials,
+        ):
+            section_blocks.append((section, all_items))
 
     assignee_users = list(
         get_user_model()
@@ -879,119 +1152,88 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
         {"id": u.pk, "username": u.get_username()} for u in assignee_users
     ]
 
-    schedule_rows: list[dict] = []
-    row_idx = 0
-    project_starts: list[date] = []
-    project_ends: list[date] = []
+    schedule_rows, project_starts, project_ends = _build_schedule_task_rows(
+        section_blocks,
+        status=st,
+        assignee_id=filter_assignee_id,
+        d_from=d_from,
+        d_to=d_to,
+        show_materials=show_materials,
+    )
 
-    for section, visible_items in section_blocks:
-        dated = [
-            it
-            for it in visible_items
-            if it.schedule_start and it.schedule_end
-        ]
-        if dated:
-            sec_start = min(i.schedule_start for i in dated)
-            sec_end = max(i.schedule_end for i in dated)
-            project_starts.append(sec_start)
-            project_ends.append(sec_end)
-        else:
-            sec_start = sec_end = None
+    return {
+        "section_blocks": section_blocks,
+        "schedule_rows": schedule_rows,
+        "project_starts": project_starts,
+        "project_ends": project_ends,
+        "assignee_users": assignee_users,
+        "assignee_choices_json": assignee_choices_json,
+        "show_materials": show_materials,
+        "filter_status": st,
+        "filter_assignee_id": filter_assignee_id,
+        "filter_date_from": df,
+        "filter_date_to": dt_to,
+    }
 
-        schedule_rows.append(
-            {
-                "kind": "section",
-                "row_index": row_idx,
-                "id": f"s-{section.pk}",
-                "section_id": section.pk,
-                "item_id": None,
-                "name": section.name,
-                "number": "",
-                "quantity": "",
-                "unit": "",
-                "schedule_start": sec_start.isoformat() if sec_start else None,
-                "schedule_end": sec_end.isoformat() if sec_end else None,
-                "duration_days": (sec_end - sec_start).days + 1
-                if sec_start and sec_end
-                else None,
-                "status": "",
-                "assignee_id": None,
-                "predecessor_id": None,
-                "successor_id": None,
-            }
-        )
-        row_idx += 1
 
-        for num, it in enumerate(visible_items, start=1):
-            if it.schedule_start and it.schedule_end:
-                project_starts.append(it.schedule_start)
-                project_ends.append(it.schedule_end)
-            dur = _item_schedule_duration_days(it)
+def _schedule_virtual_payload(
+    request: HttpRequest,
+    project,
+    schedule_rows: list[dict],
+    status_choices,
+    assignee_choices_json: list[dict],
+    today: date,
+) -> dict:
+    """JSON для клиентской виртуализации графика работ (React + react-window)."""
+    from django.middleware.csrf import get_token
 
-            flat_i = item_flat_index[it.pk]
-            lo = max(0, flat_i - sched_pred_radius)
-            hi = min(len(item_seq), flat_i + sched_pred_radius + 1)
-            succ_choices: list[dict] = []
-            for j in range(lo, hi):
-                oit = item_seq[j]
-                if oit.pk == it.pk:
-                    continue
-                succ_choices.append(
-                    {"id": oit.pk, "label": pred_label_cache[oit.pk]},
-                )
+    section_names = {
+        r["section_id"]: r["name"]
+        for r in schedule_rows
+        if r.get("kind") == "estimate_section"
+    }
+    succ_catalog = [
+        {
+            "id": r["item_id"],
+            "label": (r.get("name") or "—")[:140],
+            "section_id": r["section_id"],
+            "section_name": section_names.get(r["section_id"], "—"),
+        }
+        for r in schedule_rows
+        if r.get("kind") == "task" and r.get("item_id")
+    ]
+    rows_client = [
+        _slim_schedule_row_for_virtual({k: v for k, v in r.items() if k != "succ_choices"})
+        for r in schedule_rows
+    ]
 
-            succ_id: int | None = None
-            for j in range(lo, hi):
-                oit = item_seq[j]
-                if oit.pk != it.pk and oit.schedule_predecessor_id == it.pk:
-                    succ_id = oit.pk
-                    break
-            if succ_id is None:
-                for oit in item_seq:
-                    if oit.pk != it.pk and oit.schedule_predecessor_id == it.pk:
-                        succ_id = oit.pk
-                        break
+    return {
+        "project_id": project.pk,
+        "csrf_token": get_token(request),
+        "today": today.isoformat(),
+        "rows": rows_client,
+        "succ_catalog": succ_catalog,
+        "assignees": assignee_choices_json,
+        "status_choices": list(status_choices),
+        "api_url_template": reverse(
+            "schedule_item_api",
+            args=[project.pk, 999999],
+        ).replace("999999", "__ID__"),
+    }
 
-            if succ_id and succ_id != it.pk:
-                if not any(c["id"] == succ_id for c in succ_choices):
-                    lbl = pred_label_cache.get(succ_id)
-                    if lbl:
-                        succ_choices.insert(
-                            0,
-                            {"id": succ_id, "label": f"{lbl} · …"},
-                        )
-                    else:
-                        succ_choices.insert(0, {"id": succ_id, "label": f"#{succ_id}"})
 
-            schedule_rows.append(
-                {
-                    "kind": "item",
-                    "row_index": row_idx,
-                    "id": f"i-{it.pk}",
-                    "section_id": section.pk,
-                    "item_id": it.pk,
-                    "name": it.name or "—",
-                    "number": str(num),
-                    "quantity": str(it.quantity).rstrip("0").rstrip(".")
-                    if it.quantity
-                    else "",
-                    "unit": it.unit or "",
-                    "type": it.type,
-                    "schedule_start": it.schedule_start.isoformat()
-                    if it.schedule_start
-                    else None,
-                    "schedule_end": it.schedule_end.isoformat()
-                    if it.schedule_end
-                    else None,
-                    "duration_days": dur,
-                    "status": it.schedule_status,
-                    "assignee_id": it.schedule_assignee_id,
-                    "predecessor_id": it.schedule_predecessor_id,
-                    "successor_id": succ_id,
-                    "succ_choices": succ_choices,
-                }
-            )
-            row_idx += 1
+@login_required
+def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+
+    sched = _load_project_schedule(request, project)
+    schedule_rows = sched["schedule_rows"]
+    project_starts = sched["project_starts"]
+    project_ends = sched["project_ends"]
+    assignee_users = sched["assignee_users"]
+    assignee_choices_json = sched["assignee_choices_json"]
 
     totals = _get_estimate_totals(project)
 
@@ -1008,29 +1250,55 @@ def project_schedule(request: HttpRequest, pk: int) -> HttpResponse:
         for row in schedule_rows
     ]
 
-    return render(
+    use_schedule_virtual = len(schedule_rows) >= SCHEDULE_VIRTUAL_ROW_THRESHOLD
+    ctx = {
+        "project": project,
+        "active_tab": "schedule",
+        "schedule_rows": schedule_rows,
+        "schedule_rows_json": schedule_rows_json,
+        "status_choices": EstimateItem.SCHEDULE_STATUS_CHOICES,
+        "assignee_choices": assignee_users,
+        "assignee_choices_json": assignee_choices_json,
+        "filter_status": sched["filter_status"],
+        "filter_assignee_id": sched["filter_assignee_id"],
+        "filter_date_from": sched["filter_date_from"],
+        "filter_date_to": sched["filter_date_to"],
+        "show_materials": sched["show_materials"],
+        "totals": totals,
+        "schedule_summary_start": sched_start,
+        "schedule_summary_end": sched_end,
+        "schedule_summary_days": sched_days,
+        "today": date.today(),
+        "use_schedule_virtual": use_schedule_virtual,
+        "schedule_virtual_data_url": reverse(
+            "project_schedule_virtual_data",
+            args=[project.pk],
+        ),
+    }
+    return render(request, "core/project/schedule.html", ctx)
+
+
+@login_required
+def project_schedule_virtual_data(request: HttpRequest, pk: int) -> HttpResponse:
+    """JSON для виртуального графика (отдельно от HTML — не раздувает страницу)."""
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+
+    sched = _load_project_schedule(request, project)
+    schedule_rows = sched["schedule_rows"]
+    if not schedule_rows:
+        return JsonResponse({"ok": False, "error": "empty", "rows": []}, status=404)
+
+    payload = _schedule_virtual_payload(
         request,
-        "core/project/schedule.html",
-        {
-            "project": project,
-            "active_tab": "schedule",
-            "schedule_rows": schedule_rows,
-            "schedule_rows_json": schedule_rows_json,
-            "status_choices": EstimateItem.SCHEDULE_STATUS_CHOICES,
-            "assignee_choices": assignee_users,
-            "assignee_choices_json": assignee_choices_json,
-            "filter_status": st,
-            "filter_assignee_id": filter_assignee_id,
-            "filter_date_from": df,
-            "filter_date_to": dt_to,
-            "show_materials": show_materials,
-            "totals": totals,
-            "schedule_summary_start": sched_start,
-            "schedule_summary_end": sched_end,
-            "schedule_summary_days": sched_days,
-            "today": date.today(),
-        },
+        project,
+        schedule_rows,
+        EstimateItem.SCHEDULE_STATUS_CHOICES,
+        sched["assignee_choices_json"],
+        date.today(),
     )
+    return JsonResponse(payload)
 
 
 @login_required
@@ -1044,6 +1312,14 @@ def schedule_item_api(request: HttpRequest, pk: int, item_id: int) -> HttpRespon
         pk=item_id,
         section__project=project,
     )
+    if not item.is_subsection_header:
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Сроки задаются только для групп работ (подзаголовков раздела).",
+            },
+            status=403,
+        )
     try:
         data = json.loads(request.body.decode() or "{}")
     except json.JSONDecodeError:
@@ -1117,7 +1393,11 @@ def schedule_item_api(request: HttpRequest, pk: int, item_id: int) -> HttpRespon
             except (TypeError, ValueError):
                 return JsonResponse({"ok": False, "error": "predecessor"}, status=400)
             pred = (
-                EstimateItem.objects.filter(pk=pidi, section__project=project)
+                EstimateItem.objects.filter(
+                    pk=pidi,
+                    section__project=project,
+                    is_subsection_header=True,
+                )
                 .exclude(pk=item.pk)
                 .first()
             )
@@ -1161,7 +1441,9 @@ def schedule_item_api(request: HttpRequest, pk: int, item_id: int) -> HttpRespon
                         )
                     succ = (
                         EstimateItem.objects.filter(
-                            pk=sid, section__project=project
+                            pk=sid,
+                            section__project=project,
+                            is_subsection_header=True,
                         )
                         .exclude(pk=item.pk)
                         .select_related("section")

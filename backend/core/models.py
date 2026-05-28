@@ -464,10 +464,14 @@ class EstimateItem(models.Model):
     SCHEDULE_PLANNED = "planned"
     SCHEDULE_IN_PROGRESS = "in_progress"
     SCHEDULE_COMPLETED = "completed"
+    SCHEDULE_OVERDUE = "overdue"
+    SCHEDULE_PAUSED = "paused"
     SCHEDULE_STATUS_CHOICES = [
         (SCHEDULE_PLANNED, "План"),
         (SCHEDULE_IN_PROGRESS, "В работе"),
         (SCHEDULE_COMPLETED, "Завершено"),
+        (SCHEDULE_OVERDUE, "Просрочено"),
+        (SCHEDULE_PAUSED, "Пауза"),
     ]
     schedule_start = models.DateField("График: начало", null=True, blank=True)
     schedule_end = models.DateField("График: окончание", null=True, blank=True)
@@ -555,6 +559,12 @@ class EstimateItem(models.Model):
             if pred.pk == self.pk:
                 raise ValidationError(
                     {"schedule_predecessor": "Позиция не может зависеть от самой себя."}
+                )
+            if self.is_subsection_header and not pred.is_subsection_header:
+                raise ValidationError(
+                    {
+                        "schedule_predecessor": "Зависимость «После» допустима только между группами работ (подзаголовками раздела)."
+                    }
                 )
             pend = pred.schedule_end
             if (

@@ -35,6 +35,11 @@ urlpatterns = [
     path("projects/<int:pk>/estimate/export/", views.estimate_export, name="estimate_export"),
     path("projects/<int:pk>/schedule/", views.project_schedule, name="project_schedule"),
     path(
+        "projects/<int:pk>/schedule/virtual-data/",
+        views.project_schedule_virtual_data,
+        name="project_schedule_virtual_data",
+    ),
+    path(
         "projects/<int:pk>/schedule/item/<int:item_id>/api/",
         views.schedule_item_api,
         name="schedule_item_api",
