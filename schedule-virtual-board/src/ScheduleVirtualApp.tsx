@@ -28,6 +28,7 @@ import {
   dayOffset,
   daysBetween,
   formatYMD,
+  isValidScheduleDateString,
   parseYMD,
   pxPerDay,
   recomputeSuccessorIds,
@@ -284,6 +285,38 @@ const TaskRow = memo(function TaskRow({
     origStart: Date;
     origEnd: Date;
   } | null>(null);
+  const [startDraft, setStartDraft] = useState(row.schedule_start || "");
+
+  useEffect(() => {
+    setStartDraft(row.schedule_start || "");
+  }, [row.schedule_start]);
+
+  const commitStartDate = useCallback(
+    (raw: string) => {
+      const v = raw.trim();
+      const prev = row.schedule_start || "";
+      if (v === prev) return;
+      if (v && !isValidScheduleDateString(v)) {
+        setStartDraft(prev);
+        return;
+      }
+      const dur =
+        row.duration_days && row.duration_days >= 1
+          ? row.duration_days
+          : row.suggested_days || 1;
+      onSave(taskId, {
+        schedule_start: v || null,
+        ...(v ? { duration_days: dur } : { schedule_end: null }),
+      });
+    },
+    [
+      onSave,
+      row.duration_days,
+      row.schedule_start,
+      row.suggested_days,
+      taskId,
+    ],
+  );
 
   useEffect(() => {
     function onMove(ev: MouseEvent) {
@@ -398,17 +431,15 @@ const TaskRow = memo(function TaskRow({
             <input
               type="date"
               className="sched-input-xs w-full min-w-0 box-border text-[11px] px-1 py-0.5 border border-slate-300 rounded bg-white font-normal"
-              defaultValue={row.schedule_start || ""}
-              onChange={(e) => {
-                const v = e.target.value;
-                const dur =
-                  row.duration_days && row.duration_days >= 1
-                    ? row.duration_days
-                    : row.suggested_days || 1;
-                onSave(taskId, {
-                  schedule_start: v || null,
-                  ...(v ? { duration_days: dur } : { schedule_end: null }),
-                });
+              value={startDraft}
+              min="1990-01-01"
+              max="2100-12-31"
+              onChange={(e) => setStartDraft(e.target.value)}
+              onBlur={(e) => commitStartDate(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.currentTarget.blur();
+                }
               }}
             />
           </Cell>

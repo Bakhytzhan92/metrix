@@ -756,6 +756,20 @@ def _item_schedule_duration_days(item: EstimateItem) -> int | None:
     return None
 
 
+def _parse_schedule_api_date(value) -> tuple[date | None, str | None]:
+    """Дата графика из API: YYYY-MM-DD, год 1990–2100."""
+    if value in (None, ""):
+        return None, None
+    if not isinstance(value, str):
+        return None, "invalid_date"
+    parsed = parse_date(value)
+    if not parsed:
+        return None, "invalid_date"
+    if parsed.year < 1990 or parsed.year > 2100:
+        return None, "year_out_of_range"
+    return parsed, None
+
+
 def _schedule_display_item_passes_filters(
     item: EstimateItem,
     *,
@@ -1329,7 +1343,10 @@ def schedule_item_api(request: HttpRequest, pk: int, item_id: int) -> HttpRespon
 
     if "schedule_start" in data:
         v = data.get("schedule_start")
-        item.schedule_start = parse_date(v) if v else None
+        parsed, err = _parse_schedule_api_date(v)
+        if err:
+            return JsonResponse({"ok": False, "error": err}, status=400)
+        item.schedule_start = parsed
         touched.add("schedule_start")
         if not item.schedule_start:
             item.schedule_end = None
@@ -1340,7 +1357,10 @@ def schedule_item_api(request: HttpRequest, pk: int, item_id: int) -> HttpRespon
 
     if "schedule_end" in data:
         v = data.get("schedule_end")
-        item.schedule_end = parse_date(v) if v else None
+        parsed, err = _parse_schedule_api_date(v)
+        if err:
+            return JsonResponse({"ok": False, "error": err}, status=400)
+        item.schedule_end = parsed
         touched.add("schedule_end")
 
     if "duration_days" in data:

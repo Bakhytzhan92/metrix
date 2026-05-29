@@ -46,6 +46,28 @@ export function rowHeight(row: ScheduleRow): number {
   return ITEM_ROW_H;
 }
 
+export const SCHEDULE_MIN_YEAR = 1990;
+export const SCHEDULE_MAX_YEAR = 2100;
+/** Максимальный диапазон шкалы Gantt (защита от «зависания» при ошибочных датах). */
+export const SCHEDULE_MAX_RANGE_DAYS = 366 * 5;
+
+export function isScheduleYearAllowed(year: number): boolean {
+  return (
+    Number.isFinite(year) &&
+    year >= SCHEDULE_MIN_YEAR &&
+    year <= SCHEDULE_MAX_YEAR
+  );
+}
+
+export function isValidScheduleDateString(
+  s: string | null | undefined,
+): boolean {
+  if (!s) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s))) return false;
+  const d = parseYMD(s);
+  return d != null;
+}
+
 export function parseYMD(s: string | null | undefined): Date | null {
   if (!s) return null;
   const p = String(s).split("-");
@@ -54,7 +76,17 @@ export function parseYMD(s: string | null | undefined): Date | null {
   const m = Number(p[1]);
   const d = Number(p[2]);
   if (!y || !m || !d) return null;
-  return new Date(Date.UTC(y, m - 1, d));
+  if (!isScheduleYearAllowed(y)) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (isNaN(dt.getTime())) return null;
+  if (
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() !== m - 1 ||
+    dt.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return dt;
 }
 
 export function formatYMD(d: Date | null): string {
@@ -94,9 +126,12 @@ export function computeRange(rows: ScheduleRow[], today: string): DateRange {
     if (s) minD = minD ? (cmpTime(s, minD) < 0 ? s : minD) : s;
     if (e) maxD = maxD ? (cmpTime(e, maxD) > 0 ? e : maxD) : e;
   });
-  if (!minD || !maxD || !t) {
-    const base = t || new Date();
+  const base = t || new Date();
+  if (!minD || !maxD) {
     return { start: addDays(base, -7), end: addDays(base, 90) };
+  }
+  if (daysBetween(minD, maxD) > SCHEDULE_MAX_RANGE_DAYS) {
+    return { start: addDays(base, -30), end: addDays(base, 180) };
   }
   return { start: addDays(minD, -7), end: addDays(maxD, 14) };
 }
