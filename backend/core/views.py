@@ -1538,19 +1538,21 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
     supply_first_selectable_item_pk = None
     if pre_ei.isdigit():
         ei = (
-            EstimateItem.objects.filter(pk=int(pre_ei), section__project=project)
+            EstimateItem.objects.filter(
+                pk=int(pre_ei),
+                section__project=project,
+                is_subsection_header=False,
+                type=EstimateItem.TYPE_MATERIAL,
+            )
             .first()
         )
         if ei:
-            if ei.is_subsection_header:
-                ei = None
-            else:
-                req_initial = {
-                    "estimate_item": ei,
-                    "quantity": ei.quantity,
-                    "required_date": date.today(),
-                }
-                supply_selected_item_id = ei.pk
+            req_initial = {
+                "estimate_item": ei,
+                "quantity": ei.quantity,
+                "required_date": date.today(),
+            }
+            supply_selected_item_id = ei.pk
 
     supply_estimate_sections: list = []
     supply_first_selectable_item_pk = None
@@ -1558,6 +1560,11 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
         from decimal import Decimal
 
         purchased_map = supply_services.purchased_qty_by_estimate_item(project)
+        material_ids = set(
+            supply_services.supply_eligible_estimate_items(project).values_list(
+                "pk", flat=True
+            )
+        )
         sections_qs = (
             EstimateSection.objects.filter(project=project)
             .prefetch_related(
@@ -1571,19 +1578,20 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
         for sec in sections_qs:
             rows = []
             for item in sec.items.all():
+                if item.pk not in material_ids:
+                    continue
                 rows.append(
                     {
                         "item": item,
                         "purchased_qty": purchased_map.get(item.pk, Decimal("0")),
                     }
                 )
-            supply_estimate_sections.append({"section": sec, "rows": rows})
+            if rows:
+                supply_estimate_sections.append({"section": sec, "rows": rows})
 
         if not supply_selected_item_id:
             for block in supply_estimate_sections:
                 for row in block["rows"]:
-                    if row["item"].is_subsection_header:
-                        continue
                     supply_first_selectable_item_pk = row["item"].pk
                     break
                 if supply_first_selectable_item_pk:
@@ -1617,6 +1625,24 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
             "supply_estimate_sections": supply_estimate_sections,
             "supply_selected_item_id": supply_selected_item_id,
             "supply_first_selectable_item_pk": supply_first_selectable_item_pk,
+        },
+    )
+
+
+@login_required
+def project_timesheet(request: HttpRequest, pk: int) -> HttpResponse:
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+    from django.middleware.csrf import get_token
+
+    return render(
+        request,
+        "core/project/timesheet.html",
+        {
+            "project": project,
+            "active_tab": "timesheet",
+            "csrf_token": get_token(request),
         },
     )
 

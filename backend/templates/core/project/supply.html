@@ -226,7 +226,7 @@
 
   <div id="supply-create-request" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm scroll-mt-4">
     <h2 class="text-sm font-semibold text-slate-900 mb-1">➕ Новая заявка из сметы</h2>
-    <p class="text-xs text-slate-600 mb-3">Выберите позицию в списке ниже (как в «Смета» — разделы и строки, с прокруткой). Укажите дату потребности и количество.</p>
+    <p class="text-xs text-slate-600 mb-3">Выберите позицию с типом «Материалы» в списке ниже (как в «Смета» — разделы и строки, с прокруткой). Укажите дату потребности и количество.</p>
     <form method="post" action="{% url 'project_supply_request_create' project.pk %}" class="space-y-4 text-sm max-w-6xl" id="supply-new-request-form">
       {% csrf_token %}
       {% if req_form.non_field_errors %}
@@ -257,12 +257,6 @@
                 <tbody class="divide-y divide-slate-100">
                   {% for row in sec_block.rows %}
                   {% with item=row.item %}
-                  {% if item.is_subsection_header %}
-                  <tr class="bg-slate-100/90 border-y border-slate-200">
-                    <td class="bg-slate-100/90"></td>
-                    <td colspan="4" class="px-3 py-2 text-left text-xs font-bold uppercase tracking-tight text-slate-900">{{ item.name }}</td>
-                  </tr>
-                  {% else %}
                   <tr class="hover:bg-indigo-50/50 cursor-pointer transition-colors supply-pick-row" data-supply-pick-row>
                     <td class="py-2 pl-3 pr-1 text-center align-middle">
                       <input
@@ -282,10 +276,9 @@
                     <td class="px-2 py-2 text-right tabular-nums text-slate-800 align-top">{{ item.quantity|qty_plain }}</td>
                     <td class="px-2 py-2 text-right tabular-nums text-emerald-800 align-top pr-3">{{ row.purchased_qty|floatformat:4 }}</td>
                   </tr>
-                  {% endif %}
                   {% endwith %}
                   {% empty %}
-                  <tr><td colspan="5" class="px-3 py-2 text-xs text-slate-500">В разделе нет позиций.</td></tr>
+                  <tr><td colspan="5" class="px-3 py-2 text-xs text-slate-500">В разделе нет материалов.</td></tr>
                   {% endfor %}
                 </tbody>
               </table>
@@ -295,7 +288,7 @@
           {% endfor %}
         </div>
         {% else %}
-        <p class="text-sm text-slate-500 border border-dashed border-slate-200 rounded-lg p-4">В смете нет разделов с позициями. Добавьте их во вкладке «Смета».</p>
+        <p class="text-sm text-slate-500 border border-dashed border-slate-200 rounded-lg p-4">В смете нет позиций с типом «Материалы». Укажите тип в разделе «Смета» или импортируйте смету.</p>
         {% endif %}
         {% if req_form.estimate_item.errors %}<p class="text-xs text-red-600 mt-1">{{ req_form.estimate_item.errors }}</p>{% endif %}
       </div>

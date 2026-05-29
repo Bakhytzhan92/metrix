@@ -15,6 +15,7 @@ from .account_email import (
     normalize_email,
 )
 
+from . import supply_services
 from .models import (
     Company,
     CompanyRole,
@@ -319,11 +320,7 @@ class ProjectSupplyRequestForm(forms.Form):
         super().__init__(*args, **kwargs)
         if project:
             self.fields["estimate_item"].queryset = (
-                EstimateItem.objects.filter(
-                    section__project=project, is_subsection_header=False
-                )
-                .select_related("section")
-                .order_by("section__order", "order", "id")
+                supply_services.supply_eligible_estimate_items(project)
             )
 
 

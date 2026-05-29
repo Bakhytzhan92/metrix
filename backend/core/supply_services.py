@@ -17,6 +17,19 @@ def _as_decimal(v) -> Decimal:
     return Decimal(str(v))
 
 
+def supply_eligible_estimate_items(project):
+    """Позиции сметы, доступные для заявок снабжения (только тип «Материалы»)."""
+    return (
+        EstimateItem.objects.filter(
+            section__project=project,
+            is_subsection_header=False,
+            type=EstimateItem.TYPE_MATERIAL,
+        )
+        .select_related("section")
+        .order_by("section__order", "order", "id")
+    )
+
+
 def estimate_budget_total(project) -> Decimal:
     """Бюджет по смете (сумма total_price позиций)."""
     agg = EstimateItem.objects.filter(section__project=project).aggregate(

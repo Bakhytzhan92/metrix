@@ -6,6 +6,7 @@ from . import estimate_pdf_views
 from . import fuel_project_api
 from . import inventory_api
 from . import materials_project_api
+from . import timesheet_project_api
 from . import views
 from .urls_superadmin import api_urlpatterns as superadmin_api_urls
 from .urls_superadmin import urlpatterns as superadmin_page_urls
@@ -45,6 +46,7 @@ urlpatterns = [
         name="schedule_item_api",
     ),
     path("projects/<int:pk>/supply/", views.project_supply, name="project_supply"),
+    path("projects/<int:pk>/timesheet/", views.project_timesheet, name="project_timesheet"),
     path(
         "projects/<int:pk>/supply/request/create/",
         views.project_supply_request_create,
@@ -241,6 +243,51 @@ urlpatterns = [
         "api/project/<int:pk>/gsm/fuel-type/create/",
         fuel_project_api.api_project_gsm_fuel_type_create,
         name="api_project_gsm_fuel_type_create",
+    ),
+    path(
+        "api/project/<int:pk>/timesheet/",
+        timesheet_project_api.api_project_timesheet_month,
+        name="api_project_timesheet_month",
+    ),
+    path(
+        "api/project/<int:pk>/timesheet/cell/",
+        timesheet_project_api.api_project_timesheet_cell,
+        name="api_project_timesheet_cell",
+    ),
+    path(
+        "api/project/<int:pk>/timesheet/bulk/",
+        timesheet_project_api.api_project_timesheet_bulk,
+        name="api_project_timesheet_bulk",
+    ),
+    path(
+        "api/project/<int:pk>/timesheet/export/",
+        timesheet_project_api.api_project_timesheet_export,
+        name="api_project_timesheet_export",
+    ),
+    path(
+        "api/project/<int:pk>/timesheet/import-employees/",
+        timesheet_project_api.api_project_timesheet_import_employees,
+        name="api_project_timesheet_import_employees",
+    ),
+    path(
+        "api/project/<int:pk>/timesheet/logs/",
+        timesheet_project_api.api_project_timesheet_logs,
+        name="api_project_timesheet_logs",
+    ),
+    path(
+        "api/project/<int:pk>/timesheet/employees/",
+        timesheet_project_api.api_project_timesheet_employee_create,
+        name="api_project_timesheet_employee_create",
+    ),
+    path(
+        "api/project/<int:pk>/timesheet/employees/<int:employee_id>/",
+        timesheet_project_api.api_project_timesheet_employee_update,
+        name="api_project_timesheet_employee_update",
+    ),
+    path(
+        "api/project/<int:pk>/timesheet/employees/<int:employee_id>/remove/",
+        timesheet_project_api.api_project_timesheet_employee_remove,
+        name="api_project_timesheet_employee_remove",
     ),
     path("projects/<int:pk>/documents/", views.project_documents, name="project_documents"),
     path(

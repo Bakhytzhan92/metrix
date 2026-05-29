@@ -28,6 +28,8 @@ PERMISSION_DEFINITIONS: list[tuple[str, str]] = [
     ("edit_tasks", "Задачи: редактирование"),
     ("view_construction", "Стройка: просмотр"),
     ("edit_construction", "Стройка: редактирование"),
+    ("view_timesheet", "Табель: просмотр"),
+    ("edit_timesheet", "Табель: редактирование"),
     ("view_ai", "ИИ-импорт: просмотр"),
     ("edit_ai", "ИИ-импорт: использование"),
 ]
@@ -93,6 +95,8 @@ def codes_required_for_path(path: str) -> list[str] | None:
             return ["view_finance", "edit_finance"]
         if "/construction/" in path:
             return ["view_construction", "edit_construction"]
+        if "/timesheet/" in path:
+            return ["view_timesheet", "edit_timesheet"]
         if "/warehouses/" in path:
             return ["view_warehouse", "edit_warehouse"]
         return ["view_projects", "edit_projects"]
@@ -147,6 +151,8 @@ def permission_codes_for_role_slug(slug: str) -> list[str]:
             "edit_estimates",
             "view_schedule",
             "edit_schedule",
+            "view_timesheet",
+            "edit_timesheet",
         ],
         CompanyRole.SLUG_SUPPLY: [
             "view_projects",

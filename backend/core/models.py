@@ -2662,6 +2662,185 @@ class InventoryItem(models.Model):
         return f"{self.name} ({self.quantity} {self.unit})"
 
 
+# --- Табель работников ---
+
+
+class Employee(models.Model):
+    """Сотрудник компании (справочник для табеля)."""
+
+    STATUS_ACTIVE = "active"
+    STATUS_INACTIVE = "inactive"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Активен"),
+        (STATUS_INACTIVE, "Неактивен"),
+    ]
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="employees"
+    )
+    full_name = models.CharField("ФИО", max_length=255)
+    position = models.CharField("Должность", max_length=255, blank=True, default="")
+    phone = models.CharField("Телефон", max_length=64, blank=True, default="")
+    brigade = models.CharField("Бригада", max_length=128, blank=True, default="")
+    status = models.CharField(
+        "Статус",
+        max_length=16,
+        choices=STATUS_CHOICES,
+        default=STATUS_ACTIVE,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["full_name", "id"]
+        verbose_name = "Сотрудник"
+        verbose_name_plural = "Сотрудники"
+
+    def __str__(self) -> str:
+        return self.full_name
+
+
+class ProjectEmployee(models.Model):
+    """Привязка сотрудника к проекту (объекту)."""
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="project_employees"
+    )
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="project_links"
+    )
+    is_active = models.BooleanField("На объекте", default=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [["project", "employee"]]
+        ordering = ["employee__full_name", "id"]
+        verbose_name = "Сотрудник на объекте"
+        verbose_name_plural = "Сотрудники на объекте"
+
+    def __str__(self) -> str:
+        return f"{self.employee.full_name} @ {self.project.name}"
+
+
+class Timesheet(models.Model):
+    """Табель проекта за календарный месяц."""
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="timesheets"
+    )
+    year = models.PositiveSmallIntegerField("Год")
+    month = models.PositiveSmallIntegerField("Месяц")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [["project", "year", "month"]]
+        ordering = ["-year", "-month", "id"]
+        verbose_name = "Табель"
+        verbose_name_plural = "Табели"
+
+    def __str__(self) -> str:
+        return f"Табель {self.project.name} {self.month:02d}.{self.year}"
+
+
+class TimesheetEntry(models.Model):
+    """Ячейка табеля: сотрудник × день."""
+
+    STATUS_PRESENT = "present"
+    STATUS_OFF = "off"
+    STATUS_VACATION = "vacation"
+    STATUS_ABSENT = "absent"
+    STATUS_HALF = "half"
+    STATUS_CHOICES = [
+        (STATUS_PRESENT, "Явка"),
+        (STATUS_OFF, "Выходной"),
+        (STATUS_VACATION, "Отпуск"),
+        (STATUS_ABSENT, "Неявка"),
+        (STATUS_HALF, "Полдня"),
+    ]
+    STATUS_SHORT = {
+        STATUS_PRESENT: "Я",
+        STATUS_OFF: "В",
+        STATUS_VACATION: "О",
+        STATUS_ABSENT: "Н",
+        STATUS_HALF: "П",
+    }
+
+    timesheet = models.ForeignKey(
+        Timesheet, on_delete=models.CASCADE, related_name="entries"
+    )
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="timesheet_entries"
+    )
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="timesheet_entries"
+    )
+    date = models.DateField("Дата")
+    status = models.CharField(
+        "Статус",
+        max_length=16,
+        choices=STATUS_CHOICES,
+        blank=True,
+        default="",
+    )
+    comment = models.CharField("Комментарий", max_length=500, blank=True, default="")
+    edited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="timesheet_edits",
+    )
+    edited_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [["timesheet", "employee", "date"]]
+        ordering = ["date", "employee__full_name"]
+        verbose_name = "Запись табеля"
+        verbose_name_plural = "Записи табеля"
+        indexes = [
+            models.Index(fields=["project", "date"]),
+            models.Index(fields=["employee", "date"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.employee.full_name} {self.date} {self.status or '—'}"
+
+
+class TimesheetEntryLog(models.Model):
+    """Журнал изменений ячеек табеля."""
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="timesheet_logs"
+    )
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="timesheet_logs"
+    )
+    entry = models.ForeignKey(
+        TimesheetEntry,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="change_logs",
+    )
+    date = models.DateField("Дата")
+    old_status = models.CharField(max_length=16, blank=True, default="")
+    new_status = models.CharField(max_length=16, blank=True, default="")
+    edited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="timesheet_change_logs",
+    )
+    edited_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-edited_at", "-id"]
+        verbose_name = "Изменение табеля"
+        verbose_name_plural = "Журнал табеля"
+
+
 class GeneratedContent(models.Model):
     """
     Заготовка под будущую AI‑интеграцию.

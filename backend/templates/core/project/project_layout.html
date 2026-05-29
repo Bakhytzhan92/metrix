@@ -69,6 +69,12 @@
       <a href="{% url 'project_documents' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'documents' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">Документы</a>
     </li>
     {% endif %}
+    {% has_perm 'view_timesheet' as p_ts %}
+    {% if p_ts %}
+    <li>
+      <a href="{% url 'project_timesheet' project.pk %}" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 border {% if active_tab == 'timesheet' %}mx-project-tab--active border shadow-sm{% else %}text-gray-600 border border-gray-200 bg-white hover:text-gray-900 hover:border-gray-300 hover:bg-gray-50{% endif %}">Табель</a>
+    </li>
+    {% endif %}
     {% has_perm 'view_ai' as p_ai %}
     {% if p_ai %}
     <li>
