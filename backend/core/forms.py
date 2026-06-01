@@ -33,6 +33,7 @@ from .models import (
     SupplyRequest,
     SupplyOrder,
     SupplyOrderItem,
+    OffEstimateSupplyRequest,
     Warehouse,
     StockItem,
     WarehouseOperation,
@@ -109,9 +110,33 @@ class StyledPasswordChangeForm(PasswordChangeForm):
 class CompanyForm(forms.ModelForm):
     class Meta:
         model = Company
-        fields = ("name", "subscription_plan", "subscription_expires_at")
+        fields = (
+            "name",
+            "subscription_plan",
+            "subscription_expires_at",
+            "off_estimate_excel_header_text",
+            "off_estimate_excel_header_template",
+        )
         widgets = {
             "subscription_expires_at": forms.DateInput(attrs={"type": "date"}),
+            "off_estimate_excel_header_text": forms.Textarea(
+                attrs={
+                    "class": "w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500",
+                    "rows": 8,
+                    "placeholder": (
+                        "ЗАЯВКА НА ПРИОБРЕТЕНИЕ МАТЕРИАЛОВ\n\n"
+                        "Проект: {project}\n"
+                        "Дата заявки: {date}\n"
+                        "Номер заявки: {number}"
+                    ),
+                }
+            ),
+            "off_estimate_excel_header_template": forms.ClearableFileInput(
+                attrs={
+                    "class": "w-full rounded-md border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500",
+                    "accept": ".xlsx,.docx",
+                }
+            ),
         }
 
 
@@ -322,6 +347,29 @@ class ProjectSupplyRequestForm(forms.Form):
             self.fields["estimate_item"].queryset = (
                 supply_services.supply_eligible_estimate_items(project)
             )
+
+
+class ProjectOffEstimateSupplyRequestForm(forms.Form):
+    """Шапка заявки вне сметы (позиции — отдельно в POST)."""
+
+    note = forms.CharField(
+        label="Комментарий к заявке",
+        required=False,
+        widget=forms.Textarea(
+            attrs={"class": _input_class(), "rows": 3, "placeholder": "Комментарий к заявке"}
+        ),
+    )
+    required_date = forms.DateField(
+        label="Требуется к дате",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date", "class": _input_class()}),
+    )
+    priority = forms.ChoiceField(
+        label="Приоритет",
+        choices=OffEstimateSupplyRequest.PRIORITY_CHOICES,
+        initial=OffEstimateSupplyRequest.PRIORITY_MEDIUM,
+        widget=forms.Select(attrs={"class": _input_class()}),
+    )
 
 
 class ProjectSupplyOrderCreateForm(forms.Form):

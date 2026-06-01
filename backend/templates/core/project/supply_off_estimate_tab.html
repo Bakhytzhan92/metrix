@@ -1,0 +1,339 @@
+{% load estimate_extras %}
+
+{# Вкладка «Заявки вне сметы» — только просмотр + создание #}
+
+<div class="grid gap-3 sm:grid-cols-3">
+
+  <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+
+    <p class="text-xs font-medium text-slate-500">Всего заявок</p>
+
+    <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900">{{ off_kpi.total }}</p>
+
+  </div>
+
+  <div class="rounded-xl border border-amber-100 bg-amber-50/40 p-4 shadow-sm">
+
+    <p class="text-xs font-medium text-amber-800">На согласовании</p>
+
+    <p class="mt-1 text-lg font-semibold tabular-nums text-amber-900">{{ off_kpi.pending }}</p>
+
+  </div>
+
+  <div class="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm">
+
+    <p class="text-xs font-medium text-emerald-800">Закуплено</p>
+
+    <p class="mt-1 text-lg font-semibold tabular-nums text-emerald-800">{{ off_kpi.purchased }}</p>
+
+  </div>
+
+</div>
+
+
+
+<form method="get" class="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm text-sm">
+
+  <input type="hidden" name="tab" value="off_estimate" />
+
+  <div>
+
+    <label class="block text-xs text-slate-600 mb-1">Статус</label>
+
+    <select name="status" class="rounded-md border border-slate-300 px-2 py-1.5">
+
+      <option value="">Все</option>
+
+      {% for val, label in oes_status_choices %}
+
+      <option value="{{ val }}" {% if filter_status == val %}selected{% endif %}>{{ label }}</option>
+
+      {% endfor %}
+
+    </select>
+
+  </div>
+
+  <div>
+
+    <label class="block text-xs text-slate-600 mb-1">Поиск</label>
+
+    <input type="text" name="q" value="{{ filter_q }}" placeholder="№, материал или примечание" class="rounded-md border border-slate-300 px-2 py-1.5 w-52" />
+
+  </div>
+
+  <button type="submit" class="rounded-md bg-slate-800 px-3 py-2 text-white text-sm hover:bg-slate-900">Применить</button>
+
+</form>
+
+
+
+<div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+
+  <table class="min-w-full divide-y divide-slate-100 text-sm">
+
+    <thead class="bg-slate-50">
+
+      <tr>
+
+        <th class="px-3 py-2 text-left">№</th>
+
+        <th class="px-3 py-2 text-left">Дата</th>
+
+        <th class="px-3 py-2 text-left">Материал</th>
+
+        <th class="px-3 py-2 text-left">Ед.</th>
+
+        <th class="px-3 py-2 text-right">Кол-во</th>
+
+        <th class="px-3 py-2 text-left">Примечание</th>
+
+        <th class="px-3 py-2 text-left">Статус</th>
+
+        <th class="px-3 py-2 text-left">Автор</th>
+
+        <th class="px-3 py-2"></th>
+
+      </tr>
+
+    </thead>
+
+    <tbody class="divide-y divide-slate-100">
+
+      {% for r in off_estimate_requests %}
+
+        {% with items=r.items.all %}
+
+        {% for line in items %}
+
+        <tr class="hover:bg-slate-50/60">
+
+          {% if forloop.first %}
+
+          <td class="px-3 py-2 font-medium text-indigo-700 align-top" rowspan="{{ items|length }}">{{ r.number }}</td>
+
+          <td class="px-3 py-2 tabular-nums align-top" rowspan="{{ items|length }}">{{ r.created_at|date:"d.m.Y" }}</td>
+
+          {% endif %}
+
+          <td class="px-3 py-2">{{ line.material_name }}</td>
+
+          <td class="px-3 py-2">{{ line.unit }}</td>
+
+          <td class="px-3 py-2 text-right tabular-nums">{{ line.quantity|qty_plain }}</td>
+
+          <td class="px-3 py-2 text-xs text-slate-600">{{ line.note|default:"—" }}</td>
+
+          {% if forloop.first %}
+
+          <td class="px-3 py-2 align-top" rowspan="{{ items|length }}">
+
+            <span class="text-xs">{{ r.get_status_display }}</span>
+
+            {% if r.rejection_reason %}<p class="text-[10px] text-red-600 mt-0.5">{{ r.rejection_reason|truncatechars:40 }}</p>{% endif %}
+
+          </td>
+
+          <td class="px-3 py-2 text-xs align-top" rowspan="{{ items|length }}">{{ r.created_by.get_username|default:"—" }}</td>
+
+          <td class="px-3 py-2 text-xs align-top" rowspan="{{ items|length }}">
+
+            <a href="{% url 'project_off_estimate_request_export' project.pk r.pk %}" class="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 mb-1">[ Экспорт заявки Excel ]</a>
+
+            <button type="button" class="js-wf-history block text-indigo-600 mb-1" data-type="off_estimate" data-id="{{ r.pk }}">История</button>
+
+            {% if can_create_supply and r.status == 'approval' %}
+
+            <form method="post" action="{% url 'project_off_estimate_request_delete' project.pk r.pk %}" class="mt-1" onsubmit="return confirm('Удалить заявку {{ r.number|escapejs }}?');">
+
+              {% csrf_token %}
+
+              <button type="submit" class="text-red-600 hover:text-red-800">Удалить</button>
+
+            </form>
+
+            {% endif %}
+
+          </td>
+
+          {% endif %}
+
+        </tr>
+
+        {% empty %}
+
+        <tr>
+
+          <td class="px-3 py-2 font-medium text-indigo-700">{{ r.number }}</td>
+
+          <td class="px-3 py-2">{{ r.created_at|date:"d.m.Y" }}</td>
+
+          <td colspan="6" class="px-3 py-2 text-slate-500 text-xs">Нет позиций</td>
+
+        </tr>
+
+        {% endfor %}
+
+        {% endwith %}
+
+      {% empty %}
+
+      <tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">Нет заявок вне сметы.</td></tr>
+
+      {% endfor %}
+
+    </tbody>
+
+  </table>
+
+</div>
+
+
+
+{% if can_create_supply %}
+
+<div id="supply-create-off-estimate" class="rounded-xl border border-indigo-100 bg-indigo-50/30 p-4 shadow-sm scroll-mt-4">
+
+  <h2 class="text-sm font-semibold text-slate-900 mb-1">➕ Создать заявку вне сметы</h2>
+
+  <p class="text-xs text-slate-600 mb-4">После создания заявка автоматически отправляется на согласование.</p>
+
+  <form method="post" action="{% url 'project_off_estimate_request_create' project.pk %}" class="space-y-4 text-sm" id="oes-create-form">
+
+    {% csrf_token %}
+
+    <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+
+      <div class="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+
+        <span class="text-xs font-semibold text-slate-700 uppercase tracking-wide">Позиции</span>
+
+        <button type="button" id="oes-add-line" class="rounded-md border border-indigo-200 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50">+ Добавить позицию</button>
+
+      </div>
+
+      <table class="min-w-full text-xs">
+
+        <thead class="bg-slate-50 text-slate-600">
+
+          <tr>
+
+            <th class="px-2 py-2 text-left">Наименование</th>
+
+            <th class="px-2 py-2 text-left">Ед. изм.</th>
+
+            <th class="px-2 py-2 text-left hidden oes-custom-unit-th">Своя ед.</th>
+
+            <th class="px-2 py-2 text-right">Кол-во</th>
+
+            <th class="px-2 py-2 text-left">Примечание</th>
+
+            <th class="px-2 py-2 w-8"></th>
+
+          </tr>
+
+        </thead>
+
+        <tbody id="oes-lines-body"></tbody>
+
+      </table>
+
+    </div>
+
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+
+      <div><label class="block text-xs text-slate-600 mb-1">{{ oes_form.required_date.label }}</label>{{ oes_form.required_date }}</div>
+
+      <div><label class="block text-xs text-slate-600 mb-1">{{ oes_form.priority.label }}</label>{{ oes_form.priority }}</div>
+
+      <div class="sm:col-span-2 lg:col-span-3"><label class="block text-xs text-slate-600 mb-1">{{ oes_form.note.label }}</label>{{ oes_form.note }}</div>
+
+    </div>
+
+    <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Создать заявку</button>
+
+  </form>
+
+</div>
+
+<template id="oes-line-template">
+
+  <tr class="oes-line-row border-t border-slate-100">
+
+    <td class="px-2 py-2"><input type="text" name="line_material_name" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required /></td>
+
+    <td class="px-2 py-2"><select name="line_unit_preset" class="oes-unit-preset w-full rounded border border-slate-300 px-1 py-1.5 text-xs"><option value="">—</option>{% for val, label in oes_unit_presets %}<option value="{{ val }}">{{ label }}</option>{% endfor %}<option value="__custom__">Другая…</option></select></td>
+
+    <td class="px-2 py-2 hidden oes-custom-unit-td"><input type="text" name="line_unit_custom" class="oes-unit-custom w-full rounded border border-slate-300 px-2 py-1 text-xs" /></td>
+
+    <td class="px-2 py-2"><input type="number" name="line_quantity" step="0.0001" min="0.0001" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs text-right" required /></td>
+
+    <td class="px-2 py-2"><input type="text" name="line_note" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" /></td>
+
+    <td class="px-2 py-2 text-center"><button type="button" class="oes-remove-line text-slate-400 hover:text-red-600">×</button></td>
+
+  </tr>
+
+</template>
+
+<script>
+
+(function () {
+
+  var tpl = document.getElementById("oes-line-template");
+
+  var body = document.getElementById("oes-lines-body");
+
+  var addBtn = document.getElementById("oes-add-line");
+
+  if (!tpl || !body || !addBtn) return;
+
+  function syncCustomCols() {
+
+    var show = false;
+
+    body.querySelectorAll(".oes-unit-preset").forEach(function (s) { if (s.value === "__custom__") show = true; });
+
+    document.querySelectorAll(".oes-custom-unit-th, .oes-custom-unit-td").forEach(function (el) { el.classList.toggle("hidden", !show); });
+
+  }
+
+  function bindRow(row) {
+
+    var preset = row.querySelector(".oes-unit-preset");
+
+    if (preset) preset.addEventListener("change", syncCustomCols);
+
+    var rm = row.querySelector(".oes-remove-line");
+
+    if (rm) rm.addEventListener("click", function () {
+
+      if (body.querySelectorAll(".oes-line-row").length <= 1) return;
+
+      row.remove(); syncCustomCols();
+
+    });
+
+  }
+
+  function addLine() {
+
+    body.appendChild(tpl.content.cloneNode(true));
+
+    bindRow(body.lastElementChild);
+
+    syncCustomCols();
+
+  }
+
+  addBtn.addEventListener("click", addLine);
+
+  addLine();
+
+})();
+
+</script>
+
+{% endif %}
+
+

@@ -18,6 +18,13 @@ PERMISSION_DEFINITIONS: list[tuple[str, str]] = [
     ("edit_schedule", "График работ: редактирование"),
     ("view_supply", "Снабжение: просмотр"),
     ("edit_supply", "Снабжение: редактирование"),
+    ("create_supply_request", "Снабжение: создание заявок"),
+    ("approve_supply_request", "Снабжение: согласование заявок"),
+    ("procure_supply", "Снабжение: закупка"),
+    ("receive_supply_warehouse", "Снабжение: приём на склад"),
+    ("view_off_estimate_supply", "Заявки вне сметы: просмотр"),
+    ("edit_off_estimate_supply", "Заявки вне сметы: редактирование"),
+    ("view_off_estimate_supply_cost", "Заявки вне сметы: просмотр стоимости"),
     ("view_warehouse", "Склады: просмотр"),
     ("edit_warehouse", "Склады: редактирование"),
     ("view_finance", "Финансы: просмотр"),
@@ -90,7 +97,26 @@ def codes_required_for_path(path: str) -> list[str] | None:
                 "edit_estimates",
             ]
         if "/supply/" in path:
-            return ["view_supply", "edit_supply"]
+            if "/off-estimate/" in path:
+                return [
+                    "view_off_estimate_supply",
+                    "edit_off_estimate_supply",
+                    "create_supply_request",
+                ]
+            if "/approval/" in path or "/workflow/" in path:
+                return [
+                    "approve_supply_request",
+                    "view_supply",
+                    "edit_supply",
+                ]
+            return [
+                "view_supply",
+                "edit_supply",
+                "create_supply_request",
+                "procure_supply",
+                "receive_supply_warehouse",
+                "approve_supply_request",
+            ]
         if "/finance/" in path:
             return ["view_finance", "edit_finance"]
         if "/construction/" in path:
@@ -130,7 +156,16 @@ def employee_permission_codes() -> list[str]:
     return [
         c
         for c in all_permission_codes()
-        if c not in ("view_finance", "edit_finance", "view_reports", "manage_users")
+        if c
+        not in (
+            "view_finance",
+            "edit_finance",
+            "view_reports",
+            "manage_users",
+            "view_off_estimate_supply",
+            "edit_off_estimate_supply",
+            "view_off_estimate_supply_cost",
+        )
     ]
 
 
@@ -153,15 +188,29 @@ def permission_codes_for_role_slug(slug: str) -> list[str]:
             "edit_schedule",
             "view_timesheet",
             "edit_timesheet",
+            "view_off_estimate_supply",
+            "create_supply_request",
+            "view_supply",
         ],
         CompanyRole.SLUG_SUPPLY: [
             "view_projects",
             "view_supply",
             "edit_supply",
+            "view_off_estimate_supply",
+            "edit_off_estimate_supply",
+            "view_off_estimate_supply_cost",
             "view_warehouse",
             "edit_warehouse",
+            "procure_supply",
+            "receive_supply_warehouse",
         ],
-        CompanyRole.SLUG_ACCOUNTANT: ["view_finance", "edit_finance", "view_reports"],
+        CompanyRole.SLUG_ACCOUNTANT: [
+            "view_finance",
+            "edit_finance",
+            "view_reports",
+            "view_off_estimate_supply",
+            "view_off_estimate_supply_cost",
+        ],
     }
     return mapping.get((slug or "").strip(), emp)
 

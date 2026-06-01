@@ -21,8 +21,11 @@ from . import construction_services
 from . import finance_project_services
 from . import services as report_services
 from . import supply_services
+from . import off_estimate_supply_services as oes_services
+from . import supply_workflow_services as wf_services
+from .off_estimate_excel_export import export_filename, export_single_off_estimate_request_xlsx
 from .auth_utils import login_user
-from .access_utils import can_manage_access, get_current_company, has_permission
+from .access_utils import can_manage_access, get_current_company, has_permission, is_company_owner
 from .forms import (
     RegisterForm,
     CompanyForm,
@@ -45,6 +48,7 @@ from .forms import (
     SupplyOrderForm,
     SupplyOrderCreateForm,
     ProjectSupplyRequestForm,
+    ProjectOffEstimateSupplyRequestForm,
     ProjectSupplyOrderCreateForm,
     WarehouseIncomingForm,
     WarehouseOutgoingForm,
@@ -81,6 +85,8 @@ from .models import (
     SupplyRequest,
     SupplyOrder,
     SupplyOrderItem,
+    OffEstimateSupplyRequest,
+    OFF_ESTIMATE_UNIT_PRESETS,
     Warehouse,
     StockItem,
     WarehouseOperation,
@@ -110,6 +116,8 @@ from .inventory_services import (
 from .inventory_numbering import allocate_inventory_number
 from .inventory_qr import ensure_qr_image_file
 from .rbac import permission_required
+
+User = get_user_model()
 
 
 def register(request: HttpRequest) -> HttpResponse:
@@ -1506,6 +1514,17 @@ def schedule_item_api(request: HttpRequest, pk: int, item_id: int) -> HttpRespon
     )
 
 
+def _company_assignee_users(company: Company):
+    user_ids = CompanyUser.objects.filter(
+        company=company, is_active=True
+    ).values_list("user_id", flat=True)
+    return (
+        User.objects.filter(Q(id__in=user_ids) | Q(id=company.owner_id))
+        .distinct()
+        .order_by("username")
+    )
+
+
 @login_required
 def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
     project, err = _get_project_or_403(request, pk)
@@ -1516,9 +1535,33 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
     _ensure_finance_defaults(company)
 
     tab = request.GET.get("tab", "requests")
+    if tab not in ("requests", "off_estimate", "approval", "orders"):
+        tab = "requests"
     kpi = supply_services.compute_project_supply_kpis(project)
 
-    requests_qs = project.supply_requests.select_related(
+    can_create_supply = has_permission(request.user, company, "create_supply_request")
+    can_approve_supply = has_permission(request.user, company, "approve_supply_request")
+    can_procure_supply = has_permission(request.user, company, "procure_supply") or has_permission(
+        request.user, company, "edit_supply"
+    )
+    can_receive_supply = has_permission(
+        request.user, company, "receive_supply_warehouse"
+    ) or has_permission(request.user, company, "edit_warehouse")
+    can_edit_off_estimate = has_permission(
+        request.user, company, "edit_off_estimate_supply"
+    ) or can_create_supply
+    can_view_off_estimate = (
+        has_permission(request.user, company, "view_off_estimate_supply")
+        or can_edit_off_estimate
+    )
+    if tab == "off_estimate" and not can_view_off_estimate:
+        tab = "requests"
+    if tab == "approval" and not can_approve_supply:
+        tab = "requests"
+
+    requests_qs = project.supply_requests.filter(
+        estimate_item__isnull=False
+    ).select_related(
         "resource",
         "estimate_item",
         "estimate_item__section",
@@ -1547,10 +1590,27 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
 
     orders_qs = (
         SupplyOrder.objects.filter(project=project)
-        .select_related("finance_operation")
-        .prefetch_related("items__request__resource", "items__request__estimate_item")
+        .select_related("finance_operation", "off_estimate_request")
+        .prefetch_related(
+            "items__request__resource",
+            "items__request__estimate_item",
+            "items__off_estimate_item",
+        )
         .order_by("-created_at")
     )
+
+    approval_data = {}
+    project_warehouses = []
+    if tab == "approval":
+        approval_data = wf_services.list_pending_approval(project)
+    if tab == "orders":
+        project_warehouses = list(
+            Warehouse.objects.filter(
+                company=company, is_deleted=False
+            ).filter(
+                Q(project=project) | Q(project__isnull=True)
+            ).order_by("project_id", "name")
+        )
 
     req_initial = {}
     pre_ei = request.GET.get("estimate_item", "").strip()
@@ -1618,7 +1678,40 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
                     break
 
     req_form = ProjectSupplyRequestForm(project=project, initial=req_initial)
-    ord_form = ProjectSupplyOrderCreateForm(company=company, project=project)
+
+    off_kpi = {}
+    off_estimate_requests = []
+    oes_form = ProjectOffEstimateSupplyRequestForm()
+    assignee_users = []
+
+    if tab == "off_estimate":
+        off_kpi = oes_services.compute_off_estimate_kpis(project)
+        off_estimate_requests = oes_services.filter_off_estimate_requests(
+            project, request.GET
+        )
+        assignee_users = _company_assignee_users(company)
+        export = request.GET.get("export", "").strip()
+        if export == "xlsx":
+            buf = oes_services.export_off_estimate_xlsx(
+                project, off_estimate_requests
+            )
+            resp = HttpResponse(
+                buf.getvalue(),
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            resp["Content-Disposition"] = (
+                f'attachment; filename="off_estimate_{project.pk}.xlsx"'
+            )
+            return resp
+        if export == "pdf":
+            buf = oes_services.export_off_estimate_pdf(
+                project, off_estimate_requests
+            )
+            resp = HttpResponse(buf.getvalue(), content_type="application/pdf")
+            resp["Content-Disposition"] = (
+                f'attachment; filename="off_estimate_{project.pk}.pdf"'
+            )
+            return resp
 
     return render(
         request,
@@ -1631,11 +1724,18 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
             "supply_requests": requests_qs,
             "supply_orders": orders_qs,
             "req_form": req_form,
-            "ord_form": ord_form,
             "status_choices": SupplyRequest.STATUS_CHOICES,
             "resource_types": Resource.TYPE_CHOICES,
             "order_status_choices": SupplyOrder.STATUS_CHOICES,
+            "procurement_status_choices": SupplyOrder.PROCUREMENT_STATUS_CHOICES,
             "payment_status_choices": SupplyOrder.PAYMENT_STATUS_CHOICES,
+            "approval_estimate_requests": approval_data.get("estimate_requests", []),
+            "approval_off_requests": approval_data.get("off_estimate_requests", []),
+            "project_warehouses": project_warehouses,
+            "can_create_supply": can_create_supply,
+            "can_approve_supply": can_approve_supply,
+            "can_procure_supply": can_procure_supply,
+            "can_receive_supply": can_receive_supply,
             "filter_status": st,
             "filter_date_from": df,
             "filter_date_to": dt_to,
@@ -1645,6 +1745,16 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
             "supply_estimate_sections": supply_estimate_sections,
             "supply_selected_item_id": supply_selected_item_id,
             "supply_first_selectable_item_pk": supply_first_selectable_item_pk,
+            "off_kpi": off_kpi,
+            "off_estimate_requests": off_estimate_requests,
+            "oes_form": oes_form,
+            "oes_status_choices": OffEstimateSupplyRequest.STATUS_CHOICES,
+            "oes_priority_choices": OffEstimateSupplyRequest.PRIORITY_CHOICES,
+            "oes_unit_presets": OFF_ESTIMATE_UNIT_PRESETS,
+            "assignee_users": assignee_users,
+            "can_edit_off_estimate": can_edit_off_estimate,
+            "can_create_supply": can_create_supply,
+            "can_view_off_estimate": can_view_off_estimate,
         },
     )
 
@@ -1669,6 +1779,7 @@ def project_timesheet(request: HttpRequest, pk: int) -> HttpResponse:
 
 @login_required
 @require_POST
+@permission_required("create_supply_request")
 def project_supply_request_create(
     request: HttpRequest, pk: int
 ) -> HttpResponse:
@@ -1698,11 +1809,118 @@ def project_supply_request_create(
         quantity=form.cleaned_data["quantity"],
         price_plan=price,
         supplier_name="",
-        status=SupplyRequest.STATUS_PENDING,
+        status=SupplyRequest.STATUS_APPROVAL,
         created_by=request.user,
     )
-    messages.success(request, f"Заявка создана: {sr.resource.name}.")
+    wf_services.log_estimate_request_created(sr, request.user)
+    messages.success(
+        request,
+        f"Заявка создана и отправлена на согласование: {sr.resource.name}.",
+    )
     return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=requests")
+
+
+@login_required
+@require_POST
+@permission_required("create_supply_request")
+def project_off_estimate_request_create(
+    request: HttpRequest, pk: int
+) -> HttpResponse:
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+    company = project.company
+    form = ProjectOffEstimateSupplyRequestForm(request.POST)
+    if not form.is_valid():
+        for _f, errs in form.errors.items():
+            for e in errs:
+                messages.error(request, f"{_f}: {e}")
+        return redirect(
+            f"{reverse('project_supply', args=[project.pk])}?tab=off_estimate"
+        )
+    lines, line_errors = oes_services.parse_line_rows_from_post(request.POST)
+    for e in line_errors:
+        messages.error(request, e)
+    if line_errors:
+        return redirect(
+            f"{reverse('project_supply', args=[project.pk])}?tab=off_estimate"
+        )
+    req = oes_services.create_off_estimate_request(
+        company=company,
+        project=project,
+        user=request.user,
+        note=(form.cleaned_data.get("note") or "").strip(),
+        required_date=form.cleaned_data.get("required_date"),
+        priority=form.cleaned_data["priority"],
+        lines=lines,
+    )
+    wf_services.log_off_estimate_request_created(req, request.user)
+    messages.success(
+        request,
+        f"Заявка {req.number} создана ({len(lines)} поз.) и отправлена на согласование.",
+    )
+    return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=off_estimate")
+
+
+@login_required
+@permission_required("view_off_estimate_supply")
+def project_off_estimate_request_export(
+    request: HttpRequest, pk: int, req_id: int
+) -> HttpResponse:
+    from urllib.parse import quote
+
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+    req = get_object_or_404(
+        OffEstimateSupplyRequest,
+        pk=req_id,
+        project=project,
+        company=project.company,
+    )
+    buf = export_single_off_estimate_request_xlsx(req)
+    filename = export_filename(req)
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    resp["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return resp
+
+
+@login_required
+@require_POST
+@permission_required("create_supply_request")
+def project_off_estimate_request_delete(
+    request: HttpRequest, pk: int, req_id: int
+) -> HttpResponse:
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+    company = project.company
+    req = get_object_or_404(
+        OffEstimateSupplyRequest, pk=req_id, project=project, company=company
+    )
+    number = req.number
+    if req.status != OffEstimateSupplyRequest.STATUS_APPROVAL:
+        messages.error(
+            request,
+            f"Заявку {number} можно удалить только на этапе согласования.",
+        )
+        return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=off_estimate")
+    try:
+        oes_services.delete_off_estimate_request(req)
+    except ValueError as e:
+        if str(e) == "warehouse_received":
+            messages.error(
+                request,
+                f"Заявку {number} нельзя удалить: часть материалов уже принята на склад.",
+            )
+        else:
+            messages.error(request, f"Не удалось удалить заявку {number}.")
+    else:
+        messages.success(request, f"Заявка {number} удалена.")
+    return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=off_estimate")
 
 
 @login_required
@@ -1769,53 +1987,13 @@ def project_supply_request_api(
     if err:
         return err
     sr = get_object_or_404(SupplyRequest, pk=req_id, project=project)
-    try:
-        data = json.loads(request.body.decode() or "{}")
-    except json.JSONDecodeError:
-        return JsonResponse({"ok": False, "error": "bad_json"}, status=400)
-
-    if "status" in data:
-        val = data["status"]
-        if val in dict(SupplyRequest.STATUS_CHOICES):
-            sr.status = val
-    if "required_date" in data:
-        sd = parse_date(data["required_date"])
-        if sd:
-            sr.required_date = sd
-    if "delivery_date" in data:
-        dd = parse_date(data["delivery_date"])
-        sr.delivery_date = dd
-    if "quantity" in data:
-        try:
-            from decimal import Decimal
-
-            sr.quantity = Decimal(str(data["quantity"]))
-        except Exception:
-            pass
-    if "price_plan" in data:
-        try:
-            from decimal import Decimal
-
-            sr.price_plan = Decimal(str(data["price_plan"]))
-        except Exception:
-            pass
-    if "quantity_received" in data:
-        try:
-            from decimal import Decimal
-
-            sr.quantity_received = Decimal(str(data["quantity_received"]))
-        except Exception:
-            pass
-    if "supplier_name" in data:
-        sr.supplier_name = str(data["supplier_name"])[:255]
-
-    sr.save()
     return JsonResponse(
         {
-            "ok": True,
-            "total_plan": str(sr.total_plan),
-            "status": sr.status,
-        }
+            "ok": False,
+            "error": "readonly",
+            "message": "Редактирование заявки после создания запрещено.",
+        },
+        status=403,
     )
 
 
@@ -3020,7 +3198,7 @@ def task_status(request: HttpRequest, pk: int) -> HttpResponse:
 def company_settings(request: HttpRequest) -> HttpResponse:
     company = Company.objects.filter(owner=request.user).first()
     if request.method == "POST":
-        form = CompanyForm(request.POST, instance=company)
+        form = CompanyForm(request.POST, request.FILES, instance=company)
         if form.is_valid():
             obj = form.save(commit=False)
             if company is None:

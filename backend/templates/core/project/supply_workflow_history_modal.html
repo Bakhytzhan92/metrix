@@ -1,0 +1,34 @@
+<div id="wf-history-modal" class="fixed inset-0 z-50 hidden" aria-hidden="true">
+  <div class="absolute inset-0 bg-slate-900/50" data-close-wf-history></div>
+  <div class="absolute left-1/2 top-1/2 w-[min(32rem,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-4 shadow-xl max-h-[80vh] overflow-y-auto">
+    <h3 class="text-sm font-semibold text-slate-900 mb-3">История</h3>
+    <div id="wf-history-body" class="text-xs space-y-2"></div>
+    <button type="button" data-close-wf-history class="mt-4 rounded-md border border-slate-300 px-3 py-1.5 text-xs">Закрыть</button>
+  </div>
+</div>
+<script>
+(function () {
+  var modal = document.getElementById("wf-history-modal");
+  var body = document.getElementById("wf-history-body");
+  if (!modal || !body) return;
+  var url = "{% url 'project_supply_workflow_history' project.pk %}";
+  document.querySelectorAll(".js-wf-history").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var u = url + "?type=" + encodeURIComponent(btn.getAttribute("data-type")) + "&id=" + encodeURIComponent(btn.getAttribute("data-id"));
+      fetch(u, { credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j.ok) { alert("Не удалось загрузить историю"); return; }
+          body.innerHTML = (j.events || []).map(function (e) {
+            return "<div class='border-b border-slate-100 pb-2'><div class='font-medium'>" + e.action + "</div><div class='text-slate-500'>" + e.at + " · " + e.user + "</div>" + (e.comment ? "<div class='text-slate-700 mt-0.5'>" + e.comment + "</div>" : "") + "</div>";
+          }).join("") || "<p class='text-slate-500'>Нет записей</p>";
+          modal.classList.remove("hidden");
+        }).catch(function () { alert("Ошибка сети"); });
+    });
+  });
+  modal.querySelectorAll("[data-close-wf-history]").forEach(function (el) {
+    el.addEventListener("click", function () { modal.classList.add("hidden"); });
+  });
+})();
+</script>
+

@@ -101,6 +101,25 @@ class Company(models.Model):
         default="",
         help_text="Напр. BKC для формата BKC-INS-000001. Если пусто — из названия компании.",
     )
+    off_estimate_excel_header_text = models.TextField(
+        "Шапка Excel заявки вне сметы",
+        blank=True,
+        default="",
+        help_text=(
+            "Текст шапки для экспорта заявки. Плейсхолдеры: {project}, {date}, {number}, {company}. "
+            "Если загружен файл шаблона — он имеет приоритет над текстом."
+        ),
+    )
+    off_estimate_excel_header_template = models.FileField(
+        "Файл шаблона шапки Excel",
+        upload_to="company/off_estimate_excel_headers/",
+        blank=True,
+        null=True,
+        help_text=(
+            "Word (.docx) или Excel (.xlsx): шапка вставляется в верх документа. "
+            "Для .docx после шапки добавляются данные заявки."
+        ),
+    )
 
 
 class UserProfile(models.Model):
@@ -1424,6 +1443,8 @@ class SupplyRequest(models.Model):
     """
 
     STATUS_DRAFT = "draft"
+    STATUS_APPROVAL = "approval"
+    STATUS_APPROVED = "approved"
     STATUS_PENDING = "pending"
     STATUS_IN_PROGRESS = "in_progress"
     STATUS_PARTIAL = "partial"
@@ -1431,6 +1452,8 @@ class SupplyRequest(models.Model):
     STATUS_CANCELLED = "cancelled"
     STATUS_CHOICES = [
         (STATUS_DRAFT, "Черновик"),
+        (STATUS_APPROVAL, "На согласовании"),
+        (STATUS_APPROVED, "Одобрена"),
         (STATUS_PENDING, "Ожидает закупки"),
         (STATUS_IN_PROGRESS, "В закупке"),
         (STATUS_PARTIAL, "Частично закуплено"),
@@ -1478,7 +1501,25 @@ class SupplyRequest(models.Model):
         "Статус",
         max_length=20,
         choices=STATUS_CHOICES,
-        default=STATUS_DRAFT,
+        default=STATUS_APPROVAL,
+    )
+    rejection_reason = models.TextField("Причина отказа", blank=True, default="")
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supply_requests_approved",
+        verbose_name="Согласовал",
+    )
+    approved_at = models.DateTimeField("Дата согласования", null=True, blank=True)
+    supply_order = models.ForeignKey(
+        "SupplyOrder",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="estimate_requests",
+        verbose_name="Заказ снабжения",
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1531,6 +1572,19 @@ class SupplyOrder(models.Model):
         (STATUS_CLOSED, "Закрыт"),
     ]
 
+    PROCUREMENT_PENDING = "pending"
+    PROCUREMENT_IN_PROGRESS = "in_progress"
+    PROCUREMENT_PARTIAL = "partial"
+    PROCUREMENT_PURCHASED = "purchased"
+    PROCUREMENT_CANCELLED = "cancelled"
+    PROCUREMENT_STATUS_CHOICES = [
+        (PROCUREMENT_PENDING, "Ожидает закупки"),
+        (PROCUREMENT_IN_PROGRESS, "В закупке"),
+        (PROCUREMENT_PARTIAL, "Частично закуплена"),
+        (PROCUREMENT_PURCHASED, "Закуплена"),
+        (PROCUREMENT_CANCELLED, "Отменена"),
+    ]
+
     PAYMENT_DRAFT = "draft"
     PAYMENT_AWAITING = "awaiting_payment"
     PAYMENT_PARTIAL = "partial"
@@ -1553,9 +1607,15 @@ class SupplyOrder(models.Model):
         related_name="supply_orders",
         verbose_name="Проект",
     )
-    supplier = models.CharField("Поставщик", max_length=255)
+    supplier = models.CharField("Поставщик", max_length=255, blank=True, default="")
     status = models.CharField(
         "Статус поставки", max_length=20, choices=STATUS_CHOICES, default=STATUS_NEW
+    )
+    procurement_status = models.CharField(
+        "Статус закупки",
+        max_length=20,
+        choices=PROCUREMENT_STATUS_CHOICES,
+        default=PROCUREMENT_PENDING,
     )
     payment_status = models.CharField(
         "Оплата",
@@ -1576,6 +1636,14 @@ class SupplyOrder(models.Model):
         blank=True,
         related_name="supply_orders",
         verbose_name="Операция в финансах",
+    )
+    off_estimate_request = models.OneToOneField(
+        "OffEstimateSupplyRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supply_order",
+        verbose_name="Заявка вне сметы",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -1622,8 +1690,21 @@ class SupplyOrderItem(models.Model):
         null=True,
         blank=True,
     )
+    off_estimate_item = models.OneToOneField(
+        "OffEstimateSupplyRequestItem",
+        on_delete=models.CASCADE,
+        related_name="order_item",
+        null=True,
+        blank=True,
+        verbose_name="Позиция вне сметы",
+    )
+    line_name = models.CharField("Наименование", max_length=255, blank=True, default="")
+    line_unit = models.CharField("Ед. изм.", max_length=50, blank=True, default="")
     quantity = models.DecimalField(
-        "Количество", max_digits=14, decimal_places=4, default=0
+        "Требуется", max_digits=14, decimal_places=4, default=0
+    )
+    quantity_purchased = models.DecimalField(
+        "Закуплено", max_digits=14, decimal_places=4, default=0
     )
     price_fact = models.DecimalField(
         "Цена, факт", max_digits=14, decimal_places=2, default=0
@@ -1631,14 +1712,300 @@ class SupplyOrderItem(models.Model):
     total_fact = models.DecimalField(
         "Факт, сумма", max_digits=14, decimal_places=2, default=0, editable=False
     )
+    warehouse_received = models.BooleanField("Принято на склад", default=False)
+    warehouse_received_at = models.DateTimeField(null=True, blank=True)
+    warehouse = models.ForeignKey(
+        "Warehouse",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supply_order_items",
+        verbose_name="Склад поступления",
+    )
+    material = models.ForeignKey(
+        "Material",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supply_order_items",
+        verbose_name="Материал на складе",
+    )
 
     class Meta:
         verbose_name = "Позиция заказа"
         verbose_name_plural = "Позиции заказа"
 
+    @property
+    def display_name(self) -> str:
+        if self.request_id:
+            return self.request.resource.name
+        if self.off_estimate_item_id:
+            return self.off_estimate_item.material_name
+        return self.line_name or "—"
+
+    @property
+    def display_unit(self) -> str:
+        if self.request_id:
+            return self.request.resource.unit
+        if self.off_estimate_item_id:
+            return self.off_estimate_item.unit
+        return self.line_unit or "шт"
+
+    @property
+    def quantity_remainder(self):
+        from decimal import Decimal
+
+        q = self.quantity or Decimal("0")
+        p = self.quantity_purchased or Decimal("0")
+        return max(q - p, Decimal("0"))
+
     def save(self, *args, **kwargs):
-        self.total_fact = self.quantity * self.price_fact
+        from decimal import Decimal, ROUND_HALF_UP
+
+        q = self.quantity_purchased or Decimal("0")
+        p = self.price_fact or Decimal("0")
+        self.total_fact = (q * p).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         super().save(*args, **kwargs)
+
+
+# ---------- Заявки вне сметы (отдельный модуль снабжения) ----------
+
+
+OFF_ESTIMATE_UNIT_PRESETS = [
+    ("шт", "шт"),
+    ("кг", "кг"),
+    ("т", "т"),
+    ("м", "м"),
+    ("м2", "м²"),
+    ("м3", "м³"),
+    ("л", "л"),
+    ("комплект", "комплект"),
+    ("упаковка", "упаковка"),
+    ("рулон", "рулон"),
+    ("мешок", "мешок"),
+]
+
+
+class OffEstimateSupplyRequest(models.Model):
+    """Заявка на закупку материалов вне сметы (шапка, несколько позиций)."""
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVAL = "approval"
+    STATUS_APPROVED = "approved"
+    STATUS_IN_PROGRESS = "in_progress"
+    STATUS_PARTIAL = "partial"
+    STATUS_PURCHASED = "purchased"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Ожидает закупки"),
+        (STATUS_APPROVAL, "На согласовании"),
+        (STATUS_APPROVED, "Одобрена"),
+        (STATUS_IN_PROGRESS, "В закупке"),
+        (STATUS_PARTIAL, "Частично закуплена"),
+        (STATUS_PURCHASED, "Закуплена"),
+        (STATUS_CANCELLED, "Отменена"),
+    ]
+
+    PRIORITY_LOW = "low"
+    PRIORITY_MEDIUM = "medium"
+    PRIORITY_HIGH = "high"
+    PRIORITY_URGENT = "urgent"
+    PRIORITY_CHOICES = [
+        (PRIORITY_LOW, "Низкий"),
+        (PRIORITY_MEDIUM, "Средний"),
+        (PRIORITY_HIGH, "Высокий"),
+        (PRIORITY_URGENT, "Срочно"),
+    ]
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="off_estimate_supply_requests"
+    )
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="off_estimate_supply_requests",
+    )
+    number = models.CharField("№ заявки", max_length=32, db_index=True)
+    note = models.TextField("Примечание", blank=True, default="")
+    required_date = models.DateField("Требуется к дате", null=True, blank=True)
+    priority = models.CharField(
+        "Приоритет",
+        max_length=16,
+        choices=PRIORITY_CHOICES,
+        default=PRIORITY_MEDIUM,
+    )
+    status = models.CharField(
+        "Статус",
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_APPROVAL,
+    )
+    rejection_reason = models.TextField("Причина отказа", blank=True, default="")
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="off_estimate_supply_approved",
+        verbose_name="Согласовал",
+    )
+    approved_at = models.DateTimeField("Дата согласования", null=True, blank=True)
+    assignee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="off_estimate_supply_assigned",
+        verbose_name="Ответственный",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="off_estimate_supply_created",
+        verbose_name="Создал",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Заявка вне сметы"
+        verbose_name_plural = "Заявки вне сметы"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "number"],
+                name="uniq_off_estimate_supply_number_per_company",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.number
+
+
+class OffEstimateSupplyRequestItem(models.Model):
+    """Позиция заявки вне сметы."""
+
+    request = models.ForeignKey(
+        OffEstimateSupplyRequest,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    sort_order = models.PositiveSmallIntegerField("Порядок", default=0)
+    material_name = models.CharField("Наименование материала", max_length=255)
+    unit = models.CharField("Ед. изм.", max_length=50, default="шт")
+    quantity = models.DecimalField(
+        "Количество", max_digits=14, decimal_places=4, default=0
+    )
+    note = models.TextField("Примечание", blank=True, default="")
+    quantity_purchased = models.DecimalField(
+        "Фактически закуплено", max_digits=14, decimal_places=4, default=0
+    )
+    warehouse_received = models.BooleanField("Принято на склад", default=False)
+    warehouse_received_at = models.DateTimeField(null=True, blank=True)
+    material = models.ForeignKey(
+        "Material",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="off_estimate_supply_items",
+        verbose_name="Материал на складе",
+    )
+    warehouse = models.ForeignKey(
+        "Warehouse",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="off_estimate_supply_items",
+        verbose_name="Склад поступления",
+    )
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        verbose_name = "Позиция заявки вне сметы"
+        verbose_name_plural = "Позиции заявок вне сметы"
+
+    def __str__(self) -> str:
+        return f"{self.material_name} ({self.quantity} {self.unit})"
+
+    @property
+    def quantity_remainder(self):
+        from decimal import Decimal
+
+        q = self.quantity or Decimal("0")
+        p = self.quantity_purchased or Decimal("0")
+        return max(q - p, Decimal("0"))
+
+
+class SupplyWorkflowLog(models.Model):
+    """Журнал истории заявок и заказов снабжения."""
+
+    ACTION_CREATED = "created"
+    ACTION_APPROVED = "approved"
+    ACTION_REJECTED = "rejected"
+    ACTION_PROCUREMENT_STARTED = "procurement_started"
+    ACTION_PARTIAL_PURCHASE = "partial_purchase"
+    ACTION_FULL_PURCHASE = "full_purchase"
+    ACTION_WAREHOUSE_TRANSFER = "warehouse_transfer"
+    ACTION_CANCELLED = "cancelled"
+    ACTION_CHOICES = [
+        (ACTION_CREATED, "Создание"),
+        (ACTION_APPROVED, "Согласование"),
+        (ACTION_REJECTED, "Отказ"),
+        (ACTION_PROCUREMENT_STARTED, "Передача в закупку"),
+        (ACTION_PARTIAL_PURCHASE, "Частичная закупка"),
+        (ACTION_FULL_PURCHASE, "Полная закупка"),
+        (ACTION_WAREHOUSE_TRANSFER, "Передача на склад"),
+        (ACTION_CANCELLED, "Отмена"),
+    ]
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="supply_workflow_logs"
+    )
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="supply_workflow_logs",
+    )
+    supply_request = models.ForeignKey(
+        SupplyRequest,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="workflow_logs",
+    )
+    off_estimate_request = models.ForeignKey(
+        OffEstimateSupplyRequest,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="workflow_logs",
+    )
+    supply_order = models.ForeignKey(
+        SupplyOrder,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="workflow_logs",
+    )
+    action = models.CharField("Действие", max_length=32, choices=ACTION_CHOICES)
+    comment = models.TextField("Комментарий", blank=True, default="")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="supply_workflow_actions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Событие снабжения"
+        verbose_name_plural = "Журнал снабжения"
+
+    def __str__(self) -> str:
+        return f"{self.get_action_display()} — {self.created_at:%d.%m.%Y %H:%M}"
 
 
 # ---------- Модуль «Склады»: склады, остатки, операции ----------

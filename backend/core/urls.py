@@ -6,6 +6,8 @@ from . import estimate_pdf_views
 from . import fuel_project_api
 from . import inventory_api
 from . import materials_project_api
+from . import off_estimate_supply_api
+from . import supply_workflow_views
 from . import timesheet_project_api
 from . import views
 from .urls_superadmin import api_urlpatterns as superadmin_api_urls
@@ -51,6 +53,81 @@ urlpatterns = [
         "projects/<int:pk>/supply/request/create/",
         views.project_supply_request_create,
         name="project_supply_request_create",
+    ),
+    path(
+        "projects/<int:pk>/supply/off-estimate/create/",
+        views.project_off_estimate_request_create,
+        name="project_off_estimate_request_create",
+    ),
+    path(
+        "projects/<int:pk>/supply/off-estimate/<int:req_id>/api/",
+        off_estimate_supply_api.api_off_estimate_request_update,
+        name="project_off_estimate_request_api",
+    ),
+    path(
+        "projects/<int:pk>/supply/off-estimate/<int:req_id>/export/",
+        views.project_off_estimate_request_export,
+        name="project_off_estimate_request_export",
+    ),
+    path(
+        "projects/<int:pk>/supply/off-estimate/<int:req_id>/delete/",
+        views.project_off_estimate_request_delete,
+        name="project_off_estimate_request_delete",
+    ),
+    path(
+        "projects/<int:pk>/supply/off-estimate/<int:req_id>/items/<int:item_id>/api/",
+        off_estimate_supply_api.api_off_estimate_item_update,
+        name="project_off_estimate_item_api",
+    ),
+    path(
+        "projects/<int:pk>/supply/off-estimate/<int:req_id>/items/<int:item_id>/receive/",
+        off_estimate_supply_api.api_off_estimate_receive_warehouse,
+        name="project_off_estimate_receive_warehouse",
+    ),
+    path(
+        "projects/<int:pk>/supply/approval/estimate/<int:req_id>/approve/",
+        supply_workflow_views.project_supply_approve_estimate,
+        name="project_supply_approve_estimate",
+    ),
+    path(
+        "projects/<int:pk>/supply/approval/estimate/<int:req_id>/reject/",
+        supply_workflow_views.project_supply_reject_estimate,
+        name="project_supply_reject_estimate",
+    ),
+    path(
+        "projects/<int:pk>/supply/approval/off-estimate/<int:req_id>/approve/",
+        supply_workflow_views.project_supply_approve_off_estimate,
+        name="project_supply_approve_off_estimate",
+    ),
+    path(
+        "projects/<int:pk>/supply/approval/off-estimate/<int:req_id>/reject/",
+        supply_workflow_views.project_supply_reject_off_estimate,
+        name="project_supply_reject_off_estimate",
+    ),
+    path(
+        "projects/<int:pk>/supply/order/<int:order_id>/start/",
+        supply_workflow_views.project_supply_order_start,
+        name="project_supply_order_start",
+    ),
+    path(
+        "projects/<int:pk>/supply/order/<int:order_id>/purchase/",
+        supply_workflow_views.project_supply_order_purchase,
+        name="project_supply_order_purchase",
+    ),
+    path(
+        "projects/<int:pk>/supply/order/<int:order_id>/warehouse/",
+        supply_workflow_views.project_supply_order_warehouse,
+        name="project_supply_order_warehouse",
+    ),
+    path(
+        "projects/<int:pk>/supply/order/<int:order_id>/cancel/",
+        supply_workflow_views.project_supply_order_cancel,
+        name="project_supply_order_cancel",
+    ),
+    path(
+        "projects/<int:pk>/supply/workflow/history/",
+        supply_workflow_views.project_supply_workflow_history,
+        name="project_supply_workflow_history",
     ),
     path(
         "projects/<int:pk>/supply/order/create/",
