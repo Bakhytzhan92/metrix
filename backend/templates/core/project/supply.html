@@ -19,6 +19,9 @@
     {% if can_approve_supply %}
     <a href="?tab=approval" class="px-4 py-2.5 rounded-t-md border-b-2 {% if supply_tab == 'approval' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Согласование заявок</a>
     {% endif %}
+    {% if can_approve_procurement %}
+    <a href="?tab=procurement_approval" class="px-4 py-2.5 rounded-t-md border-b-2 {% if supply_tab == 'procurement_approval' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Согласование закупок</a>
+    {% endif %}
     <a href="?tab=orders{% if preselect_estimate_item %}&estimate_item={{ preselect_estimate_item }}{% endif %}" class="px-4 py-2.5 rounded-t-md border-b-2 {% if supply_tab == 'orders' %}border-indigo-500 text-indigo-600 font-medium{% else %}border-transparent text-slate-600 hover:text-slate-900{% endif %}">Заказы</a>
   </div>
 
@@ -26,6 +29,10 @@
   {% include "core/project/supply_off_estimate_tab.html" %}
   {% elif supply_tab == 'approval' %}
   {% include "core/project/supply_approval_tab.html" %}
+  {% include "core/project/supply_workflow_history_modal.html" %}
+  {% elif supply_tab == 'procurement_approval' %}
+  {% include "core/project/supply_procurement_approval_tab.html" %}
+  {% include "core/project/supply_workflow_history_modal.html" %}
 
   {% else %}
 

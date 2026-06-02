@@ -1535,12 +1535,15 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
     _ensure_finance_defaults(company)
 
     tab = request.GET.get("tab", "requests")
-    if tab not in ("requests", "off_estimate", "approval", "orders"):
+    if tab not in ("requests", "off_estimate", "approval", "procurement_approval", "orders"):
         tab = "requests"
     kpi = supply_services.compute_project_supply_kpis(project)
 
     can_create_supply = has_permission(request.user, company, "create_supply_request")
     can_approve_supply = has_permission(request.user, company, "approve_supply_request")
+    can_approve_procurement = has_permission(
+        request.user, company, "approve_procurement_payment"
+    )
     can_procure_supply = has_permission(request.user, company, "procure_supply") or has_permission(
         request.user, company, "edit_supply"
     )
@@ -1557,6 +1560,8 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
     if tab == "off_estimate" and not can_view_off_estimate:
         tab = "requests"
     if tab == "approval" and not can_approve_supply:
+        tab = "requests"
+    if tab == "procurement_approval" and not can_approve_procurement:
         tab = "requests"
 
     requests_qs = project.supply_requests.filter(
@@ -1595,9 +1600,16 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
             "items__request__resource",
             "items__request__estimate_item",
             "items__off_estimate_item",
+            "documents__uploaded_by",
         )
         .order_by("-created_at")
     )
+
+    procurement_approval_orders = []
+    if tab == "procurement_approval":
+        from . import supply_payment_services as pay_svc
+
+        procurement_approval_orders = pay_svc.list_pending_payment_approval(project)
 
     approval_data = {}
     project_warehouses = []
@@ -1731,9 +1743,11 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
             "payment_status_choices": SupplyOrder.PAYMENT_STATUS_CHOICES,
             "approval_estimate_requests": approval_data.get("estimate_requests", []),
             "approval_off_requests": approval_data.get("off_estimate_requests", []),
+            "procurement_approval_orders": procurement_approval_orders,
             "project_warehouses": project_warehouses,
             "can_create_supply": can_create_supply,
             "can_approve_supply": can_approve_supply,
+            "can_approve_procurement": can_approve_procurement,
             "can_procure_supply": can_procure_supply,
             "can_receive_supply": can_receive_supply,
             "filter_status": st,
@@ -2499,19 +2513,27 @@ def project_finance_pay_work_act(
 def project_supply_order_submit_payment(
     request: HttpRequest, pk: int, order_id: int
 ) -> HttpResponse:
+    """Устаревший URL: перенаправление на согласование оплаты."""
+    from django.http import HttpResponseForbidden
+
+    from . import supply_payment_services as pay
+    from .supply_workflow_views import _payment_error_message
+
     project, err = _get_project_or_403(request, pk)
     if err:
         return err
+    company = project.company
+    if not (
+        has_permission(request.user, company, "procure_supply")
+        or has_permission(request.user, company, "edit_supply")
+    ):
+        return HttpResponseForbidden()
     order = get_object_or_404(SupplyOrder, pk=order_id, project=project)
-    if order.payment_status != SupplyOrder.PAYMENT_DRAFT:
-        messages.warning(request, "Заказ уже отправлен или оплачен.")
-        return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=orders")
-    order.payment_status = SupplyOrder.PAYMENT_AWAITING
-    order.save(update_fields=["payment_status"])
-    messages.success(
-        request,
-        "Заказ отправлен в раздел «Финансы проекта» — «Заказы на оплату».",
-    )
+    try:
+        pay.submit_order_for_payment_approval(order, user=request.user)
+        messages.success(request, "Заказ отправлен на согласование оплаты.")
+    except ValueError as exc:
+        messages.error(request, _payment_error_message(exc))
     return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=orders")
 
 
@@ -2756,7 +2778,9 @@ def project_warehouses(request: HttpRequest, pk: int) -> HttpResponse:
     items_by_warehouse = {}
     for w in warehouses:
         items_by_warehouse[w.id] = [i for i in items_list if i.warehouse_id == w.id]
-    warehouse_columns = [(w, items_by_warehouse.get(w.id, [])) for w in warehouses]
+    project_warehouses = [w for w in warehouses if w.id != written_off_wh.id]
+    warehouse_columns = [(w, items_by_warehouse.get(w.id, [])) for w in project_warehouses]
+    written_off_column = (written_off_wh, items_by_warehouse.get(written_off_wh.id, []))
     total_count = sum(1 for i in items_list if i.status != WarehouseInventoryItem.STATUS_WRITTEN_OFF)
     total_sum = sum((i.purchase_price or 0) for i in items_list if i.status != WarehouseInventoryItem.STATUS_WRITTEN_OFF)
     written_off_count = sum(1 for i in items_list if i.status == WarehouseInventoryItem.STATUS_WRITTEN_OFF)
@@ -2768,6 +2792,7 @@ def project_warehouses(request: HttpRequest, pk: int) -> HttpResponse:
         "active_tab": "warehouses",
         "warehouses": warehouses,
         "warehouse_columns": warehouse_columns,
+        "written_off_column": written_off_column,
         "warehouse_filter": warehouse_filter,
         "status_filter": status_filter,
         "search_q": search_q,

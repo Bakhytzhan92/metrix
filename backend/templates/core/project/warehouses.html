@@ -42,11 +42,26 @@
   {# ——— Инвентарь (Kanban, без изменений логики) ——— #}
   <div id="wh-panel-inventory" class="wh-main-panel space-y-4">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-line bg-white/90 p-4 shadow-mx-sm">
-      <h3 class="text-base font-semibold text-ink">Инвентарь проекта</h3>
-      <p class="text-sm text-ink-muted">
-        {{ total_count }} единиц на сумму {{ total_sum|floatformat:0 }} ₸
-        {% if written_off_count %}<span class="text-ink-muted/80"> · </span>Списано {{ written_off_count }} единиц на сумму {{ written_off_sum|floatformat:0 }} ₸{% endif %}
-      </p>
+      <div class="flex flex-wrap items-center gap-3 min-w-0">
+        <div class="min-w-0">
+          <h3 class="text-base font-semibold text-ink">Инвентарь проекта</h3>
+          <p class="text-sm text-ink-muted mt-1">
+            {{ total_count }} единиц на сумму {{ total_sum|floatformat:0 }} ₸
+          </p>
+        </div>
+        <button type="button" id="btn-create-warehouse" class="mx-btn-primary text-sm shrink-0">Создать склад</button>
+      </div>
+      <div class="flex shrink-0">
+        <button
+          type="button"
+          id="btn-view-written-off"
+          class="inv-view-tab mx-btn-primary text-sm"
+          data-view="written-off"
+          aria-pressed="false"
+        >
+          Списано{% if written_off_count %} ({{ written_off_count }}){% endif %}
+        </button>
+      </div>
     </div>
     <p class="text-xs text-slate-500 max-w-2xl">Материалы (песок, щебень, расходники и т.д.) — во вкладке «Материалы», они сюда не попадают.</p>
 
@@ -68,11 +83,7 @@
       <button type="submit" class="mx-btn-secondary text-sm !min-h-9">Применить</button>
     </form>
 
-    <div>
-      <button type="button" id="btn-create-warehouse" class="mx-btn-primary text-sm">Создать склад</button>
-    </div>
-
-    <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
+    <div id="wh-kanban-active" class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
       {% for warehouse, items in warehouse_columns %}
       <div class="warehouse-column flex-shrink-0 w-72 md:w-80 rounded-2xl border border-line bg-gradient-to-b from-white to-slate-50/90 p-4 shadow-mx-sm hover:shadow-mx transition-all duration-200{% if can_edit_project_inventory %} warehouse-column-drop{% endif %}" data-warehouse-id="{{ warehouse.id }}">
         <div class="flex items-center justify-between mb-4 gap-2">
@@ -141,6 +152,50 @@
       </div>
       {% endfor %}
     </div>
+
+    <div id="wh-kanban-written-off" class="hidden flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
+      {% with warehouse=written_off_column.0 items=written_off_column.1 %}
+      <div class="warehouse-column flex-shrink-0 w-72 md:w-80 rounded-2xl border border-line bg-gradient-to-b from-white to-slate-50/90 p-4 shadow-mx-sm hover:shadow-mx transition-all duration-200{% if can_edit_project_inventory %} warehouse-column-drop{% endif %}" data-warehouse-id="{{ warehouse.id }}">
+        <div class="flex items-center justify-between mb-4 gap-2">
+          <h3 class="font-semibold text-ink flex items-center gap-2 min-w-0">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 text-sm">⌂</span>
+            <span class="truncate">{{ warehouse.name }}</span>
+          </h3>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <div class="rounded-full bg-white/90 border border-line px-2.5 py-0.5 text-[11px] font-semibold text-ink-muted tabular-nums" title="Позиций">{{ items|length }}</div>
+            {% if written_off_sum %}<div class="text-[11px] text-ink-muted tabular-nums" title="Сумма">{{ written_off_sum|floatformat:0 }} ₸</div>{% endif %}
+          </div>
+        </div>
+        <div class="space-y-2 inventory-cards">
+          {% for item in items %}
+          {% with status=item.status %}
+          <div
+            class="inventory-card rounded-xl bg-white p-3 shadow-mx-sm border border-line transition-all duration-200 text-left {% if can_edit_project_inventory %}cursor-grab active:cursor-grabbing hover:shadow-mx hover:-translate-y-0.5{% else %}cursor-pointer hover:shadow-mx{% endif %} border-l-4 border-l-red-600"
+            data-edit-url="{% url 'project_inventory_update' project.pk item.id %}"
+            {% if can_edit_project_inventory %}draggable="true" data-item-id="{{ item.id }}"{% endif %}
+          >
+            <div class="flex gap-2">
+              <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 overflow-hidden border border-line">
+                {% if item.image %}
+                <img src="{{ item.image.url }}" alt="" class="w-full h-full object-cover" draggable="false" />
+                {% else %}
+                <span class="text-lg">🔧</span>
+                {% endif %}
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium text-ink truncate">{{ item.name }}</p>
+                <p class="text-xs text-red-600">Списан</p>
+              </div>
+            </div>
+          </div>
+          {% endwith %}
+          {% empty %}
+          <p class="text-sm text-slate-500 py-2">Нет списанных единиц</p>
+          {% endfor %}
+        </div>
+      </div>
+      {% endwith %}
+    </div>
   </div>
 
   {# Материалы + история операций (React) #}
@@ -184,6 +239,11 @@
 {# Бандл esbuild в формате IIFE, не ES module — иначе в проде возможны сбои загрузки/строгий разбор #}
 <script defer src="{% static 'core/project_materials/board.js' %}"></script>
 <script defer src="{% static 'core/project_gsm/board.js' %}"></script>
+<style>
+  .inv-view-tab--active {
+    box-shadow: 0 0 0 2px rgb(99 102 241 / 0.45);
+  }
+</style>
 <script>
 (function() {
   var inv = document.getElementById('wh-panel-inventory');
@@ -229,6 +289,32 @@
   if (backdrop) backdrop.addEventListener('click', closeModal);
   cancelBtns.forEach(function(b) { b.addEventListener('click', closeModal); });
   document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+
+  var btnWrittenOff = document.getElementById('btn-view-written-off');
+  var kanbanActive = document.getElementById('wh-kanban-active');
+  var kanbanWrittenOff = document.getElementById('wh-kanban-written-off');
+  var inventoryView = 'active';
+
+  function setInventoryView(view) {
+    inventoryView = view;
+    var isWritten = view === 'written-off';
+    if (kanbanActive) kanbanActive.classList.toggle('hidden', isWritten);
+    if (kanbanWrittenOff) kanbanWrittenOff.classList.toggle('hidden', !isWritten);
+    if (btnWrittenOff) {
+      btnWrittenOff.classList.toggle('inv-view-tab--active', isWritten);
+      btnWrittenOff.setAttribute('aria-pressed', isWritten ? 'true' : 'false');
+    }
+  }
+
+  if (btnWrittenOff) {
+    btnWrittenOff.addEventListener('click', function() {
+      setInventoryView(inventoryView === 'written-off' ? 'active' : 'written-off');
+    });
+  }
+
+  {% if status_filter == 'written_off' or warehouse_filter == written_off_warehouse_id|stringformat:"d" %}
+  setInventoryView('written-off');
+  {% endif %}
 
   var menuBtns = document.querySelectorAll('.warehouse-menu-btn');
   menuBtns.forEach(function(btn) {

@@ -19,6 +19,7 @@ from .models import (
     Warehouse,
 )
 from . import supply_workflow_services as wf
+from . import supply_payment_services as pay
 from .rbac import permission_required
 
 
@@ -254,6 +255,150 @@ def project_supply_order_cancel(
     else:
         messages.success(request, "Заказ отменён.")
     return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=orders")
+
+
+def _can_approve_payment(user, company) -> bool:
+    return has_permission(user, company, "approve_procurement_payment")
+
+
+_PAYMENT_ERROR_MSG = {
+    "not_editable": "Редактирование недоступно в текущем статусе оплаты.",
+    "cancelled": "Заказ отменён.",
+    "invalid_status": "Недопустимый статус для этого действия.",
+    "supplier_required": "Укажите поставщика.",
+    "amount_required": "Укажите сумму закупки.",
+    "document_required": "Загрузите коммерческое предложение и/или счёт на оплату.",
+    "reason_required": "Укажите причину отказа.",
+    "no_file": "Файл не выбран.",
+    "bad_extension": "Допустимые форматы: pdf, doc, docx, xls, xlsx, jpg, png.",
+    "bad_amount": "Некорректная сумма.",
+}
+
+
+def _payment_error_message(exc: ValueError) -> str:
+    return _PAYMENT_ERROR_MSG.get(str(exc), str(exc))
+
+
+@login_required
+@require_POST
+@permission_required("procure_supply")
+def project_supply_order_update_payment_info(
+    request: HttpRequest, pk: int, order_id: int
+) -> HttpResponse:
+    project, err = _project(request, pk)
+    if err:
+        return err
+    order = get_object_or_404(SupplyOrder, pk=order_id, project=project)
+    from django.utils.dateparse import parse_date
+
+    planned = None
+    raw_date = request.POST.get("planned_delivery_date", "").strip()
+    if raw_date:
+        planned = parse_date(raw_date)
+    try:
+        pay.update_order_procurement_info(
+            order,
+            user=request.user,
+            supplier=request.POST.get("supplier", ""),
+            purchase_amount_raw=request.POST.get("purchase_amount"),
+            planned_delivery_date=planned,
+            procurement_note=request.POST.get("procurement_note", ""),
+        )
+    except ValueError as exc:
+        messages.error(request, _payment_error_message(exc))
+    else:
+        messages.success(request, "Данные заказа сохранены.")
+    return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=orders")
+
+
+@login_required
+@require_POST
+@permission_required("procure_supply")
+def project_supply_order_upload_document(
+    request: HttpRequest, pk: int, order_id: int
+) -> HttpResponse:
+    project, err = _project(request, pk)
+    if err:
+        return err
+    order = get_object_or_404(SupplyOrder, pk=order_id, project=project)
+    doc_type = request.POST.get("doc_type", "")
+    uploaded = request.FILES.get("file")
+    try:
+        pay.upload_order_document(
+            order, user=request.user, doc_type=doc_type, uploaded_file=uploaded
+        )
+    except ValueError as exc:
+        messages.error(request, _payment_error_message(exc))
+    else:
+        messages.success(request, "Документ загружен.")
+    return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=orders")
+
+
+@login_required
+@require_POST
+@permission_required("procure_supply")
+def project_supply_order_submit_payment_approval(
+    request: HttpRequest, pk: int, order_id: int
+) -> HttpResponse:
+    project, err = _project(request, pk)
+    if err:
+        return err
+    order = get_object_or_404(SupplyOrder, pk=order_id, project=project)
+    try:
+        pay.submit_order_for_payment_approval(order, user=request.user)
+    except ValueError as exc:
+        messages.error(request, _payment_error_message(exc))
+    else:
+        messages.success(
+            request, "Заказ отправлен на согласование оплаты.",
+        )
+    return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=orders")
+
+
+@login_required
+@require_POST
+@permission_required("approve_procurement_payment")
+def project_supply_order_approve_payment(
+    request: HttpRequest, pk: int, order_id: int
+) -> HttpResponse:
+    project, err = _project(request, pk)
+    if err:
+        return err
+    order = get_object_or_404(SupplyOrder, pk=order_id, project=project)
+    try:
+        pay.approve_order_payment(order, user=request.user)
+    except ValueError as exc:
+        messages.error(request, _payment_error_message(exc))
+    else:
+        messages.success(
+            request,
+            "Оплата согласована. Заказ передан в «Финансы → Заказы на оплату».",
+        )
+    return redirect(
+        f"{reverse('project_supply', args=[project.pk])}?tab=procurement_approval"
+    )
+
+
+@login_required
+@require_POST
+@permission_required("approve_procurement_payment")
+def project_supply_order_reject_payment(
+    request: HttpRequest, pk: int, order_id: int
+) -> HttpResponse:
+    project, err = _project(request, pk)
+    if err:
+        return err
+    order = get_object_or_404(SupplyOrder, pk=order_id, project=project)
+    reason = request.POST.get("rejection_reason", "")
+    try:
+        pay.reject_order_payment(order, user=request.user, reason=reason)
+    except ValueError as exc:
+        messages.error(request, _payment_error_message(exc))
+    else:
+        messages.success(request, "Оплата отклонена. Снабженец может исправить данные и отправить снова.")
+    return redirect(
+        f"{reverse('project_supply', args=[project.pk])}?tab=procurement_approval"
+    )
 
 
 @login_required

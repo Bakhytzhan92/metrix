@@ -173,7 +173,7 @@
           <td class="px-3 py-2 text-right tabular-nums text-xs">
             {% for it in o.items.all %}{{ it.quantity }}{% if not forloop.last %} / {% endif %}{% empty %}—{% endfor %}
           </td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ o.total_amount|floatformat:2 }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ o.payment_amount_display|floatformat:2 }}</td>
           <td class="px-3 py-2 text-right tabular-nums text-slate-600">{{ o.paid_amount|floatformat:2 }}</td>
           <td class="px-3 py-2 tabular-nums text-slate-600">{{ o.created_at|date:"d.m.Y" }}</td>
           <td class="px-3 py-2 text-xs">{{ o.get_payment_status_display }}</td>

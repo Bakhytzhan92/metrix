@@ -20,6 +20,7 @@ PERMISSION_DEFINITIONS: list[tuple[str, str]] = [
     ("edit_supply", "Снабжение: редактирование"),
     ("create_supply_request", "Снабжение: создание заявок"),
     ("approve_supply_request", "Снабжение: согласование заявок"),
+    ("approve_procurement_payment", "Снабжение: согласование закупок"),
     ("procure_supply", "Снабжение: закупка"),
     ("receive_supply_warehouse", "Снабжение: приём на склад"),
     ("view_off_estimate_supply", "Заявки вне сметы: просмотр"),
@@ -102,6 +103,14 @@ def codes_required_for_path(path: str) -> list[str] | None:
                     "view_off_estimate_supply",
                     "edit_off_estimate_supply",
                     "create_supply_request",
+                ]
+            if "/procurement-approval/" in path:
+                return [
+                    "approve_procurement_payment",
+                    "view_supply",
+                    "edit_supply",
+                    "view_finance",
+                    "edit_finance",
                 ]
             if "/approval/" in path or "/workflow/" in path:
                 return [
@@ -210,6 +219,8 @@ def permission_codes_for_role_slug(slug: str) -> list[str]:
             "view_reports",
             "view_off_estimate_supply",
             "view_off_estimate_supply_cost",
+            "view_supply",
+            "approve_procurement_payment",
         ],
     }
     return mapping.get((slug or "").strip(), emp)

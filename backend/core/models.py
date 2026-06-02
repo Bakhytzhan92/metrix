@@ -1586,11 +1586,15 @@ class SupplyOrder(models.Model):
     ]
 
     PAYMENT_DRAFT = "draft"
+    PAYMENT_PENDING_APPROVAL = "pending_payment_approval"
+    PAYMENT_REJECTED = "payment_rejected"
     PAYMENT_AWAITING = "awaiting_payment"
     PAYMENT_PARTIAL = "partial"
     PAYMENT_PAID = "paid"
     PAYMENT_STATUS_CHOICES = [
         (PAYMENT_DRAFT, "Черновик"),
+        (PAYMENT_PENDING_APPROVAL, "Ожидает согласования оплаты"),
+        (PAYMENT_REJECTED, "Отклонено"),
         (PAYMENT_AWAITING, "Ожидает оплаты"),
         (PAYMENT_PARTIAL, "Частично оплачено"),
         (PAYMENT_PAID, "Оплачено"),
@@ -1608,6 +1612,36 @@ class SupplyOrder(models.Model):
         verbose_name="Проект",
     )
     supplier = models.CharField("Поставщик", max_length=255, blank=True, default="")
+    purchase_amount = models.DecimalField(
+        "Сумма закупки",
+        max_digits=16,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    planned_delivery_date = models.DateField(
+        "Плановая дата поставки", null=True, blank=True
+    )
+    procurement_note = models.TextField(
+        "Комментарий снабженца", blank=True, default=""
+    )
+    payment_rejection_reason = models.TextField(
+        "Причина отказа в оплате", blank=True, default=""
+    )
+    payment_submitted_at = models.DateTimeField(
+        "Отправлено на согласование оплаты", null=True, blank=True
+    )
+    payment_approved_at = models.DateTimeField(
+        "Согласовано к оплате", null=True, blank=True
+    )
+    payment_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supply_orders_payment_approved",
+        verbose_name="Согласовал оплату",
+    )
     status = models.CharField(
         "Статус поставки", max_length=20, choices=STATUS_CHOICES, default=STATUS_NEW
     )
@@ -1619,7 +1653,7 @@ class SupplyOrder(models.Model):
     )
     payment_status = models.CharField(
         "Оплата",
-        max_length=20,
+        max_length=32,
         choices=PAYMENT_STATUS_CHOICES,
         default=PAYMENT_DRAFT,
     )
@@ -1672,9 +1706,78 @@ class SupplyOrder(models.Model):
     def remaining_amount(self):
         from decimal import Decimal
 
-        t = self.total_amount or Decimal("0")
+        t = self.payment_amount_display
         p = self.paid_amount or Decimal("0")
         return max(t - p, Decimal("0"))
+
+
+    @property
+    def payment_amount_display(self):
+        from decimal import Decimal
+
+        if self.purchase_amount is not None:
+            return self.purchase_amount
+        return self.total_amount or Decimal("0")
+
+    def current_document(self, doc_type: str):
+        return (
+            self.documents.filter(doc_type=doc_type)
+            .order_by("-version", "-id")
+            .first()
+        )
+
+    @property
+    def current_kp(self):
+        return self.current_document("kp")
+
+    @property
+    def current_invoice(self):
+        return self.current_document("invoice")
+
+    def can_edit_payment_info(self) -> bool:
+        return self.payment_status in (
+            self.PAYMENT_DRAFT,
+            self.PAYMENT_REJECTED,
+        ) and self.procurement_status != self.PROCUREMENT_CANCELLED
+
+
+class SupplyOrderDocument(models.Model):
+    """Документы заказа (КП, счёт) с версионированием."""
+
+    DOC_KP = "kp"
+    DOC_INVOICE = "invoice"
+    DOC_TYPE_CHOICES = [
+        (DOC_KP, "Коммерческое предложение"),
+        (DOC_INVOICE, "Счёт на оплату"),
+    ]
+
+    order = models.ForeignKey(
+        SupplyOrder, on_delete=models.CASCADE, related_name="documents"
+    )
+    doc_type = models.CharField("Тип", max_length=16, choices=DOC_TYPE_CHOICES)
+    file = models.FileField("Файл", upload_to="supply_orders/documents/%Y/%m/")
+    version = models.PositiveIntegerField("Версия", default=1)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="supply_order_documents_uploaded",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["doc_type", "-version", "-id"]
+        verbose_name = "Документ заказа"
+        verbose_name_plural = "Документы заказа"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["order", "doc_type", "version"],
+                name="uniq_supply_order_doc_version",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_doc_type_display()} v{self.version} — заказ #{self.order_id}"
 
 
 class SupplyOrderItem(models.Model):
@@ -1947,6 +2050,13 @@ class SupplyWorkflowLog(models.Model):
     ACTION_FULL_PURCHASE = "full_purchase"
     ACTION_WAREHOUSE_TRANSFER = "warehouse_transfer"
     ACTION_CANCELLED = "cancelled"
+    ACTION_KP_UPLOADED = "kp_uploaded"
+    ACTION_INVOICE_UPLOADED = "invoice_uploaded"
+    ACTION_PAYMENT_SUBMITTED = "payment_submitted"
+    ACTION_PAYMENT_APPROVED = "payment_approved"
+    ACTION_PAYMENT_REJECTED = "payment_rejected"
+    ACTION_PAYMENT_RESUBMITTED = "payment_resubmitted"
+    ACTION_TRANSFERRED_TO_FINANCE = "transferred_to_finance"
     ACTION_CHOICES = [
         (ACTION_CREATED, "Создание"),
         (ACTION_APPROVED, "Согласование"),
@@ -1956,6 +2066,13 @@ class SupplyWorkflowLog(models.Model):
         (ACTION_FULL_PURCHASE, "Полная закупка"),
         (ACTION_WAREHOUSE_TRANSFER, "Передача на склад"),
         (ACTION_CANCELLED, "Отмена"),
+        (ACTION_KP_UPLOADED, "Загрузка КП"),
+        (ACTION_INVOICE_UPLOADED, "Загрузка счёта"),
+        (ACTION_PAYMENT_SUBMITTED, "Отправка на согласование оплаты"),
+        (ACTION_PAYMENT_APPROVED, "Согласование оплаты"),
+        (ACTION_PAYMENT_REJECTED, "Отказ в оплате"),
+        (ACTION_PAYMENT_RESUBMITTED, "Повторная отправка на согласование"),
+        (ACTION_TRANSFERRED_TO_FINANCE, "Передача в финансы"),
     ]
 
     company = models.ForeignKey(

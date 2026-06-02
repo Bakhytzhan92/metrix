@@ -278,6 +278,25 @@ def reject_supply_request(
     raise ValueError("no_request")
 
 
+def _finalize_new_order_procurement(order: SupplyOrder) -> None:
+    """Позиции заказа считаются полностью закупленными (без ручного ввода в UI)."""
+    for item in order.items.select_related("request", "off_estimate_item").all():
+        qty = item.quantity or Decimal("0")
+        item.quantity_purchased = qty
+        item.save(update_fields=["quantity_purchased"])
+        if item.request_id:
+            SupplyRequest.objects.filter(pk=item.request_id).update(
+                quantity_received=qty
+            )
+        if item.off_estimate_item_id:
+            OffEstimateSupplyRequestItem.objects.filter(
+                pk=item.off_estimate_item_id
+            ).update(quantity_purchased=qty)
+    order.procurement_status = SupplyOrder.PROCUREMENT_PURCHASED
+    order.save(update_fields=["procurement_status"])
+    _sync_request_status_from_order(order)
+
+
 def _create_order_from_estimate_request(
     req: SupplyRequest, user, supplier: str
 ) -> SupplyOrder:
@@ -298,6 +317,16 @@ def _create_order_from_estimate_request(
     )
     order.recalc_total()
     order.save(update_fields=["total_amount"])
+    log_supply_event(
+        company=order.company,
+        project=order.project,
+        supply_order=order,
+        supply_request=req,
+        action=SupplyWorkflowLog.ACTION_CREATED,
+        user=user,
+        comment=f"Заказ по заявке: {req.resource.name}",
+    )
+    _finalize_new_order_procurement(order)
     return order
 
 
@@ -326,6 +355,16 @@ def _create_order_from_off_estimate(
         )
     order.recalc_total()
     order.save(update_fields=["total_amount"])
+    log_supply_event(
+        company=order.company,
+        project=order.project,
+        supply_order=order,
+        off_estimate_request=req,
+        action=SupplyWorkflowLog.ACTION_CREATED,
+        user=user,
+        comment=f"Заказ по заявке {req.number}",
+    )
+    _finalize_new_order_procurement(order)
     return order
 
 

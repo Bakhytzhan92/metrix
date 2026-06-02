@@ -125,6 +125,31 @@ urlpatterns = [
         name="project_supply_order_cancel",
     ),
     path(
+        "projects/<int:pk>/supply/order/<int:order_id>/payment-info/",
+        supply_workflow_views.project_supply_order_update_payment_info,
+        name="project_supply_order_update_payment_info",
+    ),
+    path(
+        "projects/<int:pk>/supply/order/<int:order_id>/upload-document/",
+        supply_workflow_views.project_supply_order_upload_document,
+        name="project_supply_order_upload_document",
+    ),
+    path(
+        "projects/<int:pk>/supply/order/<int:order_id>/submit-payment-approval/",
+        supply_workflow_views.project_supply_order_submit_payment_approval,
+        name="project_supply_order_submit_payment_approval",
+    ),
+    path(
+        "projects/<int:pk>/supply/procurement-approval/<int:order_id>/approve/",
+        supply_workflow_views.project_supply_order_approve_payment,
+        name="project_supply_order_approve_payment",
+    ),
+    path(
+        "projects/<int:pk>/supply/procurement-approval/<int:order_id>/reject/",
+        supply_workflow_views.project_supply_order_reject_payment,
+        name="project_supply_order_reject_payment",
+    ),
+    path(
         "projects/<int:pk>/supply/workflow/history/",
         supply_workflow_views.project_supply_workflow_history,
         name="project_supply_workflow_history",
