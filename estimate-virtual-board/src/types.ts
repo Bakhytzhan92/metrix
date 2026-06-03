@@ -34,6 +34,7 @@ export type BootstrapSection = {
   id: number;
   order: number;
   name: string;
+  header_style?: string;
   displayBadge: number;
   item_count: number;
   section_total_cost: string;

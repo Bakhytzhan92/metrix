@@ -50,6 +50,51 @@ def qty_plain(value):
 
 
 @register.simple_tag
+def estimate_section_position_count(items) -> int:
+    """Число позиций в разделе (без подзаголовков PDF)."""
+    return sum(
+        1 for it in items if not getattr(it, "is_subsection_header", False)
+    )
+
+
+@register.simple_tag
+def estimate_item_row_no(item, items) -> str:
+    """№ строки внутри раздела: pdf_pos_no при импорте Excel, иначе локальный счётчик."""
+    pn = (getattr(item, "pdf_pos_no", None) or "").strip()
+    if pn:
+        return pn
+    n = 0
+    for it in items:
+        if getattr(it, "is_subsection_header", False):
+            continue
+        n += 1
+        if it.pk == item.pk:
+            return str(n)
+    return ""
+
+
+@register.filter
+def estimate_cyrillic_name(value) -> str:
+    """Убирает английский дубляж в наименовании (разделы и позиции сметы)."""
+    from core.services.excel_estimate_parser import normalize_estimate_name
+
+    return normalize_estimate_name(value or "")
+
+
+@register.filter
+def estimate_section_header_class(style: str) -> str:
+    """CSS-классы заголовка раздела по стилю из Excel."""
+    s = (style or "").strip()
+    if s == "red":
+        return "bg-red-100/95 text-red-950"
+    if s == "bordeaux":
+        return "bg-red-200/90 text-red-950"
+    if s == "gold":
+        return "bg-amber-100/95 text-amber-950"
+    return "bg-sky-100/95 text-slate-900"
+
+
+@register.simple_tag
 def estimate_kind_cost_totals(sections):
     """
     Суммы себестоимости по типам позиций (материалы / работы) для KPI на странице сметы.

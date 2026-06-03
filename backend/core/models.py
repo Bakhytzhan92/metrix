@@ -393,11 +393,29 @@ class UploadedDocument(models.Model):
 class EstimateSection(models.Model):
     """Раздел работ сметы (например: Земляные работы, Фундаменты)."""
 
+    HEADER_STYLE_DEFAULT = ""
+    HEADER_STYLE_RED = "red"
+    HEADER_STYLE_GOLD = "gold"
+    HEADER_STYLE_BORDEAUX = "bordeaux"
+    HEADER_STYLE_CHOICES = [
+        (HEADER_STYLE_DEFAULT, "Обычный"),
+        (HEADER_STYLE_RED, "Красный (как в Excel)"),
+        (HEADER_STYLE_GOLD, "Золотой (как в Excel)"),
+        (HEADER_STYLE_BORDEAUX, "Бордовый (как в Excel)"),
+    ]
+
     project = models.ForeignKey(
         Project, on_delete=models.CASCADE, related_name="estimate_sections"
     )
     name = models.CharField("Название раздела", max_length=255)
     order = models.PositiveIntegerField("Порядок", default=0)
+    header_style = models.CharField(
+        "Стиль заголовка (импорт Excel)",
+        max_length=16,
+        blank=True,
+        default="",
+        choices=HEADER_STYLE_CHOICES,
+    )
 
     class Meta:
         ordering = ["order", "id"]
@@ -451,7 +469,7 @@ class EstimateItem(models.Model):
     type = models.CharField(
         "Тип", max_length=20, choices=TYPE_CHOICES, default=TYPE_MATERIAL
     )
-    unit = models.CharField("Ед. изм.", max_length=30, default="шт")
+    unit = models.CharField("Ед. изм.", max_length=128, default="шт")
     quantity = models.DecimalField(
         "Количество", max_digits=14, decimal_places=4, default=0
     )

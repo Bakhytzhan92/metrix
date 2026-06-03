@@ -290,11 +290,10 @@ def _estimate_virtual_payload(request: HttpRequest, project, sections):
     from django.middleware.csrf import get_token
 
     from .templatetags.estimate_extras import qty_plain, strip_norm_code
+    from .services.excel_estimate_parser import normalize_estimate_name
 
-    badge = 0
     out_sections = []
     for sec in sections:
-        badge += 1
         rows = []
         ordinal = 0
         items_list = list(sec.items.all())
@@ -312,7 +311,11 @@ def _estimate_virtual_payload(request: HttpRequest, project, sections):
                 )
                 continue
             item_count += 1
-            ordinal += 1
+            pos_no = (item.pdf_pos_no or "").strip()
+            if pos_no.isdigit():
+                ordinal = int(pos_no)
+            else:
+                ordinal += 1
             tc = item.total_cost or Decimal("0")
             tp = item.total_price or Decimal("0")
             sc_dec += tc
@@ -324,7 +327,9 @@ def _estimate_virtual_payload(request: HttpRequest, project, sections):
                     "id": item.pk,
                     "ordinal": ordinal,
                     "type": item.type,
-                    "name": strip_norm_code(item.name or ""),
+                    "name": strip_norm_code(
+                        normalize_estimate_name(item.name or "")
+                    ),
                     "unit": item.unit or "",
                     "quantity": qty_plain(item.quantity),
                     "cost_price": str(item.cost_price),
@@ -353,8 +358,9 @@ def _estimate_virtual_payload(request: HttpRequest, project, sections):
             {
                 "id": sec.pk,
                 "order": sec.order,
-                "name": sec.name,
-                "displayBadge": badge,
+                "name": normalize_estimate_name(sec.name or ""),
+                "header_style": getattr(sec, "header_style", "") or "",
+                "displayBadge": sec.order,
                 "item_count": item_count,
                 "section_total_cost": f"{sc_dec:.2f}",
                 "section_total_price": f"{sp_dec:.2f}",
@@ -700,9 +706,14 @@ def estimate_import(request: HttpRequest, pk: int) -> HttpResponse:
     if result["errors"]:
         for e in result["errors"]:
             messages.warning(request, e)
+    err_n = result.get("error_count", len(result["errors"]))
     messages.success(
         request,
-        f"Импорт: создано разделов {result['sections_created']}, позиций {result['items_created']}.",
+        "Импорт Excel: "
+        f"разделов {result['sections_created']}, "
+        f"позиций {result['items_created']}, "
+        f"пропущено строк {result.get('skipped', 0)}, "
+        f"ошибок {err_n}.",
     )
     return redirect("project_estimate", pk=project.pk)
 

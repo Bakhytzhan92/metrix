@@ -35,7 +35,10 @@ const BANNER_H = 34;
  * Последний трек — действия (~5rem); «наименование» — один `fr`, без перекоса в 1.5fr.
  */
 const GRID_TEMPLATE =
-  "2.75rem 7rem minmax(11rem,1fr) 4rem 5rem 5rem 6.25rem 5rem 8.75rem 6.25rem 5rem";
+  "2.75rem 4.5rem minmax(18rem,2fr) 4rem 5rem 5rem 6.25rem 5rem 8.75rem 6.25rem 5rem";
+
+/** Минимальная ширина таблицы позиций (сумма фиксированных колонок + minmax наименования). */
+const TABLE_MIN_WIDTH_PX = 960;
 
 type ItemState = {
   ordinal: number;
@@ -113,7 +116,7 @@ const ItemRowInner = memo(
           <select
             form={formId}
             name="type"
-            className="w-full min-w-0 h-8 max-h-8 shrink-0 rounded border border-slate-200 px-1 py-0 text-xs leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 box-border"
+            className="w-full min-w-0 max-w-full h-8 max-h-8 shrink-0 rounded border border-slate-200 px-0.5 py-0 text-[11px] leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 box-border"
             value={state.type}
             onChange={(e) => {
               onChange(itemId, { type: e.target.value });
@@ -158,14 +161,15 @@ const ItemRowInner = memo(
           />
         </div>
         <div
-          className="py-0 px-0 box-border flex items-center min-h-0 min-w-0 overflow-hidden border-b border-slate-100"
+          className="py-0 px-0 box-border flex items-start min-h-0 min-w-0 overflow-hidden border-b border-slate-100"
           style={{ height: ROW_H }}
         >
-          <input
+          <textarea
             form={formId}
-            type="text"
             name="unit"
-            className="w-full min-w-0 h-8 max-h-8 shrink-0 rounded border border-slate-200 px-1 py-0 text-xs leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 box-border"
+            rows={2}
+            wrap="soft"
+            className="w-full min-h-0 flex-1 basis-0 resize-none overflow-y-auto break-words rounded border border-slate-200 px-1 py-0.5 text-xs leading-snug focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 box-border"
             value={state.unit}
             onChange={(e) => {
               onChange(itemId, { unit: e.target.value });
@@ -443,6 +447,7 @@ function SectionBlock({
   isDirty,
   saveRowPromise,
   listHeights,
+  contentWidth,
 }: {
   sec: BootstrapSection;
   payload: EstimateVirtualPayload;
@@ -462,21 +467,10 @@ function SectionBlock({
     opts?: { silent?: boolean; force?: boolean },
   ) => Promise<{ ok: boolean }>;
   listHeights: Record<number, number>;
+  contentWidth: number;
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [listW, setListW] = useState(960);
+  const listW = Math.max(TABLE_MIN_WIDTH_PX, contentWidth);
   const listH = listHeights[sec.id] ?? 520;
-
-  useLayoutEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setListW(Math.max(640, el.clientWidth));
-    });
-    ro.observe(el);
-    setListW(Math.max(640, el.clientWidth));
-    return () => ro.disconnect();
-  }, [sec.id]);
 
   const sizes = useCallback(
     (index: number) =>
@@ -555,123 +549,105 @@ function SectionBlock({
 
   const Row = VirtualRow;
 
+  const headerBg =
+    sec.header_style === "red"
+      ? "bg-red-100/95 text-red-950"
+      : sec.header_style === "bordeaux"
+        ? "bg-red-200/90 text-red-950"
+        : sec.header_style === "gold"
+          ? "bg-amber-100/95 text-amber-950"
+          : "bg-sky-100/95 text-slate-900";
+
+  const headerBorder =
+    sec.item_count > 0 ? "border-b border-slate-200/80" : "";
+
   return (
     <div
-      className="estimate-section group border-0"
+      className="estimate-section group w-full min-w-0 border-b border-slate-200 bg-white"
       id={`section-${sec.id}`}
       data-section-order={sec.order}
     >
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 sm:px-4 bg-sky-100/95 backdrop-blur-sm border-b border-sky-200/80 text-sm">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="js-section-order-badge flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/80 text-sky-900 font-bold text-sm ring-1 ring-sky-200/80">
-            {sec.displayBadge}
+          <div
+            className={`estimate-section-row sticky top-0 z-10 flex w-full min-w-0 items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 min-h-[2.75rem] text-xs sm:text-sm ${headerBorder} ${headerBg}`}
+          >
+        <span className="shrink-0 w-9 text-center text-sm font-bold tabular-nums">
+          {sec.displayBadge}
+        </span>
+        <input
+          type="text"
+          name="name"
+          defaultValue={sec.name}
+          maxLength={255}
+          title={sec.name}
+          className="js-section-name-input flex-1 min-w-0 basis-0 w-full rounded border border-white/80 bg-white/90 px-2 py-1.5 text-xs sm:text-sm font-semibold text-slate-900 shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          data-save-url={sec.save_url}
+          data-section-order={String(sec.order)}
+        />
+        {sec.item_count > 0 ? (
+          <span className="shrink-0 text-xs text-slate-600 whitespace-nowrap tabular-nums">
+            {sec.item_count} поз.
           </span>
-          <div className="min-w-0">
-            <span className="js-section-display-name font-semibold text-slate-900 block truncate">
-              {sec.name}
-            </span>
-            <span className="text-xs text-slate-600">{sec.item_count} поз.</span>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 text-sm text-slate-600">
-          <span className="whitespace-nowrap tabular-nums text-xs sm:text-sm">
-            Себест.: <span className="js-section-cost">{sectionCosts.cost}</span>{" "}
-            ₸
-          </span>
-          <span className="whitespace-nowrap tabular-nums text-xs sm:text-sm">
-            Итого: <span className="js-section-price">{sectionCosts.price}</span>{" "}
-            ₸
-          </span>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
-              className="js-estimate-section-edit-open inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-              data-section-id={String(sec.id)}
-              data-section-name={sec.name}
-              data-section-order={String(sec.order)}
-              data-save-url={sec.save_url}
-            >
-              Редактировать раздел
-            </button>
-            <button
-              type="button"
-              className="js-estimate-section-delete-open inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-800 hover:bg-red-100"
-              data-delete-url={sec.delete_url}
-              data-section-name={sec.name.slice(0, 120)}
-            >
-              Удалить раздел
-            </button>
-          </div>
-        </div>
-      </div>
-      <div className="px-3 sm:px-4 pb-4 pt-2 bg-slate-50/30">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <form action={sec.quick_add_action} method="post" className="inline">
-            <input type="hidden" name="csrfmiddlewaretoken" value={getCsrf(payload)} />
-            <button
-              type="submit"
-              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
-            >
-              + позиция
-            </button>
-          </form>
-        </div>
-        <div
-          ref={containerRef}
-          className="overflow-x-auto rounded-lg border border-slate-200 bg-white"
+        ) : null}
+        <button
+          type="button"
+          className="js-estimate-section-delete-open shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-lg font-light leading-none text-slate-500 hover:bg-red-50 hover:text-red-600"
+          title="Удалить раздел"
+          aria-label="Удалить раздел"
+          data-delete-url={sec.delete_url}
+          data-section-name={sec.name.slice(0, 120)}
         >
-          <div className="min-w-max w-full">
-            <div
-              className="sticky top-0 z-20 box-border grid bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-700 shadow-sm [&>div]:box-border [&>div]:border-r [&>div]:border-slate-200 [&>div:last-child]:border-r-0 [&>div]:min-w-0 [&>div]:overflow-hidden"
-              style={{
-                gridTemplateColumns: GRID_TEMPLATE,
-                width: listW,
-                minWidth: listW,
-              }}
-            >
-              <div className="px-1 py-1 flex items-center justify-center min-w-0">
-                <span className="min-w-0 block w-full truncate text-center">№</span>
-              </div>
-              <div className="px-1 py-1 flex items-center justify-start min-w-0">
-                <span className="min-w-0 block truncate" title="Тип">Тип</span>
-              </div>
-              <div className="px-1 py-1 flex items-center justify-start min-w-0">
-                <span className="min-w-0 block truncate" title="Наименование">Наименование</span>
-              </div>
-              <div className="px-1 py-1 flex items-center justify-start min-w-0">
-                <span className="min-w-0 block truncate" title="Единица измерения">Ед.</span>
-              </div>
-              <div className="px-1 py-1 flex items-center justify-end min-w-0">
-                <span className="min-w-0 block max-w-full truncate text-right" title="Количество">Кол-во</span>
-              </div>
-              <div className="px-1 py-1 flex items-center justify-end min-w-0">
-                <span className="min-w-0 block max-w-full truncate text-right">Цена, ₸</span>
-              </div>
+          ×
+        </button>
+          </div>
+      {sec.item_count > 0 ? (
+          <div className="overflow-x-auto">
+            <div className="min-w-max w-full">
               <div
-                className="px-1 py-1 flex items-center justify-end min-w-0"
-                title="Себестоимость по позиции"
+                className="sticky top-0 z-20 box-border grid bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-700 shadow-sm [&>div]:box-border [&>div]:border-r [&>div]:border-slate-200 [&>div:last-child]:border-r-0 [&>div]:min-w-0 [&>div]:overflow-hidden"
+                style={{
+                  gridTemplateColumns: GRID_TEMPLATE,
+                  width: listW,
+                  minWidth: listW,
+                }}
               >
-                <span className="min-w-0 block max-w-full truncate text-right">Себест., ₸</span>
+                <div className="px-1 py-1 flex items-center justify-center min-w-0">
+                  <span className="min-w-0 block w-full truncate text-center">№</span>
+                </div>
+                <div className="px-1 py-1 flex items-center justify-start min-w-0">
+                  <span className="min-w-0 block truncate" title="Тип">Тип</span>
+                </div>
+                <div className="px-1 py-1 flex items-center justify-start min-w-0">
+                  <span className="min-w-0 block truncate" title="Наименование">Наименование</span>
+                </div>
+                <div className="px-1 py-1 flex items-center justify-start min-w-0">
+                  <span className="min-w-0 block truncate" title="Единица измерения">Ед.</span>
+                </div>
+                <div className="px-1 py-1 flex items-center justify-end min-w-0">
+                  <span className="min-w-0 block max-w-full truncate text-right" title="Количество">Кол-во</span>
+                </div>
+                <div className="px-1 py-1 flex items-center justify-end min-w-0">
+                  <span className="min-w-0 block max-w-full truncate text-right">Цена, ₸</span>
+                </div>
+                <div
+                  className="px-1 py-1 flex items-center justify-end min-w-0"
+                  title="Себестоимость по позиции"
+                >
+                  <span className="min-w-0 block max-w-full truncate text-right">Себест., ₸</span>
+                </div>
+                <div className="px-1 py-1 flex items-center justify-end min-w-0">
+                  <span className="min-w-0 block max-w-full truncate text-right">Наценка %</span>
+                </div>
+                <div
+                  className="px-1 py-1 flex items-center justify-end min-w-0"
+                  title="Цена заказчика за единицу"
+                >
+                  <span className="min-w-0 block max-w-full truncate text-right">Заказчик/ед., ₸</span>
+                </div>
+                <div className="px-1 py-1 flex items-center justify-end min-w-0">
+                  <span className="min-w-0 block max-w-full truncate text-right">Итого, ₸</span>
+                </div>
+                <div className="px-0 py-1 flex items-center justify-center" aria-hidden="true" />
               </div>
-              <div className="px-1 py-1 flex items-center justify-end min-w-0">
-                <span className="min-w-0 block max-w-full truncate text-right">Наценка %</span>
-              </div>
-              <div
-                className="px-1 py-1 flex items-center justify-end min-w-0"
-                title="Цена заказчика за единицу"
-              >
-                <span className="min-w-0 block max-w-full truncate text-right">Заказчик/ед., ₸</span>
-              </div>
-              <div className="px-1 py-1 flex items-center justify-end min-w-0">
-                <span className="min-w-0 block max-w-full truncate text-right">Итого, ₸</span>
-              </div>
-              <div className="px-0 py-1 flex items-center justify-center" aria-hidden="true" />
-            </div>
-            {sec.rows.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-slate-500">
-                Позиций нет — нажмите «+ позиция», чтобы добавить строку.
-              </div>
-            ) : (
               <List
                 height={listH}
                 width={listW}
@@ -682,10 +658,9 @@ function SectionBlock({
               >
                 {Row}
               </List>
-            )}
+            </div>
           </div>
-        </div>
-      </div>
+        ) : null}
     </div>
   );
 }
@@ -879,7 +854,7 @@ export function EstimateVirtualApp({
         (acc, r) => acc + (r.kind === "banner" ? BANNER_H : ROW_H),
         0,
       );
-      o[s.id] = Math.min(Math.max(body + 8, 120), cap);
+      o[s.id] = Math.min(Math.max(body, 120), cap);
     }
     return o;
   }, [payload.sections]);
@@ -956,8 +931,22 @@ export function EstimateVirtualApp({
     };
   }, [flushBeforeNavigate, flushKeepalive, saveAllForce]);
 
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const [contentWidth, setContentWidth] = useState(TABLE_MIN_WIDTH_PX);
+
+  useLayoutEffect(() => {
+    const el = shellRef.current;
+    if (!el) return;
+    const apply = () =>
+      setContentWidth(Math.max(320, el.clientWidth));
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    apply();
+    return () => ro.disconnect();
+  }, []);
+
   return (
-    <>
+    <div ref={shellRef} className="w-full min-w-0">
       {payload.sections.map((sec) => (
         <SectionBlock
           key={sec.id}
@@ -973,8 +962,9 @@ export function EstimateVirtualApp({
           isDirty={isDirty}
           saveRowPromise={saveRowPromise}
           listHeights={listHeights}
+          contentWidth={contentWidth}
         />
       ))}
-    </>
+    </div>
   );
 }
