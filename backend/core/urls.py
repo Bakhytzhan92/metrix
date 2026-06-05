@@ -8,6 +8,7 @@ from . import inventory_api
 from . import materials_project_api
 from . import off_estimate_supply_api
 from . import supply_workflow_views
+from . import timesheet_api
 from . import timesheet_project_api
 from . import views
 from .urls_superadmin import api_urlpatterns as superadmin_api_urls
@@ -346,6 +347,35 @@ urlpatterns = [
         fuel_project_api.api_project_gsm_fuel_type_create,
         name="api_project_gsm_fuel_type_create",
     ),
+    path("api/timesheet/", timesheet_api.api_timesheet_month, name="api_timesheet_month"),
+    path("api/timesheet/cell/", timesheet_api.api_timesheet_cell, name="api_timesheet_cell"),
+    path("api/timesheet/bulk/", timesheet_api.api_timesheet_bulk, name="api_timesheet_bulk"),
+    path(
+        "api/timesheet/export/",
+        timesheet_api.api_timesheet_export,
+        name="api_timesheet_export",
+    ),
+    path(
+        "api/timesheet/import-employees/",
+        timesheet_api.api_timesheet_import_employees,
+        name="api_timesheet_import_employees",
+    ),
+    path("api/timesheet/logs/", timesheet_api.api_timesheet_logs, name="api_timesheet_logs"),
+    path(
+        "api/timesheet/employees/",
+        timesheet_api.api_timesheet_employee_create,
+        name="api_timesheet_employee_create",
+    ),
+    path(
+        "api/timesheet/employees/<int:employee_id>/",
+        timesheet_api.api_timesheet_employee_update,
+        name="api_timesheet_employee_update",
+    ),
+    path(
+        "api/timesheet/employees/<int:employee_id>/remove/",
+        timesheet_api.api_timesheet_employee_remove,
+        name="api_timesheet_employee_remove",
+    ),
     path(
         "api/project/<int:pk>/timesheet/",
         timesheet_project_api.api_project_timesheet_month,
@@ -485,6 +515,7 @@ urlpatterns = [
     path("api/inventory/items/<int:pk>/qr/", inventory_api.api_inventory_item_qr),
     path("api/inventory/history/", inventory_api.api_inventory_history),
     # Модуль «Отчёты»
+    path("timesheet/", views.timesheet_dashboard, name="timesheet_dashboard"),
     path("reports/", views.reports_index, name="reports_index"),
     path("reports/pnl/", views.reports_pnl, name="reports_pnl"),
     path("reports/cashflow/", views.reports_cashflow, name="reports_cashflow"),

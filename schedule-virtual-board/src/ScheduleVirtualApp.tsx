@@ -18,6 +18,7 @@ import {
   HSCROLL_H,
   ITEM_ROW_H,
   LEFT_COL_DEFAULTS,
+  LEFT_COL_MINS,
   TASK_ROW_H,
   addDays,
   barGeometry,
@@ -601,8 +602,14 @@ export function ScheduleVirtualApp({
         localStorage.getItem(`sched-col-widths-${payload.project_id}`) ||
           "null",
       );
-      if (Array.isArray(saved) && saved.length === LEFT_COL_DEFAULTS.length)
-        return saved;
+      if (Array.isArray(saved) && saved.length === LEFT_COL_DEFAULTS.length) {
+        return saved.map((w, i) =>
+          Math.max(
+            LEFT_COL_MINS[i],
+            Number.isFinite(Number(w)) ? Number(w) : LEFT_COL_DEFAULTS[i],
+          ),
+        );
+      }
     } catch {
       /* ignore */
     }

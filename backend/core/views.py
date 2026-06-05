@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Max, Prefetch, Q, Sum
+from django.db.models import Max, Min, Prefetch, Q, Sum
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -92,6 +92,7 @@ from .models import (
     WarehouseOperation,
     EstimateSection,
     EstimateItem,
+    ESTIMATE_ITEM_NAME_MAX_LENGTH,
     ConstructionWorkLog,
     ConstructionWorkPhoto,
     Material,
@@ -871,6 +872,46 @@ def _schedule_group_visible_items(
     ]
 
 
+def _schedule_skip_section_banner(
+    section: EstimateSection, visible_items: list[EstimateItem]
+) -> bool:
+    """Не дублировать заголовок раздела, если в нём одна группа с тем же названием."""
+    headers = [it for it in visible_items if it.is_subsection_header]
+    if len(headers) != 1:
+        return False
+    sec_name = (section.name or "").strip().casefold()
+    hdr_name = (headers[0].name or "").strip().casefold()
+    return bool(sec_name and hdr_name and sec_name == hdr_name)
+
+
+def _ensure_section_schedule_group(section: EstimateSection) -> EstimateItem:
+    """Группа работ для раздела без подзаголовков (например, после импорта Excel)."""
+    from decimal import Decimal
+
+    existing = (
+        EstimateItem.objects.filter(section=section, is_subsection_header=True)
+        .order_by("order", "pk")
+        .first()
+    )
+    if existing:
+        return existing
+    min_order = EstimateItem.objects.filter(section=section).aggregate(
+        m=Min("order")
+    )["m"]
+    header_order = 0 if min_order is None else max(0, (min_order or 1) - 1)
+    return EstimateItem.objects.create(
+        section=section,
+        name=(section.name or "Группа работ")[:ESTIMATE_ITEM_NAME_MAX_LENGTH],
+        type=EstimateItem.TYPE_LABOR,
+        unit="—",
+        quantity=Decimal("0"),
+        cost_price=Decimal("0"),
+        markup_percent=Decimal("0"),
+        order=header_order,
+        is_subsection_header=True,
+    )
+
+
 def _build_schedule_task_rows(
     section_blocks: list[tuple[EstimateSection, list[EstimateItem]]],
     *,
@@ -904,8 +945,17 @@ def _build_schedule_task_rows(
         has_orphan_items = any(
             not it.is_subsection_header for it in vis
         ) and not has_tasks
+        if has_orphan_items:
+            group = _ensure_section_schedule_group(section)
+            vis = [group] + [
+                it for it in vis if not it.is_subsection_header and it.pk != group.pk
+            ]
+            has_tasks = True
+            has_orphan_items = False
 
-        if has_tasks or has_orphan_items:
+        skip_section_banner = _schedule_skip_section_banner(section, vis)
+
+        if (has_tasks or has_orphan_items) and not skip_section_banner:
             schedule_rows.append(
                 {
                     "kind": "estimate_section",
@@ -1785,21 +1835,25 @@ def project_supply(request: HttpRequest, pk: int) -> HttpResponse:
 
 
 @login_required
-def project_timesheet(request: HttpRequest, pk: int) -> HttpResponse:
-    project, err = _get_project_or_403(request, pk)
-    if err:
-        return err
+def timesheet_dashboard(request: HttpRequest) -> HttpResponse:
+    """Табель компании (без привязки к проекту)."""
+    company = get_current_company(request.user)
+    if not company:
+        return redirect("dashboard")
+    if not has_permission(request.user, company, "view_timesheet"):
+        return redirect("dashboard")
     from django.middleware.csrf import get_token
 
     return render(
         request,
-        "core/project/timesheet.html",
-        {
-            "project": project,
-            "active_tab": "timesheet",
-            "csrf_token": get_token(request),
-        },
+        "core/timesheet.html",
+        {"company": company, "csrf_token": get_token(request)},
     )
+
+
+@login_required
+def project_timesheet(request: HttpRequest, pk: int) -> HttpResponse:
+    return redirect("timesheet_dashboard")
 
 
 @login_required

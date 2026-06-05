@@ -3203,7 +3203,14 @@ class Employee(models.Model):
 
 
 class ProjectEmployee(models.Model):
-    """Привязка сотрудника к проекту (объекту)."""
+    """Привязка сотрудника к проекту (офис или объект)."""
+
+    WORKPLACE_SITE = "site"
+    WORKPLACE_OFFICE = "office"
+    WORKPLACE_CHOICES = [
+        (WORKPLACE_SITE, "Объект"),
+        (WORKPLACE_OFFICE, "Офис"),
+    ]
 
     project = models.ForeignKey(
         Project, on_delete=models.CASCADE, related_name="project_employees"
@@ -3211,11 +3218,17 @@ class ProjectEmployee(models.Model):
     employee = models.ForeignKey(
         Employee, on_delete=models.CASCADE, related_name="project_links"
     )
-    is_active = models.BooleanField("На объекте", default=True)
+    workplace = models.CharField(
+        "Место учёта",
+        max_length=16,
+        choices=WORKPLACE_CHOICES,
+        default=WORKPLACE_SITE,
+    )
+    is_active = models.BooleanField("В табеле", default=True)
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [["project", "employee"]]
+        unique_together = [["project", "employee", "workplace"]]
         ordering = ["employee__full_name", "id"]
         verbose_name = "Сотрудник на объекте"
         verbose_name_plural = "Сотрудники на объекте"
@@ -3224,25 +3237,77 @@ class ProjectEmployee(models.Model):
         return f"{self.employee.full_name} @ {self.project.name}"
 
 
-class Timesheet(models.Model):
-    """Табель проекта за календарный месяц."""
+class TimesheetMember(models.Model):
+    """Сотрудник в табеле компании (офис / объект)."""
 
+    WORKPLACE_SITE = "site"
+    WORKPLACE_OFFICE = "office"
+    WORKPLACE_CHOICES = ProjectEmployee.WORKPLACE_CHOICES
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="timesheet_members"
+    )
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="timesheet_memberships"
+    )
+    workplace = models.CharField(
+        "Место учёта",
+        max_length=16,
+        choices=WORKPLACE_CHOICES,
+        default=WORKPLACE_SITE,
+    )
+    is_active = models.BooleanField("В табеле", default=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [["company", "employee", "workplace"]]
+        ordering = ["employee__full_name", "id"]
+        verbose_name = "Сотрудник в табеле"
+        verbose_name_plural = "Сотрудники в табеле"
+
+    def __str__(self) -> str:
+        return f"{self.employee.full_name} ({self.get_workplace_display()})"
+
+
+class Timesheet(models.Model):
+    """Табель компании за календарный месяц."""
+
+    PLACE_SITE = "site"
+    PLACE_OFFICE = "office"
+    PLACE_CHOICES = [
+        (PLACE_SITE, "Объект"),
+        (PLACE_OFFICE, "Офис"),
+    ]
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="timesheets"
+    )
     project = models.ForeignKey(
-        Project, on_delete=models.CASCADE, related_name="timesheets"
+        Project,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="timesheets_legacy",
     )
     year = models.PositiveSmallIntegerField("Год")
     month = models.PositiveSmallIntegerField("Месяц")
+    place = models.CharField(
+        "Место учёта",
+        max_length=16,
+        choices=PLACE_CHOICES,
+        default=PLACE_SITE,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = [["project", "year", "month"]]
+        unique_together = [["company", "year", "month", "place"]]
         ordering = ["-year", "-month", "id"]
         verbose_name = "Табель"
         verbose_name_plural = "Табели"
 
     def __str__(self) -> str:
-        return f"Табель {self.project.name} {self.month:02d}.{self.year}"
+        return f"Табель {self.company.name} {self.month:02d}.{self.year}"
 
 
 class TimesheetEntry(models.Model):
@@ -3271,8 +3336,15 @@ class TimesheetEntry(models.Model):
     timesheet = models.ForeignKey(
         Timesheet, on_delete=models.CASCADE, related_name="entries"
     )
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="timesheet_entries"
+    )
     project = models.ForeignKey(
-        Project, on_delete=models.CASCADE, related_name="timesheet_entries"
+        Project,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="timesheet_entries_legacy",
     )
     employee = models.ForeignKey(
         Employee, on_delete=models.CASCADE, related_name="timesheet_entries"
@@ -3301,7 +3373,7 @@ class TimesheetEntry(models.Model):
         verbose_name = "Запись табеля"
         verbose_name_plural = "Записи табеля"
         indexes = [
-            models.Index(fields=["project", "date"]),
+            models.Index(fields=["company", "date"]),
             models.Index(fields=["employee", "date"]),
         ]
 
@@ -3312,8 +3384,15 @@ class TimesheetEntry(models.Model):
 class TimesheetEntryLog(models.Model):
     """Журнал изменений ячеек табеля."""
 
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="timesheet_logs"
+    )
     project = models.ForeignKey(
-        Project, on_delete=models.CASCADE, related_name="timesheet_logs"
+        Project,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="timesheet_logs_legacy",
     )
     employee = models.ForeignKey(
         Employee, on_delete=models.CASCADE, related_name="timesheet_logs"

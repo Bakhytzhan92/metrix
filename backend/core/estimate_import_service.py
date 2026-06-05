@@ -72,6 +72,17 @@ def import_estimate_from_excel(project: Project, file) -> dict[str, Any]:
                     next_section_order = sec_order + 1
                 sections_created += 1
                 section_row_fallback = 0
+                EstimateItem.objects.create(
+                    section=active_section,
+                    name=active_section.name[:ESTIMATE_ITEM_NAME_MAX_LENGTH],
+                    type=EstimateItem.TYPE_LABOR,
+                    unit="—",
+                    quantity=Decimal("0"),
+                    cost_price=Decimal("0"),
+                    markup_percent=Decimal("0"),
+                    order=0,
+                    is_subsection_header=True,
+                )
                 continue
 
             if active_section is None:

@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="ru">
   <head>
@@ -247,6 +248,43 @@
         justify-content: center;
         width: 100%;
       }
+
+      .mx-main-shell {
+        position: relative;
+        isolation: isolate;
+        min-height: 100vh;
+      }
+      .mx-bg-wallpaper {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background-color: #0b1020;
+        background-image: url("{% static 'core/img/metrix-bg-night.png' %}");
+        background-size: cover;
+        background-position: center center;
+        background-repeat: no-repeat;
+      }
+      .mx-bg-wallpaper::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          180deg,
+          rgba(11, 16, 32, 0.18) 0%,
+          rgba(11, 16, 32, 0.32) 55%,
+          rgba(11, 16, 32, 0.42) 100%
+        );
+      }
+      .mx-main-shell > header,
+      .mx-main-shell > main {
+        position: relative;
+        z-index: 1;
+      }
+      .mx-main-shell .mx-glass {
+        background: rgba(255, 255, 255, 0.82);
+        border-color: rgba(255, 255, 255, 0.35);
+      }
     </style>
     {% block extra_head %}{% endblock %}
   </head>
@@ -325,6 +363,13 @@
             <span class="mx-nav-label">Инвентарь ERP</span>
           </a>
           {% endif %}
+          {% has_perm 'view_timesheet' as can_ts %}
+          {% if can_ts %}
+          <a href="{% url 'timesheet_dashboard' %}" title="Табель" class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 {% if request.resolver_match.url_name == 'timesheet_dashboard' %}mx-nav-active{% endif %}">
+            <i data-lucide="calendar-check" class="w-5 h-5 shrink-0 opacity-90" aria-hidden="true"></i>
+            <span class="mx-nav-label">Табель</span>
+          </a>
+          {% endif %}
           {% has_perm 'view_reports' as can_rep %}
           {% if can_rep %}
           <a href="{% url 'reports_index' %}" title="Отчёты" class="mx-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 {% if request.resolver_match.url_name == 'reports_index' or request.resolver_match.url_name == 'reports_pnl' or request.resolver_match.url_name == 'reports_cashflow' or request.resolver_match.url_name == 'reports_project' %}mx-nav-active{% endif %}">
@@ -386,7 +431,8 @@
       </aside>
 
       <!-- Main area -->
-      <div class="flex-1 flex flex-col min-w-0">
+      <div class="flex-1 flex flex-col min-w-0 mx-main-shell">
+        <div class="mx-bg-wallpaper" aria-hidden="true"></div>
         <!-- Top bar -->
         <header class="sticky top-0 z-40 mx-glass flex h-14 md:h-16 items-center justify-between gap-3 border-b border-line px-4 md:px-8 shadow-mx-sm">
           <div class="flex items-center gap-3 md:gap-5 min-w-0 flex-1">

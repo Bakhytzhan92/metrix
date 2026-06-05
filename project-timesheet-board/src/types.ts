@@ -45,11 +45,14 @@ export type ChangeLog = {
   edited_at: string;
 };
 
+export type TimesheetPlace = "site" | "office";
+
 export type MonthPayload = {
   ok: boolean;
   can_edit: boolean;
   year: number;
   month: number;
+  place?: TimesheetPlace;
   days_in_month: number;
   employees: Employee[];
   entries: Record<string, string>;

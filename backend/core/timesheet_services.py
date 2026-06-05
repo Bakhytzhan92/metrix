@@ -13,13 +13,24 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from .models import (
+    Company,
     Employee,
-    Project,
-    ProjectEmployee,
     Timesheet,
     TimesheetEntry,
     TimesheetEntryLog,
+    TimesheetMember,
 )
+
+TIMESHEET_PLACE_SITE = Timesheet.PLACE_SITE
+TIMESHEET_PLACE_OFFICE = Timesheet.PLACE_OFFICE
+VALID_TIMESHEET_PLACES = {TIMESHEET_PLACE_SITE, TIMESHEET_PLACE_OFFICE}
+
+
+def normalize_timesheet_place(raw: str | None) -> str:
+    p = (raw or "").strip().lower()
+    if p in (TIMESHEET_PLACE_OFFICE, "офис", "office"):
+        return TIMESHEET_PLACE_OFFICE
+    return TIMESHEET_PLACE_SITE
 
 User = get_user_model()
 
@@ -41,19 +52,33 @@ def month_bounds(year: int, month: int) -> tuple[date, date, int]:
     return date(year, month, 1), date(year, month, days), days
 
 
-def get_or_create_timesheet(project: Project, year: int, month: int) -> Timesheet:
+def get_or_create_timesheet(
+    company: Company,
+    year: int,
+    month: int,
+    place: str = TIMESHEET_PLACE_SITE,
+) -> Timesheet:
+    place = normalize_timesheet_place(place)
     ts, _ = Timesheet.objects.get_or_create(
-        project=project,
+        company=company,
         year=year,
         month=month,
+        place=place,
     )
     return ts
 
 
-def project_employees_qs(project: Project, *, brigade: str = ""):
+def company_members_qs(
+    company: Company,
+    *,
+    place: str = TIMESHEET_PLACE_SITE,
+    brigade: str = "",
+):
+    place = normalize_timesheet_place(place)
     qs = (
-        ProjectEmployee.objects.filter(
-            project=project,
+        TimesheetMember.objects.filter(
+            company=company,
+            workplace=place,
             is_active=True,
             employee__status=Employee.STATUS_ACTIVE,
         )
@@ -65,27 +90,33 @@ def project_employees_qs(project: Project, *, brigade: str = ""):
     return qs
 
 
-def serialize_employee(pe: ProjectEmployee) -> dict[str, Any]:
-    e = pe.employee
+def serialize_member(tm: TimesheetMember) -> dict[str, Any]:
+    e = tm.employee
     return {
         "id": e.pk,
-        "project_employee_id": pe.pk,
+        "project_employee_id": tm.pk,
         "full_name": e.full_name,
         "position": e.position or "",
         "status": e.status,
         "status_display": e.get_status_display(),
+        "workplace": tm.workplace,
     }
 
 
 def entries_map_for_month(
-    project: Project, year: int, month: int
+    company: Company,
+    year: int,
+    month: int,
+    place: str = TIMESHEET_PLACE_SITE,
 ) -> dict[str, str]:
+    place = normalize_timesheet_place(place)
     start, end, _ = month_bounds(year, month)
     out: dict[str, str] = {}
     qs = TimesheetEntry.objects.filter(
-        project=project,
+        company=company,
         date__gte=start,
         date__lte=end,
+        timesheet__place=place,
     ).values_list("employee_id", "date", "status")
     for eid, d, st in qs:
         out[f"{eid}:{d.isoformat()}"] = st or ""
@@ -93,24 +124,27 @@ def entries_map_for_month(
 
 
 def compute_analytics(
-    project: Project,
+    company: Company,
     year: int,
     month: int,
     *,
+    place: str = TIMESHEET_PLACE_SITE,
     today: date | None = None,
 ) -> dict[str, Any]:
+    place = normalize_timesheet_place(place)
     today = today or date.today()
-    employees = list(project_employees_qs(project))
-    total_workers = len(employees)
-    emp_ids = [pe.employee_id for pe in employees]
+    members = list(company_members_qs(company, place=place))
+    total_workers = len(members)
+    emp_ids = [tm.employee_id for tm in members]
 
     on_site_today = 0
     absent_today = 0
     if emp_ids and today.year == year and today.month == month:
         today_entries = TimesheetEntry.objects.filter(
-            project=project,
+            company=company,
             employee_id__in=emp_ids,
             date=today,
+            timesheet__place=place,
         )
         for ent in today_entries:
             if ent.status in (TimesheetEntry.STATUS_PRESENT, TimesheetEntry.STATUS_HALF):
@@ -120,10 +154,11 @@ def compute_analytics(
 
     start, end, days_in_month = month_bounds(year, month)
     filled = TimesheetEntry.objects.filter(
-        project=project,
+        company=company,
         date__gte=start,
         date__lte=end,
         employee_id__in=emp_ids,
+        timesheet__place=place,
         status__in=[TimesheetEntry.STATUS_PRESENT, TimesheetEntry.STATUS_HALF],
     ).count()
     possible = max(1, total_workers * days_in_month)
@@ -139,7 +174,7 @@ def compute_analytics(
 
 def log_entry_change(
     *,
-    project: Project,
+    company: Company,
     employee: Employee,
     entry: TimesheetEntry | None,
     day: date,
@@ -148,7 +183,7 @@ def log_entry_change(
     user: User | None,
 ) -> None:
     TimesheetEntryLog.objects.create(
-        project=project,
+        company=company,
         employee=employee,
         entry=entry,
         date=day,
@@ -161,27 +196,34 @@ def log_entry_change(
 @transaction.atomic
 def upsert_cell(
     *,
-    project: Project,
+    company: Company,
     employee_id: int,
     day: date,
     status: str,
     comment: str = "",
     user: User | None = None,
+    place: str = TIMESHEET_PLACE_SITE,
 ) -> TimesheetEntry | None:
+    place = normalize_timesheet_place(place)
+    if day > date.today():
+        raise ValueError("future date")
     if status and status not in VALID_STATUS_CODES:
         raise ValueError("invalid status")
     employee = Employee.objects.filter(
         pk=employee_id,
-        company_id=project.company_id,
+        company_id=company.pk,
     ).first()
     if not employee:
         raise ValueError("employee not found")
-    if not ProjectEmployee.objects.filter(
-        project=project, employee=employee, is_active=True
+    if not TimesheetMember.objects.filter(
+        company=company,
+        employee=employee,
+        workplace=place,
+        is_active=True,
     ).exists():
-        raise ValueError("employee not on project")
+        raise ValueError("employee not in timesheet")
 
-    ts = get_or_create_timesheet(project, day.year, day.month)
+    ts = get_or_create_timesheet(company, day.year, day.month, place)
     ent = TimesheetEntry.objects.filter(
         timesheet=ts, employee=employee, date=day
     ).first()
@@ -190,7 +232,7 @@ def upsert_cell(
     if not status:
         if ent:
             log_entry_change(
-                project=project,
+                company=company,
                 employee=employee,
                 entry=ent,
                 day=day,
@@ -209,7 +251,7 @@ def upsert_cell(
     else:
         ent = TimesheetEntry.objects.create(
             timesheet=ts,
-            project=project,
+            company=company,
             employee=employee,
             date=day,
             status=status,
@@ -219,7 +261,7 @@ def upsert_cell(
 
     if old_status != status:
         log_entry_change(
-            project=project,
+            company=company,
             employee=employee,
             entry=ent,
             day=day,
@@ -233,10 +275,12 @@ def upsert_cell(
 @transaction.atomic
 def bulk_upsert_cells(
     *,
-    project: Project,
+    company: Company,
     updates: list[dict[str, Any]],
     user: User | None = None,
+    place: str = TIMESHEET_PLACE_SITE,
 ) -> int:
+    place = normalize_timesheet_place(place)
     count = 0
     for u in updates:
         eid = u.get("employee_id")
@@ -249,29 +293,38 @@ def bulk_upsert_cells(
         except ValueError:
             continue
         upsert_cell(
-            project=project,
+            company=company,
             employee_id=int(eid),
             day=day,
             status=st or "",
             comment=str(u.get("comment") or ""),
             user=user,
+            place=place,
         )
         count += 1
     return count
 
 
 def export_timesheet_xlsx(
-    project: Project, year: int, month: int
+    company: Company,
+    year: int,
+    month: int,
+    place: str = TIMESHEET_PLACE_SITE,
 ) -> BytesIO:
+    place = normalize_timesheet_place(place)
+    place_label = "Офис" if place == TIMESHEET_PLACE_OFFICE else "Объект"
     start, end, days = month_bounds(year, month)
-    employees = [pe.employee for pe in project_employees_qs(project)]
-    entries = entries_map_for_month(project, year, month)
+    employees = [tm.employee for tm in company_members_qs(company, place=place)]
+    entries = entries_map_for_month(company, year, month, place)
 
     wb = Workbook()
     ws = wb.active
     ws.title = f"Табель {month:02d}.{year}"
 
-    title = f"ТАБЕЛЬ учёта рабочего времени — {project.name} — {month:02d}.{year}"
+    title = (
+        f"ТАБЕЛЬ учёта рабочего времени ({place_label}) — "
+        f"{company.name} — {month:02d}.{year}"
+    )
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=days + 2)
     ws["A1"] = title
     ws["A1"].font = Font(bold=True, size=12)
@@ -325,13 +378,18 @@ def export_timesheet_xlsx(
 
 
 @transaction.atomic
-def import_employees_from_xlsx(project: Project, file_obj) -> dict[str, int]:
+def import_employees_from_xlsx(
+    company: Company,
+    file_obj,
+    *,
+    place: str = TIMESHEET_PLACE_SITE,
+) -> dict[str, int]:
+    place = normalize_timesheet_place(place)
     wb = load_workbook(file_obj, read_only=True, data_only=True)
     ws = wb.active
     created = 0
     linked = 0
     updated = 0
-    company = project.company
 
     rows = list(ws.iter_rows(min_row=2, values_only=True))
     for row in rows:
@@ -365,18 +423,24 @@ def import_employees_from_xlsx(project: Project, file_obj) -> dict[str, int]:
             )
             created += 1
 
-        _, was_created = ProjectEmployee.objects.get_or_create(
-            project=project,
+        _, was_created = TimesheetMember.objects.get_or_create(
+            company=company,
             employee=emp,
+            workplace=place,
             defaults={"is_active": True},
         )
         if was_created:
             linked += 1
-        elif not ProjectEmployee.objects.filter(
-            project=project, employee=emp, is_active=True
+        elif not TimesheetMember.objects.filter(
+            company=company,
+            employee=emp,
+            workplace=place,
+            is_active=True,
         ).exists():
-            ProjectEmployee.objects.filter(
-                project=project, employee=emp
+            TimesheetMember.objects.filter(
+                company=company,
+                employee=emp,
+                workplace=place,
             ).update(is_active=True)
             linked += 1
 
@@ -391,20 +455,21 @@ def _normalize_employee_status(status: str) -> str:
 
 
 @transaction.atomic
-def create_project_employee(
-    project: Project,
+def create_timesheet_member(
+    company: Company,
     *,
     full_name: str,
     position: str = "",
     phone: str = "",
     brigade: str = "",
     status: str = Employee.STATUS_ACTIVE,
-) -> ProjectEmployee:
+    place: str = TIMESHEET_PLACE_SITE,
+) -> TimesheetMember:
+    place = normalize_timesheet_place(place)
     full_name = (full_name or "").strip()
     if not full_name:
         raise ValueError("full_name")
 
-    company = project.company
     emp = Employee.objects.filter(
         company=company, full_name__iexact=full_name
     ).first()
@@ -424,20 +489,21 @@ def create_project_employee(
             status=_normalize_employee_status(status),
         )
 
-    pe, _ = ProjectEmployee.objects.get_or_create(
-        project=project,
+    tm, _ = TimesheetMember.objects.get_or_create(
+        company=company,
         employee=emp,
+        workplace=place,
         defaults={"is_active": True},
     )
-    if not pe.is_active:
-        pe.is_active = True
-        pe.save(update_fields=["is_active"])
-    return pe
+    if not tm.is_active:
+        tm.is_active = True
+        tm.save(update_fields=["is_active"])
+    return tm
 
 
 @transaction.atomic
-def update_project_employee(
-    project: Project,
+def update_timesheet_member(
+    company: Company,
     employee_id: int,
     *,
     full_name: str | None = None,
@@ -445,26 +511,29 @@ def update_project_employee(
     phone: str | None = None,
     brigade: str | None = None,
     status: str | None = None,
-) -> ProjectEmployee:
-    pe = (
-        ProjectEmployee.objects.filter(
-            project=project,
+    place: str = TIMESHEET_PLACE_SITE,
+) -> TimesheetMember:
+    place = normalize_timesheet_place(place)
+    tm = (
+        TimesheetMember.objects.filter(
+            company=company,
             employee_id=employee_id,
+            workplace=place,
             is_active=True,
         )
         .select_related("employee")
         .first()
     )
-    if not pe:
+    if not tm:
         raise ValueError("employee")
 
-    emp = pe.employee
+    emp = tm.employee
     if full_name is not None:
         name = full_name.strip()
         if not name:
             raise ValueError("full_name")
         dup = (
-            Employee.objects.filter(company=project.company, full_name__iexact=name)
+            Employee.objects.filter(company=company, full_name__iexact=name)
             .exclude(pk=emp.pk)
             .exists()
         )
@@ -480,14 +549,21 @@ def update_project_employee(
     if status is not None:
         emp.status = _normalize_employee_status(status)
     emp.save()
-    return pe
+    return tm
 
 
 @transaction.atomic
-def remove_project_employee(project: Project, employee_id: int) -> bool:
-    updated = ProjectEmployee.objects.filter(
-        project=project,
+def remove_timesheet_member(
+    company: Company,
+    employee_id: int,
+    *,
+    place: str = TIMESHEET_PLACE_SITE,
+) -> bool:
+    place = normalize_timesheet_place(place)
+    updated = TimesheetMember.objects.filter(
+        company=company,
         employee_id=employee_id,
+        workplace=place,
         is_active=True,
     ).update(is_active=False)
     if not updated:
@@ -495,11 +571,11 @@ def remove_project_employee(project: Project, employee_id: int) -> bool:
     return True
 
 
-def brigades_for_project(project: Project) -> list[str]:
+def brigades_for_company(company: Company) -> list[str]:
     qs = (
         Employee.objects.filter(
-            project_links__project=project,
-            project_links__is_active=True,
+            timesheet_memberships__company=company,
+            timesheet_memberships__is_active=True,
             status=Employee.STATUS_ACTIVE,
         )
         .exclude(brigade="")

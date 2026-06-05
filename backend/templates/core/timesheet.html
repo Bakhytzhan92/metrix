@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Табель — Metrix{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-900">Табель работников</h1>
+      <p class="text-sm text-slate-500 mt-1">Ежедневный учёт явки по компании: офис и объект — отдельные табели.</p>
+    </div>
+  </div>
+
+  <div
+    id="timesheet-root"
+    class="w-full h-[min(72vh,44rem)] max-h-[min(72vh,44rem)] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
+    data-api-base="/api/timesheet"
+    data-csrf="{{ csrf_token }}"
+  >
+    <div class="flex items-center justify-center h-48 text-sm text-slate-500">
+      Загрузка табеля…
+    </div>
+  </div>
+</div>
+
+<script src="{% static 'core/project_timesheet/board.js' %}?v=14"></script>
+{% endblock %}

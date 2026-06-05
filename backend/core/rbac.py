@@ -148,6 +148,9 @@ def codes_required_for_path(path: str) -> list[str] | None:
     if path.startswith("/warehouses/") or path.startswith("/inventory/"):
         return ["view_warehouse", "edit_warehouse"]
 
+    if path.startswith("/timesheet/") or path.startswith("/api/timesheet/"):
+        return ["view_timesheet", "edit_timesheet"]
+
     if path.startswith("/reports/"):
         return ["view_reports"]
 

@@ -9,7 +9,9 @@ declare global {
 }
 
 function mount() {
-  const root = document.getElementById("project-timesheet-root");
+  const root =
+    document.getElementById("timesheet-root") ||
+    document.getElementById("project-timesheet-root");
   if (!root) return;
   const apiBase = root.dataset.apiBase || "";
   const csrf = root.dataset.csrf || "";

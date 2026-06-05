@@ -2,10 +2,12 @@ import React, {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { FixedSizeList as List, type ListChildComponentProps } from "react-window";
 
 import type {
@@ -15,6 +17,7 @@ import type {
   MonthPayload,
   StatusCode,
   StatusMeta,
+  TimesheetPlace,
 } from "./types";
 
 const ROW_H = 44;
@@ -44,6 +47,21 @@ function entryKey(employeeId: number, day: number, year: number, month: number) 
   return `${employeeId}:${year}-${m}-${d}`;
 }
 
+function dayIso(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** Можно отмечать только сегодня и прошедшие дни выбранного месяца. */
+function isDayEditable(
+  year: number,
+  month: number,
+  day: number,
+  todayIso: string,
+): boolean {
+  const today = todayIso.slice(0, 10);
+  return dayIso(year, month, day) <= today;
+}
+
 function statusStyle(code: string, meta: StatusMeta[]): React.CSSProperties {
   const m = meta.find((s) => s.code === code);
   if (!m) return { background: "#fff" };
@@ -66,6 +84,7 @@ const DayCell = memo(function DayCell({
   onPick,
   cellW,
   stretch,
+  todayIso,
 }: {
   employeeId: number;
   day: number;
@@ -78,24 +97,32 @@ const DayCell = memo(function DayCell({
   onPick: (employeeId: number, day: number, status: StatusCode) => void;
   cellW?: number;
   stretch?: boolean;
+  todayIso: string;
 }) {
   const sm = statusMeta.find((s) => s.code === status);
   const label = sm?.short || "";
+  const editable = canEdit && isDayEditable(year, month, day, todayIso);
 
   return (
     <button
       type="button"
-      disabled={!canEdit}
-      className={`text-xs flex items-center justify-center transition-colors hover:brightness-95 disabled:cursor-default touch-manipulation box-border ${stretch ? "flex-1 min-w-0 w-full" : "shrink-0"}`}
+      disabled={!editable}
+      className={`text-xs flex items-center justify-center transition-colors touch-manipulation box-border ${
+        editable ? "hover:brightness-95" : "cursor-default opacity-70"
+      } ${stretch ? "flex-1 min-w-0 w-full" : "shrink-0"}`}
       style={{
         ...(stretch ? {} : { width: cellW }),
         height: ROW_H,
         borderRight: `1px solid ${GRID_LINE}`,
-        ...statusStyle(status, statusMeta),
+        ...(editable
+          ? statusStyle(status, statusMeta)
+          : { background: "#f8fafc", color: "#94a3b8" }),
       }}
-      title={sm?.label || "Пусто"}
+      title={
+        editable ? sm?.label || "Пусто" : "Дата ещё не наступила"
+      }
       onClick={() => {
-        if (!canEdit) return;
+        if (!editable) return;
         if (brush) {
           onPick(employeeId, day, brush);
           return;
@@ -126,6 +153,7 @@ const EmployeeRow = memo(function EmployeeRow({
   stretch,
   onPick,
   onEdit,
+  todayIso,
 }: {
   employee: Employee;
   days: number;
@@ -141,6 +169,7 @@ const EmployeeRow = memo(function EmployeeRow({
   stretch: boolean;
   onPick: (employeeId: number, day: number, status: StatusCode) => void;
   onEdit: (employee: Employee) => void;
+  todayIso: string;
 }) {
   const timelineW = stretch ? undefined : days * cellW;
   const paneW = Math.max(0, viewportW - LEFT_W);
@@ -165,7 +194,10 @@ const EmployeeRow = memo(function EmployeeRow({
             type="button"
             className="shrink-0 w-6 h-6 rounded text-slate-400 hover:text-violet-700 hover:bg-violet-50 text-xs"
             title="Редактировать"
-            onClick={() => onEdit(employee)}
+            onClick={(e) => {
+              e.preventDefault();
+              onEdit(employee);
+            }}
           >
             ✎
           </button>
@@ -174,7 +206,11 @@ const EmployeeRow = memo(function EmployeeRow({
           type="button"
           className="min-w-0 flex-1 text-left px-1 flex flex-col justify-center disabled:cursor-default"
           disabled={!canEdit}
-          onClick={() => canEdit && onEdit(employee)}
+          onClick={(e) => {
+            if (!canEdit) return;
+            e.preventDefault();
+            onEdit(employee);
+          }}
           title={`${employee.full_name}\n${employee.position}`}
         >
           <div className="truncate text-xs font-semibold text-slate-900">
@@ -214,6 +250,7 @@ const EmployeeRow = memo(function EmployeeRow({
                 brush={brush}
                 onPick={onPick}
                 stretch
+                todayIso={todayIso}
               />
             ) : (
               <DayCell
@@ -228,6 +265,7 @@ const EmployeeRow = memo(function EmployeeRow({
                 brush={brush}
                 onPick={onPick}
                 cellW={cellW}
+                todayIso={todayIso}
               />
             ),
           )}
@@ -250,6 +288,7 @@ function EmployeeModal({
   onClose,
   onSave,
   onRemove,
+  removeLabel,
 }: {
   mode: "create" | "edit";
   initial: EmployeeFormData;
@@ -257,12 +296,27 @@ function EmployeeModal({
   onClose: () => void;
   onSave: (data: EmployeeFormData) => void;
   onRemove?: () => void;
+  removeLabel: string;
 }) {
   const [form, setForm] = useState<EmployeeFormData>(initial);
+  const nameRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setForm(initial);
   }, [initial]);
+
+  useLayoutEffect(() => {
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    nameRef.current?.focus({ preventScroll: true });
+    window.scrollTo(scrollX, scrollY);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.scrollTo(scrollX, scrollY);
+    };
+  }, [mode]);
 
   const set = (key: keyof EmployeeFormData, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -289,11 +343,11 @@ function EmployeeModal({
               ФИО *
             </label>
             <input
+              ref={nameRef}
               value={form.full_name}
               onChange={(e) => set("full_name", e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               placeholder="Иванов Иван Иванович"
-              autoFocus
             />
           </div>
           <div>
@@ -330,7 +384,7 @@ function EmployeeModal({
                 className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
                 onClick={onRemove}
               >
-                Убрать с объекта
+                {removeLabel}
               </button>
             )}
           </div>
@@ -368,6 +422,7 @@ export function TimesheetApp({
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [place, setPlace] = useState<TimesheetPlace>("site");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [payload, setPayload] = useState<MonthPayload | null>(null);
@@ -379,6 +434,8 @@ export function TimesheetApp({
   const [employeeModal, setEmployeeModal] = useState<null | "create" | Employee>(null);
   const [employeeSaving, setEmployeeSaving] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const hScrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<List>(null);
@@ -392,16 +449,20 @@ export function TimesheetApp({
   const days = payload?.days_in_month || 31;
   const canEdit = payload?.can_edit ?? false;
   const analytics = payload?.analytics;
+  const todayIso =
+    payload?.today || new Date().toISOString().slice(0, 10);
 
   const monthValue = `${year}-${String(month).padStart(2, "0")}`;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setEntries({});
     try {
       const q = new URLSearchParams({
         year: String(year),
         month: String(month),
+        place,
       });
       const r = await fetch(`${apiBase}/?${q}`, {
         credentials: "same-origin",
@@ -416,7 +477,7 @@ export function TimesheetApp({
     } finally {
       setLoading(false);
     }
-  }, [apiBase, year, month]);
+  }, [apiBase, year, month, place]);
 
   const loadLogs = useCallback(async () => {
     try {
@@ -438,29 +499,40 @@ export function TimesheetApp({
     if (showLogs) loadLogs();
   }, [showLogs, loadLogs]);
 
+  const paneW = Math.max(0, viewportW - LEFT_W);
+  const cellW = fitCellWidth(paneW, days);
+  const stretch = paneW > 0 && paneW / days >= MIN_CELL_W;
+  const timelineW = days * cellW;
+  const needsHScroll = !stretch;
+  const gridW = viewportW > 0 ? viewportW : undefined;
+
   useEffect(() => {
     const root = rootRef.current;
-    const shell = shellRef.current;
     if (!root) return;
 
     const measure = () => {
       const w = root.clientWidth;
       if (w > 0) setViewportW(w);
-      if (shell) {
-        setListH(Math.max(200, shell.clientHeight - HEAD_H - 8));
-      }
+
+      const toolbarH = toolbarRef.current?.offsetHeight ?? 0;
+      const tabsH = tabsRef.current?.offsetHeight ?? 0;
+      const hScrollH = needsHScroll ? 16 : 0;
+      const available =
+        root.clientHeight - toolbarH - tabsH - HEAD_H - hScrollH - 4;
+      setListH(Math.max(160, available));
     };
 
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(root);
-    if (shell) ro.observe(shell);
+    if (toolbarRef.current) ro.observe(toolbarRef.current);
+    if (tabsRef.current) ro.observe(tabsRef.current);
     window.addEventListener("resize", measure);
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [loading, payload, employees.length]);
+  }, [loading, payload, employees.length, showLogs, needsHScroll, place]);
 
   const flushSaves = useCallback(async () => {
     const batch = Array.from(saveQueue.current.entries());
@@ -479,18 +551,19 @@ export function TimesheetApp({
           "X-CSRFToken": csrfToken,
           "X-Requested-With": "XMLHttpRequest",
         },
-        body: JSON.stringify({ updates }),
+        body: JSON.stringify({ updates, place }),
       });
       loadLogs();
     } catch {
       setError("Ошибка сохранения");
     }
-  }, [apiBase, csrfToken, loadLogs]);
+  }, [apiBase, csrfToken, loadLogs, place]);
 
   const queueSave = useCallback(
     (employeeId: number, day: number, status: StatusCode) => {
+      if (!isDayEditable(year, month, day, todayIso)) return;
       const key = entryKey(employeeId, day, year, month);
-      const fullDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const fullDate = dayIso(year, month, day);
       saveQueue.current.set(`${employeeId}:${fullDate}`, status);
       setEntries((prev) => ({ ...prev, [key]: status }));
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -498,7 +571,7 @@ export function TimesheetApp({
         flushSaves();
       }, 350);
     },
-    [year, month, flushSaves],
+    [year, month, todayIso, flushSaves],
   );
 
   const onPick = useCallback(
@@ -536,7 +609,7 @@ export function TimesheetApp({
             "X-CSRFToken": csrfToken,
             "X-Requested-With": "XMLHttpRequest",
           },
-          body: JSON.stringify(data),
+          body: JSON.stringify({ ...data, place }),
         });
         const j = await r.json();
         if (!r.ok || !j.ok) {
@@ -553,12 +626,13 @@ export function TimesheetApp({
         setEmployeeSaving(false);
       }
     },
-    [apiBase, csrfToken, employeeModal, load],
+    [apiBase, csrfToken, employeeModal, load, place],
   );
 
   const removeEmployee = useCallback(async () => {
     if (!employeeModal || employeeModal === "create") return;
-    if (!window.confirm(`Убрать «${employeeModal.full_name}» с объекта?`)) return;
+    const where = place === "office" ? "из табеля офиса" : "с объекта";
+    if (!window.confirm(`Убрать «${employeeModal.full_name}» ${where}?`)) return;
     setEmployeeSaving(true);
     setError("");
     try {
@@ -566,9 +640,11 @@ export function TimesheetApp({
         method: "POST",
         credentials: "same-origin",
         headers: {
+          "Content-Type": "application/json",
           "X-CSRFToken": csrfToken,
           "X-Requested-With": "XMLHttpRequest",
         },
+        body: JSON.stringify({ place }),
       });
       const j = await r.json();
       if (!r.ok || !j.ok) throw new Error("remove failed");
@@ -579,18 +655,11 @@ export function TimesheetApp({
     } finally {
       setEmployeeSaving(false);
     }
-  }, [apiBase, csrfToken, employeeModal, load]);
+  }, [apiBase, csrfToken, employeeModal, load, place]);
 
   const onEditEmployee = useCallback((employee: Employee) => {
     setEmployeeModal(employee);
   }, []);
-
-  const paneW = Math.max(0, viewportW - LEFT_W);
-  const cellW = fitCellWidth(paneW, days);
-  const stretch = paneW > 0 && paneW / days >= MIN_CELL_W;
-  const timelineW = days * cellW;
-  const needsHScroll = !stretch;
-  const gridW = viewportW > 0 ? viewportW : undefined;
 
   const Row = useCallback(
     ({ index, style }: ListChildComponentProps) => {
@@ -612,6 +681,7 @@ export function TimesheetApp({
             stretch={stretch}
             onPick={onPick}
             onEdit={onEditEmployee}
+            todayIso={todayIso}
           />
         </div>
       );
@@ -631,6 +701,7 @@ export function TimesheetApp({
       stretch,
       onPick,
       onEditEmployee,
+      todayIso,
     ],
   );
 
@@ -645,7 +716,7 @@ export function TimesheetApp({
     return (
       <div
         ref={rootRef}
-        className="flex items-center justify-center w-full h-48 text-sm text-slate-500 min-h-[480px]"
+        className="flex items-center justify-center w-full h-full text-sm text-slate-500"
       >
         Загрузка табеля…
       </div>
@@ -655,10 +726,13 @@ export function TimesheetApp({
   return (
     <div
       ref={rootRef}
-      className="flex flex-col w-full h-full min-h-[480px] bg-gradient-to-b from-violet-50/40 to-white"
+      className="flex flex-col w-full h-full min-h-0 overflow-hidden bg-gradient-to-b from-violet-50/40 to-white"
     >
       {/* Toolbar */}
-      <div className="p-3 sm:p-4 border-b border-slate-200 space-y-3">
+      <div
+        ref={toolbarRef}
+        className="shrink-0 p-3 sm:p-4 border-b border-slate-200 space-y-3"
+      >
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-[10px] uppercase tracking-wide text-slate-500 mb-1">
@@ -710,7 +784,7 @@ export function TimesheetApp({
               </button>
             )}
             <a
-              href={`${apiBase}/export/?year=${year}&month=${month}`}
+              href={`${apiBase}/export/?year=${year}&month=${month}&place=${place}`}
               className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100"
             >
               Экспорт Excel
@@ -727,7 +801,7 @@ export function TimesheetApp({
                     if (!f) return;
                     const fd = new FormData();
                     fd.append("file", f);
-                    await fetch(`${apiBase}/import-employees/`, {
+                    await fetch(`${apiBase}/import-employees/?place=${place}`, {
                       method: "POST",
                       credentials: "same-origin",
                       headers: {
@@ -759,7 +833,9 @@ export function TimesheetApp({
               <div className="text-lg font-semibold tabular-nums">{analytics.total_workers}</div>
             </div>
             <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2">
-              <div className="text-[10px] text-emerald-800">Сегодня на объекте</div>
+              <div className="text-[10px] text-emerald-800">
+                {place === "office" ? "Сегодня в офисе" : "Сегодня на объекте"}
+              </div>
               <div className="text-lg font-semibold tabular-nums text-emerald-900">
                 {analytics.on_site_today}
               </div>
@@ -823,10 +899,49 @@ export function TimesheetApp({
       </div>
 
       {/* Grid */}
-      <div ref={shellRef} className="flex-1 min-h-0 flex flex-col w-full">
+      <div ref={shellRef} className="flex-1 min-h-0 flex flex-col w-full overflow-hidden">
+        <div
+          ref={tabsRef}
+          className="shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2 border-b border-slate-200 bg-white/80"
+        >
+          <button
+            type="button"
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+              place === "office"
+                ? "bg-violet-600 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+            onClick={async () => {
+              if (place === "office") return;
+              await flushSaves();
+              setPlace("office");
+            }}
+          >
+            Офис
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+              place === "site"
+                ? "bg-violet-600 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+            onClick={async () => {
+              if (place === "site") return;
+              await flushSaves();
+              setPlace("site");
+            }}
+          >
+            Объект
+          </button>
+        </div>
         {!employees.length ? (
           <div className="p-8 text-center text-sm text-slate-500 space-y-3">
-            <p>Нет сотрудников на объекте.</p>
+            <p>
+              {place === "office"
+                ? "Нет сотрудников для табеля офиса."
+                : "Нет сотрудников на объекте."}
+            </p>
             {canEdit ? (
               <button
                 type="button"
@@ -872,36 +987,54 @@ export function TimesheetApp({
                         }
                   }
                 >
-                  {Array.from({ length: days }, (_, i) => i + 1).map((day) =>
-                    stretch ? (
+                  {Array.from({ length: days }, (_, i) => i + 1).map((day) => {
+                    const future = !isDayEditable(year, month, day, todayIso);
+                    const headClass = future
+                      ? "text-slate-400 opacity-60"
+                      : "text-slate-600";
+                    return stretch ? (
                       <div
                         key={day}
-                        className="flex-1 min-w-0 flex flex-col items-center justify-center text-[10px] text-slate-600 box-border"
+                        className={`flex-1 min-w-0 flex flex-col items-center justify-center text-[10px] box-border ${headClass}`}
                         style={{
                           height: HEAD_H,
                           borderRight: `1px solid ${GRID_LINE}`,
+                          ...(future ? { background: "#f8fafc" } : {}),
                         }}
-                        title={weekdayLabels[day - 1]}
+                        title={
+                          future
+                            ? "Дата ещё не наступила"
+                            : weekdayLabels[day - 1]
+                        }
                       >
                         <span className="font-semibold">{day}</span>
-                        <span className="text-[9px] text-slate-400">{weekdayLabels[day - 1]}</span>
+                        <span className="text-[9px] text-slate-400">
+                          {weekdayLabels[day - 1]}
+                        </span>
                       </div>
                     ) : (
                       <div
                         key={day}
-                        className="shrink-0 flex flex-col items-center justify-center text-[10px] text-slate-600 box-border"
+                        className={`shrink-0 flex flex-col items-center justify-center text-[10px] box-border ${headClass}`}
                         style={{
                           width: cellW,
                           height: HEAD_H,
                           borderRight: `1px solid ${GRID_LINE}`,
+                          ...(future ? { background: "#f8fafc" } : {}),
                         }}
-                        title={weekdayLabels[day - 1]}
+                        title={
+                          future
+                            ? "Дата ещё не наступила"
+                            : weekdayLabels[day - 1]
+                        }
                       >
                         <span className="font-semibold">{day}</span>
-                        <span className="text-[9px] text-slate-400">{weekdayLabels[day - 1]}</span>
+                        <span className="text-[9px] text-slate-400">
+                          {weekdayLabels[day - 1]}
+                        </span>
                       </div>
-                    ),
-                  )}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -931,16 +1064,21 @@ export function TimesheetApp({
         )}
       </div>
 
-      {employeeModal && (
-        <EmployeeModal
-          mode={employeeModal === "create" ? "create" : "edit"}
-          initial={employeeFormInitial}
-          saving={employeeSaving}
-          onClose={() => !employeeSaving && setEmployeeModal(null)}
-          onSave={saveEmployee}
-          onRemove={employeeModal !== "create" ? removeEmployee : undefined}
-        />
-      )}
+      {employeeModal &&
+        createPortal(
+          <EmployeeModal
+            mode={employeeModal === "create" ? "create" : "edit"}
+            initial={employeeFormInitial}
+            saving={employeeSaving}
+            onClose={() => !employeeSaving && setEmployeeModal(null)}
+            onSave={saveEmployee}
+            onRemove={employeeModal !== "create" ? removeEmployee : undefined}
+          removeLabel={
+            place === "office" ? "Убрать из офиса" : "Убрать с объекта"
+          }
+          />,
+          document.body,
+        )}
     </div>
   );
 }

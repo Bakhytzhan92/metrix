@@ -5,13 +5,13 @@
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <div>
       <h1 class="text-lg font-semibold text-slate-900">Табель работников</h1>
-      <p class="text-xs text-slate-500 mt-0.5">Ежедневный учёт явки на объекте. Клик по ячейке — статус, автосохранение без перезагрузки.</p>
+      <p class="text-xs text-slate-500 mt-0.5">Ежедневный учёт явки: офис и объект — отдельные табели. Клик по ячейке — статус, автосохранение без перезагрузки.</p>
     </div>
   </div>
 
   <div
     id="project-timesheet-root"
-    class="w-full min-h-[480px] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
+    class="w-full h-[min(72vh,44rem)] max-h-[min(72vh,44rem)] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
     data-project-id="{{ project.pk }}"
     data-csrf="{{ csrf_token }}"
     data-api-base="/api/project/{{ project.pk }}/timesheet"
@@ -22,5 +22,5 @@
   </div>
 </div>
 
-<script src="{% static 'core/project_timesheet/board.js' %}?v=8"></script>
+<script src="{% static 'core/project_timesheet/board.js' %}?v=13"></script>
 {% endblock %}
