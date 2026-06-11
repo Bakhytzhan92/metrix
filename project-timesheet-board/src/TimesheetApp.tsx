@@ -609,7 +609,7 @@ export function TimesheetApp({
             "X-CSRFToken": csrfToken,
             "X-Requested-With": "XMLHttpRequest",
           },
-          body: JSON.stringify({ ...data, place }),
+          body: JSON.stringify({ ...data, place, year, month }),
         });
         const j = await r.json();
         if (!r.ok || !j.ok) {
@@ -626,13 +626,22 @@ export function TimesheetApp({
         setEmployeeSaving(false);
       }
     },
-    [apiBase, csrfToken, employeeModal, load, place],
+    [apiBase, csrfToken, employeeModal, load, place, year, month],
   );
 
   const removeEmployee = useCallback(async () => {
     if (!employeeModal || employeeModal === "create") return;
     const where = place === "office" ? "из табеля офиса" : "с объекта";
-    if (!window.confirm(`Убрать «${employeeModal.full_name}» ${where}?`)) return;
+    const monthLabel = new Date(year, month - 1, 1).toLocaleDateString("ru-RU", {
+      month: "long",
+      year: "numeric",
+    });
+    if (
+      !window.confirm(
+        `Убрать «${employeeModal.full_name}» ${where} только за ${monthLabel}?\nДругие месяцы и отметки сохранятся.`,
+      )
+    )
+      return;
     setEmployeeSaving(true);
     setError("");
     try {
@@ -644,18 +653,18 @@ export function TimesheetApp({
           "X-CSRFToken": csrfToken,
           "X-Requested-With": "XMLHttpRequest",
         },
-        body: JSON.stringify({ place }),
+        body: JSON.stringify({ place, year, month }),
       });
       const j = await r.json();
       if (!r.ok || !j.ok) throw new Error("remove failed");
       setEmployeeModal(null);
       await load();
     } catch {
-      setError("Не удалось убрать сотрудника с объекта");
+      setError("Не удалось убрать сотрудника из табеля");
     } finally {
       setEmployeeSaving(false);
     }
-  }, [apiBase, csrfToken, employeeModal, load, place]);
+  }, [apiBase, csrfToken, employeeModal, load, place, year, month]);
 
   const onEditEmployee = useCallback((employee: Employee) => {
     setEmployeeModal(employee);
@@ -801,15 +810,18 @@ export function TimesheetApp({
                     if (!f) return;
                     const fd = new FormData();
                     fd.append("file", f);
-                    await fetch(`${apiBase}/import-employees/?place=${place}`, {
-                      method: "POST",
-                      credentials: "same-origin",
-                      headers: {
-                        "X-CSRFToken": csrfToken,
-                        "X-Requested-With": "XMLHttpRequest",
+                    await fetch(
+                      `${apiBase}/import-employees/?place=${place}&year=${year}&month=${month}`,
+                      {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {
+                          "X-CSRFToken": csrfToken,
+                          "X-Requested-With": "XMLHttpRequest",
+                        },
+                        body: fd,
                       },
-                      body: fd,
-                    });
+                    );
                     e.target.value = "";
                     load();
                   }}

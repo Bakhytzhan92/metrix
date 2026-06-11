@@ -464,8 +464,18 @@ class ProjectPaySupplyOrderForm(forms.Form):
         widget=forms.NumberInput(attrs={"class": _input_class(), "step": "0.01"}),
     )
     pay_date = forms.DateField(
-        label="Дата",
+        label="Дата оплаты",
         widget=forms.DateInput(attrs={"type": "date", "class": _input_class()}),
+    )
+    payment_proof = forms.FileField(
+        label="Платёжное поручение",
+        required=True,
+        widget=forms.ClearableFileInput(
+            attrs={
+                "class": "text-xs max-w-full",
+                "accept": ".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png",
+            }
+        ),
     )
 
 

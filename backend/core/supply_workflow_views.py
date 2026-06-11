@@ -14,6 +14,7 @@ from .access_utils import get_current_company, has_permission
 from .models import (
     OffEstimateSupplyRequest,
     SupplyOrder,
+    SupplyOrderDocument,
     SupplyOrderItem,
     SupplyRequest,
     Warehouse,
@@ -279,6 +280,47 @@ def _payment_error_message(exc: ValueError) -> str:
     return _PAYMENT_ERROR_MSG.get(str(exc), str(exc))
 
 
+def _procurement_info_from_post(request: HttpRequest) -> dict:
+    from django.utils.dateparse import parse_date
+
+    planned = None
+    raw_date = request.POST.get("planned_delivery_date", "").strip()
+    if raw_date:
+        planned = parse_date(raw_date)
+    return {
+        "supplier": request.POST.get("supplier", ""),
+        "purchase_amount_raw": request.POST.get("purchase_amount"),
+        "planned_delivery_date": planned,
+        "procurement_note": request.POST.get("procurement_note", ""),
+    }
+
+
+def _handle_supply_order_payment_form(
+    request: HttpRequest, order: SupplyOrder, *, action: str
+) -> str | None:
+    """Сохраняет данные заказа; при необходимости загружает документ. Возвращает текст успеха."""
+    info = _procurement_info_from_post(request)
+    pay.update_order_procurement_info(order, user=request.user, **info)
+
+    if action == "upload_kp":
+        pay.upload_order_document(
+            order,
+            user=request.user,
+            doc_type=SupplyOrderDocument.DOC_KP,
+            uploaded_file=request.FILES.get("kp_file"),
+        )
+        return "Данные сохранены, коммерческое предложение загружено."
+    if action == "upload_invoice":
+        pay.upload_order_document(
+            order,
+            user=request.user,
+            doc_type=SupplyOrderDocument.DOC_INVOICE,
+            uploaded_file=request.FILES.get("invoice_file"),
+        )
+        return "Данные сохранены, счёт на оплату загружен."
+    return "Данные заказа сохранены."
+
+
 @login_required
 @require_POST
 @permission_required("procure_supply")
@@ -289,25 +331,18 @@ def project_supply_order_update_payment_info(
     if err:
         return err
     order = get_object_or_404(SupplyOrder, pk=order_id, project=project)
-    from django.utils.dateparse import parse_date
-
-    planned = None
-    raw_date = request.POST.get("planned_delivery_date", "").strip()
-    if raw_date:
-        planned = parse_date(raw_date)
+    action = (request.POST.get("action") or "save").strip()
     try:
-        pay.update_order_procurement_info(
-            order,
-            user=request.user,
-            supplier=request.POST.get("supplier", ""),
-            purchase_amount_raw=request.POST.get("purchase_amount"),
-            planned_delivery_date=planned,
-            procurement_note=request.POST.get("procurement_note", ""),
-        )
+        if action == "submit_approval":
+            _handle_supply_order_payment_form(request, order, action="save")
+            pay.submit_order_for_payment_approval(order, user=request.user)
+            success_msg = "Заказ отправлен на согласование оплаты."
+        else:
+            success_msg = _handle_supply_order_payment_form(request, order, action=action)
     except ValueError as exc:
         messages.error(request, _payment_error_message(exc))
     else:
-        messages.success(request, "Данные заказа сохранены.")
+        messages.success(request, success_msg)
     return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=orders")
 
 
@@ -324,13 +359,19 @@ def project_supply_order_upload_document(
     doc_type = request.POST.get("doc_type", "")
     uploaded = request.FILES.get("file")
     try:
+        _handle_supply_order_payment_form(request, order, action="save")
         pay.upload_order_document(
             order, user=request.user, doc_type=doc_type, uploaded_file=uploaded
         )
     except ValueError as exc:
         messages.error(request, _payment_error_message(exc))
     else:
-        messages.success(request, "Документ загружен.")
+        label = (
+            "коммерческое предложение"
+            if doc_type == SupplyOrderDocument.DOC_KP
+            else "счёт на оплату"
+        )
+        messages.success(request, f"Данные сохранены, {label} загружен.")
     return redirect(f"{reverse('project_supply', args=[project.pk])}?tab=orders")
 
 

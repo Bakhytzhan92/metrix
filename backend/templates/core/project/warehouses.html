@@ -3,41 +3,28 @@
 
 {% block project_content %}
 <div class="space-y-4">
-  <div>
-    <h2 class="text-xl font-semibold text-ink tracking-tight">Склады</h2>
-    <p class="text-sm text-ink-muted mt-1 max-w-2xl">Инвентарь (оборудование), материалы и ГСМ — отдельные учётные контуры.</p>
+  <div class="rounded-2xl border border-line bg-white/95 shadow-mx-sm overflow-hidden">
+    <div class="px-4 py-4 md:px-5 md:py-5 border-b border-line/70">
+      <h2 class="text-lg font-semibold text-ink tracking-tight">Склады</h2>
+      <p class="text-xs text-ink-muted mt-1.5 max-w-3xl leading-relaxed">Инвентарь (оборудование), материалы и ГСМ — отдельные учётные контуры.</p>
+    </div>
+    <nav class="px-3 py-3 md:px-4 overflow-x-auto" aria-label="Склады: подразделы">
+      <ul class="flex w-max min-w-full flex-wrap gap-1.5 rounded-xl bg-slate-50/95 p-1.5 border border-line/60">
+        <li>
+          <button type="button" data-wh-main="inventory" class="wh-main-tab inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150 shadow-sm mx-subtab--active">Инвентарь</button>
+        </li>
+        <li>
+          <button type="button" data-wh-main="materials" class="wh-main-tab inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900">Материалы</button>
+        </li>
+        <li>
+          <button type="button" data-wh-main="gsm" class="wh-main-tab inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900">ГСМ</button>
+        </li>
+        <li>
+          <button type="button" data-wh-main="history" class="wh-main-tab inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900">История</button>
+        </li>
+      </ul>
+    </nav>
   </div>
-
-  <nav class="flex flex-wrap gap-1.5 p-1 rounded-2xl bg-white border border-gray-200 shadow-mx-sm w-fit max-w-full mb-2" aria-label="Склады: подразделы">
-    <button
-      type="button"
-      data-wh-main="inventory"
-      class="wh-main-tab inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150 shadow-sm mx-subtab--active"
-    >
-      Инвентарь
-    </button>
-    <button
-      type="button"
-      data-wh-main="materials"
-      class="wh-main-tab inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
-    >
-      Материалы
-    </button>
-    <button
-      type="button"
-      data-wh-main="gsm"
-      class="wh-main-tab inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
-    >
-      ГСМ
-    </button>
-    <button
-      type="button"
-      data-wh-main="history"
-      class="wh-main-tab inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
-    >
-      История
-    </button>
-  </nav>
 
   {# ——— Инвентарь (Kanban, без изменений логики) ——— #}
   <div id="wh-panel-inventory" class="wh-main-panel space-y-4">

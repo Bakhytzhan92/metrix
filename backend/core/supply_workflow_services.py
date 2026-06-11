@@ -278,8 +278,10 @@ def reject_supply_request(
     raise ValueError("no_request")
 
 
-def _finalize_new_order_procurement(order: SupplyOrder) -> None:
-    """Позиции заказа считаются полностью закупленными (без ручного ввода в UI)."""
+def mark_order_fully_purchased(order: SupplyOrder) -> SupplyOrder:
+    """Отмечает все позиции заказа как полностью закупленные."""
+    if order.procurement_status == SupplyOrder.PROCUREMENT_PURCHASED:
+        return order
     for item in order.items.select_related("request", "off_estimate_item").all():
         qty = item.quantity or Decimal("0")
         item.quantity_purchased = qty
@@ -295,6 +297,16 @@ def _finalize_new_order_procurement(order: SupplyOrder) -> None:
     order.procurement_status = SupplyOrder.PROCUREMENT_PURCHASED
     order.save(update_fields=["procurement_status"])
     _sync_request_status_from_order(order)
+    log_supply_event(
+        company=order.company,
+        project=order.project,
+        supply_order=order,
+        off_estimate_request=order.off_estimate_request,
+        action=SupplyWorkflowLog.ACTION_FULL_PURCHASE,
+        user=None,
+        comment=order.get_procurement_status_display(),
+    )
+    return order
 
 
 def _create_order_from_estimate_request(
@@ -326,7 +338,6 @@ def _create_order_from_estimate_request(
         user=user,
         comment=f"Заказ по заявке: {req.resource.name}",
     )
-    _finalize_new_order_procurement(order)
     return order
 
 
@@ -364,7 +375,6 @@ def _create_order_from_off_estimate(
         user=user,
         comment=f"Заказ по заявке {req.number}",
     )
-    _finalize_new_order_procurement(order)
     return order
 
 

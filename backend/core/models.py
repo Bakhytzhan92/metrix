@@ -1752,6 +1752,12 @@ class SupplyOrder(models.Model):
     def current_invoice(self):
         return self.current_document("invoice")
 
+    @property
+    def payment_proof_documents(self):
+        return self.documents.filter(
+            doc_type=SupplyOrderDocument.DOC_PAYMENT_PROOF
+        ).order_by("-version", "-id")
+
     def can_edit_payment_info(self) -> bool:
         return self.payment_status in (
             self.PAYMENT_DRAFT,
@@ -1764,9 +1770,11 @@ class SupplyOrderDocument(models.Model):
 
     DOC_KP = "kp"
     DOC_INVOICE = "invoice"
+    DOC_PAYMENT_PROOF = "payment_proof"
     DOC_TYPE_CHOICES = [
         (DOC_KP, "Коммерческое предложение"),
         (DOC_INVOICE, "Счёт на оплату"),
+        (DOC_PAYMENT_PROOF, "Платёжное поручение"),
     ]
 
     order = models.ForeignKey(
@@ -3257,6 +3265,18 @@ class TimesheetMember(models.Model):
         default=WORKPLACE_SITE,
     )
     is_active = models.BooleanField("В табеле", default=True)
+    active_from = models.DateField(
+        "В табеле с",
+        null=True,
+        blank=True,
+        help_text="Первый день учёта в табеле (обычно начало месяца добавления).",
+    )
+    inactive_from = models.DateField(
+        "В табеле до",
+        null=True,
+        blank=True,
+        help_text="Первый день исключения из табеля (удаление действует с этого месяца).",
+    )
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -3267,6 +3287,37 @@ class TimesheetMember(models.Model):
 
     def __str__(self) -> str:
         return f"{self.employee.full_name} ({self.get_workplace_display()})"
+
+
+class TimesheetMonthRoster(models.Model):
+    """Состав табеля на конкретный месяц (офис / объект)."""
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="timesheet_month_rosters"
+    )
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="timesheet_month_rosters"
+    )
+    workplace = models.CharField(
+        "Место учёта",
+        max_length=16,
+        choices=TimesheetMember.WORKPLACE_CHOICES,
+        default=TimesheetMember.WORKPLACE_SITE,
+    )
+    year = models.PositiveSmallIntegerField("Год")
+    month = models.PositiveSmallIntegerField("Месяц")
+
+    class Meta:
+        unique_together = [["company", "employee", "workplace", "year", "month"]]
+        ordering = ["year", "month", "employee__full_name"]
+        verbose_name = "Состав табеля за месяц"
+        verbose_name_plural = "Состав табеля по месяцам"
+
+    def __str__(self) -> str:
+        return (
+            f"{self.employee.full_name} "
+            f"{self.month:02d}.{self.year} ({self.get_workplace_display()})"
+        )
 
 
 class Timesheet(models.Model):

@@ -19,6 +19,7 @@ from .models import (
     TimesheetEntry,
     TimesheetEntryLog,
     TimesheetMember,
+    TimesheetMonthRoster,
 )
 
 TIMESHEET_PLACE_SITE = Timesheet.PLACE_SITE
@@ -52,6 +53,44 @@ def month_bounds(year: int, month: int) -> tuple[date, date, int]:
     return date(year, month, 1), date(year, month, days), days
 
 
+def month_start(year: int, month: int) -> date:
+    return date(year, month, 1)
+
+
+def employee_in_month_roster(
+    company: Company,
+    employee_id: int,
+    year: int,
+    month: int,
+    place: str,
+) -> bool:
+    place = normalize_timesheet_place(place)
+    return TimesheetMonthRoster.objects.filter(
+        company=company,
+        employee_id=employee_id,
+        workplace=place,
+        year=year,
+        month=month,
+    ).exists()
+
+
+def employee_editable_on_day(
+    company: Company,
+    employee_id: int,
+    day: date,
+    place: str,
+) -> bool:
+    place = normalize_timesheet_place(place)
+    if employee_in_month_roster(company, employee_id, day.year, day.month, place):
+        return True
+    return TimesheetEntry.objects.filter(
+        company=company,
+        employee_id=employee_id,
+        date=day,
+        timesheet__place=place,
+    ).exists()
+
+
 def get_or_create_timesheet(
     company: Company,
     year: int,
@@ -68,39 +107,100 @@ def get_or_create_timesheet(
     return ts
 
 
-def company_members_qs(
+def company_members_for_month(
     company: Company,
+    year: int,
+    month: int,
     *,
     place: str = TIMESHEET_PLACE_SITE,
     brigade: str = "",
-):
+) -> list[TimesheetMonthRoster]:
+    """Состав табеля за месяц + сотрудники с отметками за месяц (история)."""
     place = normalize_timesheet_place(place)
-    qs = (
-        TimesheetMember.objects.filter(
+    start, end, _ = month_bounds(year, month)
+    roster_qs = TimesheetMonthRoster.objects.filter(
+        company=company,
+        year=year,
+        month=month,
+        workplace=place,
+        employee__status=Employee.STATUS_ACTIVE,
+    ).select_related("employee")
+    if brigade:
+        roster_qs = roster_qs.filter(employee__brigade__iexact=brigade.strip())
+
+    rows: list[TimesheetMonthRoster] = list(
+        roster_qs.order_by("employee__full_name", "employee_id")
+    )
+    seen = {row.employee_id for row in rows}
+
+    entry_emp_ids = (
+        TimesheetEntry.objects.filter(
             company=company,
-            workplace=place,
-            is_active=True,
+            date__gte=start,
+            date__lte=end,
+            timesheet__place=place,
             employee__status=Employee.STATUS_ACTIVE,
         )
-        .select_related("employee")
-        .order_by("employee__full_name", "employee_id")
+        .exclude(employee_id__in=seen)
+        .values_list("employee_id", flat=True)
+        .distinct()
     )
-    if brigade:
-        qs = qs.filter(employee__brigade__iexact=brigade.strip())
-    return qs
+    if entry_emp_ids:
+        extra = TimesheetMonthRoster.objects.filter(
+            company=company,
+            workplace=place,
+            year=year,
+            month=month,
+            employee_id__in=entry_emp_ids,
+        ).select_related("employee")
+        existing = {r.employee_id for r in rows}
+        for row in extra:
+            if row.employee_id not in existing:
+                rows.append(row)
+                existing.add(row.employee_id)
+        missing = set(entry_emp_ids) - existing
+        for emp_id in missing:
+            emp = Employee.objects.filter(pk=emp_id).first()
+            if emp:
+                rows.append(
+                    TimesheetMonthRoster(
+                        company=company,
+                        employee=emp,
+                        workplace=place,
+                        year=year,
+                        month=month,
+                        pk=0,
+                    )
+                )
+
+    rows.sort(key=lambda r: (r.employee.full_name.lower(), r.employee_id))
+    return rows
 
 
-def serialize_member(tm: TimesheetMember) -> dict[str, Any]:
-    e = tm.employee
+def serialize_roster(row: TimesheetMonthRoster) -> dict[str, Any]:
+    e = row.employee
     return {
         "id": e.pk,
-        "project_employee_id": tm.pk,
+        "project_employee_id": row.pk or None,
         "full_name": e.full_name,
         "position": e.position or "",
         "status": e.status,
         "status_display": e.get_status_display(),
-        "workplace": tm.workplace,
+        "workplace": row.workplace,
     }
+
+
+def serialize_member(tm: TimesheetMember) -> dict[str, Any]:
+    return serialize_roster(
+        TimesheetMonthRoster(
+            company=tm.company,
+            employee=tm.employee,
+            workplace=tm.workplace,
+            year=0,
+            month=0,
+            pk=tm.pk,
+        )
+    )
 
 
 def entries_map_for_month(
@@ -133,9 +233,9 @@ def compute_analytics(
 ) -> dict[str, Any]:
     place = normalize_timesheet_place(place)
     today = today or date.today()
-    members = list(company_members_qs(company, place=place))
-    total_workers = len(members)
-    emp_ids = [tm.employee_id for tm in members]
+    rows = company_members_for_month(company, year, month, place=place)
+    total_workers = len(rows)
+    emp_ids = [row.employee_id for row in rows]
 
     on_site_today = 0
     absent_today = 0
@@ -215,12 +315,7 @@ def upsert_cell(
     ).first()
     if not employee:
         raise ValueError("employee not found")
-    if not TimesheetMember.objects.filter(
-        company=company,
-        employee=employee,
-        workplace=place,
-        is_active=True,
-    ).exists():
+    if not employee_editable_on_day(company, employee.pk, day, place):
         raise ValueError("employee not in timesheet")
 
     ts = get_or_create_timesheet(company, day.year, day.month, place)
@@ -314,7 +409,10 @@ def export_timesheet_xlsx(
     place = normalize_timesheet_place(place)
     place_label = "Офис" if place == TIMESHEET_PLACE_OFFICE else "Объект"
     start, end, days = month_bounds(year, month)
-    employees = [tm.employee for tm in company_members_qs(company, place=place)]
+    employees = [
+        row.employee
+        for row in company_members_for_month(company, year, month, place=place)
+    ]
     entries = entries_map_for_month(company, year, month, place)
 
     wb = Workbook()
@@ -383,8 +481,13 @@ def import_employees_from_xlsx(
     file_obj,
     *,
     place: str = TIMESHEET_PLACE_SITE,
+    year: int | None = None,
+    month: int | None = None,
 ) -> dict[str, int]:
     place = normalize_timesheet_place(place)
+    today = date.today()
+    roster_year = year or today.year
+    roster_month = month or today.month
     wb = load_workbook(file_obj, read_only=True, data_only=True)
     ws = wb.active
     created = 0
@@ -423,25 +526,23 @@ def import_employees_from_xlsx(
             )
             created += 1
 
-        _, was_created = TimesheetMember.objects.get_or_create(
+        TimesheetMember.objects.get_or_create(
             company=company,
             employee=emp,
             workplace=place,
-            defaults={"is_active": True},
+            defaults={
+                "is_active": True,
+                "active_from": month_start(roster_year, roster_month),
+            },
         )
-        if was_created:
-            linked += 1
-        elif not TimesheetMember.objects.filter(
+        _, roster_created = TimesheetMonthRoster.objects.get_or_create(
             company=company,
             employee=emp,
             workplace=place,
-            is_active=True,
-        ).exists():
-            TimesheetMember.objects.filter(
-                company=company,
-                employee=emp,
-                workplace=place,
-            ).update(is_active=True)
+            year=roster_year,
+            month=roster_month,
+        )
+        if roster_created:
             linked += 1
 
     return {"created": created, "linked": linked, "updated": updated}
@@ -464,11 +565,17 @@ def create_timesheet_member(
     brigade: str = "",
     status: str = Employee.STATUS_ACTIVE,
     place: str = TIMESHEET_PLACE_SITE,
-) -> TimesheetMember:
+    year: int | None = None,
+    month: int | None = None,
+) -> TimesheetMonthRoster:
     place = normalize_timesheet_place(place)
     full_name = (full_name or "").strip()
     if not full_name:
         raise ValueError("full_name")
+    today = date.today()
+    y = year or today.year
+    m = month or today.month
+    period_start = month_start(y, m)
 
     emp = Employee.objects.filter(
         company=company, full_name__iexact=full_name
@@ -489,16 +596,24 @@ def create_timesheet_member(
             status=_normalize_employee_status(status),
         )
 
-    tm, _ = TimesheetMember.objects.get_or_create(
+    TimesheetMember.objects.get_or_create(
         company=company,
         employee=emp,
         workplace=place,
-        defaults={"is_active": True},
+        defaults={
+            "is_active": True,
+            "active_from": period_start,
+            "inactive_from": None,
+        },
     )
-    if not tm.is_active:
-        tm.is_active = True
-        tm.save(update_fields=["is_active"])
-    return tm
+    row, _ = TimesheetMonthRoster.objects.get_or_create(
+        company=company,
+        employee=emp,
+        workplace=place,
+        year=y,
+        month=m,
+    )
+    return row
 
 
 @transaction.atomic
@@ -512,14 +627,13 @@ def update_timesheet_member(
     brigade: str | None = None,
     status: str | None = None,
     place: str = TIMESHEET_PLACE_SITE,
-) -> TimesheetMember:
+) -> TimesheetMonthRoster:
     place = normalize_timesheet_place(place)
     tm = (
         TimesheetMember.objects.filter(
             company=company,
             employee_id=employee_id,
             workplace=place,
-            is_active=True,
         )
         .select_related("employee")
         .first()
@@ -549,7 +663,14 @@ def update_timesheet_member(
     if status is not None:
         emp.status = _normalize_employee_status(status)
     emp.save()
-    return tm
+    return TimesheetMonthRoster(
+        company=company,
+        employee=emp,
+        workplace=place,
+        year=0,
+        month=0,
+        pk=tm.pk,
+    )
 
 
 @transaction.atomic
@@ -558,15 +679,22 @@ def remove_timesheet_member(
     employee_id: int,
     *,
     place: str = TIMESHEET_PLACE_SITE,
+    year: int | None = None,
+    month: int | None = None,
 ) -> bool:
     place = normalize_timesheet_place(place)
-    updated = TimesheetMember.objects.filter(
+    today = date.today()
+    y = year or today.year
+    m = month or today.month
+
+    deleted, _ = TimesheetMonthRoster.objects.filter(
         company=company,
         employee_id=employee_id,
         workplace=place,
-        is_active=True,
-    ).update(is_active=False)
-    if not updated:
+        year=y,
+        month=m,
+    ).delete()
+    if not deleted:
         raise ValueError("employee")
     return True
 

@@ -9,7 +9,7 @@ from django.db.models import Max, Prefetch
 from django.utils import timezone
 
 from .models import SupplyOrder, SupplyOrderDocument, SupplyWorkflowLog
-from .supply_workflow_services import log_supply_event
+from .supply_workflow_services import log_supply_event, mark_order_fully_purchased
 
 ALLOWED_DOC_EXTENSIONS = frozenset(
     {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".jpg", ".jpeg", ".png"}
@@ -44,6 +44,38 @@ def get_current_document(order: SupplyOrder, doc_type: str):
 
 def get_document_history(order: SupplyOrder, doc_type: str):
     return order.documents.filter(doc_type=doc_type).order_by("-version", "-id")
+
+
+@transaction.atomic
+def upload_payment_proof(
+    order: SupplyOrder,
+    *,
+    user,
+    uploaded_file,
+) -> SupplyOrderDocument:
+    _validate_upload(uploaded_file)
+    last = (
+        order.documents.filter(doc_type=SupplyOrderDocument.DOC_PAYMENT_PROOF)
+        .aggregate(m=Max("version"))
+        .get("m")
+        or 0
+    )
+    doc = SupplyOrderDocument.objects.create(
+        order=order,
+        doc_type=SupplyOrderDocument.DOC_PAYMENT_PROOF,
+        file=uploaded_file,
+        version=last + 1,
+        uploaded_by=user,
+    )
+    log_supply_event(
+        company=order.company,
+        project=order.project,
+        supply_order=order,
+        action=SupplyWorkflowLog.ACTION_TRANSFERRED_TO_FINANCE,
+        user=user,
+        comment=f"Платёжка v{doc.version} загружена в финансах",
+    )
+    return doc
 
 
 @transaction.atomic
@@ -209,6 +241,7 @@ def approve_order_payment(order: SupplyOrder, *, user) -> SupplyOrder:
         user=user,
         comment="Ожидает оплаты в разделе «Финансы»",
     )
+    mark_order_fully_purchased(order)
     return order
 
 

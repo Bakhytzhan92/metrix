@@ -22,12 +22,12 @@
 </style>
 
 <div class="sched-shell space-y-4">
-  <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-    <div>
-      <h1 class="text-lg font-semibold text-slate-900">График работ</h1>
-      <p class="text-xs text-slate-500 mt-0.5">Планирование по <strong>группам работ</strong> (подзаголовки из сметы): сроки, статус и Gantt — только у групп. Позиции сметы отображаются read-only под группой. Таблица виртуализирована — рендерятся только видимые строки.</p>
+  <div class="rounded-2xl border border-line bg-white/95 shadow-mx-sm px-4 py-4 md:px-5 md:py-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+    <div class="min-w-0">
+      <h2 class="text-lg font-semibold text-ink tracking-tight">График работ</h2>
+      <p class="text-xs text-ink-muted mt-1.5 max-w-3xl leading-relaxed">Планирование по <strong class="text-ink">группам работ</strong> (подзаголовки из сметы): сроки, статус и Gantt — только у групп. Позиции сметы отображаются read-only под группой. Таблица виртуализирована — рендерятся только видимые строки.</p>
     </div>
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap gap-2 shrink-0">
       <a href="{% url 'project_estimate' project.pk %}" class="mx-btn-secondary text-sm">Смета</a>
       <a href="{% url 'estimate_export' project.pk %}" class="mx-btn-secondary text-sm">Экспорт</a>
     </div>

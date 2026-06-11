@@ -1,0 +1,22 @@
+{# Белая панель заголовка раздела + опциональные подвкладки (читаемо на тёмном фоне). #}
+{# section_title, section_description — обязательны; section_actions — HTML кнопок (optional) #}
+<div class="rounded-2xl border border-line bg-white/95 shadow-mx-sm overflow-hidden">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between px-4 py-4 md:px-5 md:py-5 {% if section_tabs %}border-b border-line/70{% endif %}">
+    <div class="min-w-0">
+      <h2 class="text-lg font-semibold text-ink tracking-tight">{{ section_title }}</h2>
+      {% if section_description %}
+      <p class="text-xs text-ink-muted mt-1.5 max-w-3xl leading-relaxed">{{ section_description }}</p>
+      {% endif %}
+    </div>
+    {% if section_actions %}
+    <div class="flex flex-wrap gap-2 shrink-0">{{ section_actions|safe }}</div>
+    {% endif %}
+  </div>
+  {% if section_tabs %}
+  <nav class="px-3 py-3 md:px-4 overflow-x-auto" aria-label="Подразделы">
+    <ul class="flex w-max min-w-full flex-wrap gap-1.5 rounded-xl bg-slate-50/95 p-1.5 border border-line/60">
+      {{ section_tabs|safe }}
+    </ul>
+  </nav>
+  {% endif %}
+</div>

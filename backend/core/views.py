@@ -2128,16 +2128,40 @@ def project_finance_section(request: HttpRequest, pk: int) -> HttpResponse:
         journal_qs = journal_qs.filter(contractor__icontains=contractor_f)
     journal_qs = journal_qs.order_by("-date", "-created_at")
 
+    from django.db.models import Case, IntegerField, Prefetch, When
+
+    from .models import SupplyOrderDocument
+
     supply_for_payment = (
         SupplyOrder.objects.filter(project=project)
+        .filter(payment_approved_at__isnull=False)
         .filter(
             payment_status__in=(
                 SupplyOrder.PAYMENT_AWAITING,
                 SupplyOrder.PAYMENT_PARTIAL,
+                SupplyOrder.PAYMENT_PAID,
             )
         )
-        .prefetch_related("items__request__resource")
-        .order_by("-created_at")
+        .prefetch_related(
+            Prefetch(
+                "documents",
+                queryset=SupplyOrderDocument.objects.select_related(
+                    "uploaded_by"
+                ).order_by("doc_type", "-version", "-id"),
+            ),
+            "items__request__resource",
+            "items__off_estimate_item",
+        )
+        .annotate(
+            _pay_sort=Case(
+                When(payment_status=SupplyOrder.PAYMENT_AWAITING, then=0),
+                When(payment_status=SupplyOrder.PAYMENT_PARTIAL, then=1),
+                When(payment_status=SupplyOrder.PAYMENT_PAID, then=2),
+                default=3,
+                output_field=IntegerField(),
+            )
+        )
+        .order_by("_pay_sort", "-payment_approved_at", "-created_at")
     )
 
     works_for_payment = (
@@ -2396,6 +2420,8 @@ def project_finance_pay_supply_order(
 ) -> HttpResponse:
     from decimal import Decimal
 
+    from . import supply_payment_services as supply_pay
+
     project, err = _get_project_or_403(request, pk)
     if err:
         return err
@@ -2410,7 +2436,7 @@ def project_finance_pay_supply_order(
         return redirect(
             f"{reverse('project_finance_section', args=[project.pk])}?tab=payment_orders"
         )
-    form = ProjectPaySupplyOrderForm(request.POST)
+    form = ProjectPaySupplyOrderForm(request.POST, request.FILES)
     if not form.is_valid():
         for fld, errs in form.errors.items():
             for e in errs:
@@ -2420,6 +2446,7 @@ def project_finance_pay_supply_order(
         )
     amount = form.cleaned_data["amount"]
     pay_date = form.cleaned_data["pay_date"]
+    payment_proof = form.cleaned_data["payment_proof"]
     remaining = order.remaining_amount
     if amount > remaining:
         messages.error(request, "Сумма превышает остаток к оплате.")
@@ -2443,8 +2470,14 @@ def project_finance_pay_supply_order(
         return redirect(
             f"{reverse('project_finance_section', args=[project.pk])}?tab=payment_orders"
         )
+    pay_target = order.payment_amount_display
     try:
         with transaction.atomic():
+            supply_pay.upload_payment_proof(
+                order,
+                user=request.user,
+                uploaded_file=payment_proof,
+            )
             op = FinanceOperation(
                 company=company,
                 account=account,
@@ -2467,14 +2500,26 @@ def project_finance_pay_supply_order(
             op.save()
             paid = (order.paid_amount or Decimal("0")) + amount
             order.paid_amount = paid
-            if paid >= (order.total_amount or Decimal("0")):
+            if paid >= pay_target:
                 order.payment_status = SupplyOrder.PAYMENT_PAID
             else:
                 order.payment_status = SupplyOrder.PAYMENT_PARTIAL
             order.save(update_fields=["paid_amount", "payment_status"])
-        messages.success(request, "Оплата проведена, запись в журнале создана.")
+        messages.success(
+            request,
+            "Оплата зафиксирована: платёжка сохранена, запись добавлена в журнал.",
+        )
     except ValueError as exc:
-        messages.error(request, str(exc))
+        err = str(exc)
+        if err == "no_file":
+            messages.error(request, "Прикрепите платёжное поручение.")
+        elif err == "bad_extension":
+            messages.error(
+                request,
+                "Допустимые форматы платёжки: pdf, doc, docx, xls, xlsx, jpg, png.",
+            )
+        else:
+            messages.error(request, err)
     return redirect(
         f"{reverse('project_finance_section', args=[project.pk])}?tab=payment_orders"
     )

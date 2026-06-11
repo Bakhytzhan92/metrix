@@ -61,8 +61,8 @@ def api_timesheet_month(request: HttpRequest) -> HttpResponse:
     place = _parse_place(request)
 
     employees = [
-        ts.serialize_member(tm)
-        for tm in ts.company_members_qs(company, place=place)
+        ts.serialize_roster(row)
+        for row in ts.company_members_for_month(company, year, month, place=place)
     ]
     _, _, days = ts.month_bounds(year, month)
     entries = ts.entries_map_for_month(company, year, month, place)
@@ -184,11 +184,17 @@ def api_timesheet_import_employees(request: HttpRequest) -> HttpResponse:
     f = request.FILES.get("file")
     if not f:
         return _json({"ok": False, "error": "file"}, status=400)
+    ym = _parse_year_month(request)
+    if not ym:
+        return _json({"ok": False, "error": "year/month"}, status=400)
+    year, month = ym
     try:
         stats = ts.import_employees_from_xlsx(
             company,
             f,
             place=_parse_place(request),
+            year=year,
+            month=month,
         )
     except Exception as e:
         return _json({"ok": False, "error": str(e)}, status=400)
@@ -237,6 +243,10 @@ def api_timesheet_employee_create(request: HttpRequest) -> HttpResponse:
         return _json({"ok": False, "error": "json"}, status=400)
 
     try:
+        year = int(data.get("year") or date.today().year)
+        month = int(data.get("month") or date.today().month)
+        if month < 1 or month > 12:
+            raise ValueError("month")
         tm = ts.create_timesheet_member(
             company,
             full_name=str(data.get("full_name") or ""),
@@ -245,6 +255,8 @@ def api_timesheet_employee_create(request: HttpRequest) -> HttpResponse:
             brigade=str(data.get("brigade") or ""),
             status=str(data.get("status") or Employee.STATUS_ACTIVE),
             place=_parse_place(request, data),
+            year=year,
+            month=month,
         )
     except ValueError as e:
         code = str(e)
@@ -253,7 +265,7 @@ def api_timesheet_employee_create(request: HttpRequest) -> HttpResponse:
             status = 409
         return _json({"ok": False, "error": code}, status=status)
 
-    return _json({"ok": True, "employee": ts.serialize_member(tm)})
+    return _json({"ok": True, "employee": ts.serialize_roster(tm)})
 
 
 @require_http_methods(["POST", "PATCH"])
@@ -287,7 +299,7 @@ def api_timesheet_employee_update(
             status = 409
         return _json({"ok": False, "error": code}, status=status)
 
-    return _json({"ok": True, "employee": ts.serialize_member(tm)})
+    return _json({"ok": True, "employee": ts.serialize_roster(tm)})
 
 
 @require_http_methods(["POST", "DELETE"])
@@ -305,10 +317,16 @@ def api_timesheet_employee_remove(
         except json.JSONDecodeError:
             data = {}
     try:
+        year = int(data.get("year") or date.today().year)
+        month = int(data.get("month") or date.today().month)
+        if month < 1 or month > 12:
+            raise ValueError("month")
         ts.remove_timesheet_member(
             company,
             employee_id,
             place=_parse_place(request, data),
+            year=year,
+            month=month,
         )
     except ValueError:
         return _json({"ok": False, "error": "employee"}, status=404)

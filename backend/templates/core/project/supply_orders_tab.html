@@ -99,63 +99,58 @@
       {% endif %}
 
       {% if o.can_edit_payment_info and can_procure_supply %}
-      <form method="post" action="{% url 'project_supply_order_update_payment_info' project.pk o.pk %}" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
+      <form method="post" action="{% url 'project_supply_order_update_payment_info' project.pk o.pk %}" enctype="multipart/form-data">
         {% csrf_token %}
-        <div>
-          <label class="block text-[10px] text-slate-500 mb-0.5">Поставщик</label>
-          <input type="text" name="supplier" value="{{ o.supplier }}" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" />
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-4">
+          <div>
+            <label class="block text-[10px] text-slate-500 mb-0.5">Поставщик</label>
+            <input type="text" name="supplier" value="{{ o.supplier }}" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-500 mb-0.5">Сумма закупки, ₸</label>
+            <input type="number" step="0.01" min="0" name="purchase_amount" value="{% if o.purchase_amount %}{{ o.purchase_amount }}{% endif %}" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs tabular-nums" />
+          </div>
+          <div>
+            <label class="block text-[10px] text-slate-500 mb-0.5">Плановая дата поставки</label>
+            <input type="date" name="planned_delivery_date" value="{% if o.planned_delivery_date %}{{ o.planned_delivery_date|date:'Y-m-d' }}{% endif %}" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" />
+          </div>
+          <div class="sm:col-span-2 lg:col-span-4">
+            <label class="block text-[10px] text-slate-500 mb-0.5">Комментарий снабженца</label>
+            <textarea name="procurement_note" rows="2" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs">{{ o.procurement_note }}</textarea>
+          </div>
+          <div class="sm:col-span-2 lg:col-span-4">
+            <button type="submit" name="action" value="save" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Сохранить данные</button>
+          </div>
         </div>
-        <div>
-          <label class="block text-[10px] text-slate-500 mb-0.5">Сумма закупки, ₸</label>
-          <input type="number" step="0.01" min="0" name="purchase_amount" value="{% if o.purchase_amount %}{{ o.purchase_amount }}{% endif %}" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs tabular-nums" />
-        </div>
-        <div>
-          <label class="block text-[10px] text-slate-500 mb-0.5">Плановая дата поставки</label>
-          <input type="date" name="planned_delivery_date" value="{% if o.planned_delivery_date %}{{ o.planned_delivery_date|date:'Y-m-d' }}{% endif %}" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" />
-        </div>
-        <div class="sm:col-span-2 lg:col-span-4">
-          <label class="block text-[10px] text-slate-500 mb-0.5">Комментарий снабженца</label>
-          <textarea name="procurement_note" rows="2" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs">{{ o.procurement_note }}</textarea>
-        </div>
-        <div class="sm:col-span-2 lg:col-span-4">
-          <button type="submit" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Сохранить данные</button>
-        </div>
-      </form>
 
-      <p class="text-[10px] text-slate-500 mb-3">Достаточно загрузить КП или счёт (можно оба).</p>
-      <div class="grid gap-4 sm:grid-cols-2 mb-4">
-        <div class="rounded-lg border border-slate-200 bg-white p-3">
-          <p class="text-xs font-medium text-slate-700 mb-2">Коммерческое предложение (КП)</p>
-          {% if o.current_kp %}
-          <p class="text-xs text-slate-600 mb-2">Текущая версия: <a href="{{ o.current_kp.file.url }}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">v{{ o.current_kp.version }}</a></p>
-          {% endif %}
-          <form method="post" action="{% url 'project_supply_order_upload_document' project.pk o.pk %}" enctype="multipart/form-data" class="flex flex-wrap items-center gap-2">
-            {% csrf_token %}
-            <input type="hidden" name="doc_type" value="kp" />
-            <input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" required class="text-xs max-w-full" />
-            <button type="submit" class="rounded-md bg-slate-800 px-2 py-1 text-xs text-white hover:bg-slate-900">{% if o.current_kp %}Заменить{% else %}Загрузить{% endif %}</button>
-          </form>
+        <p class="text-[10px] text-slate-500 mb-3">Достаточно загрузить КП или счёт (можно оба). Данные заказа сохраняются вместе с загрузкой файла.</p>
+        <div class="grid gap-4 sm:grid-cols-2 mb-4">
+          <div class="rounded-lg border border-slate-200 bg-white p-3">
+            <p class="text-xs font-medium text-slate-700 mb-2">Коммерческое предложение (КП)</p>
+            {% if o.current_kp %}
+            <p class="text-xs text-slate-600 mb-2">Текущая версия: <a href="{{ o.current_kp.file.url }}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">v{{ o.current_kp.version }}</a></p>
+            {% endif %}
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="file" name="kp_file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" class="text-xs max-w-full" />
+              <button type="submit" name="action" value="upload_kp" class="rounded-md bg-slate-800 px-2 py-1 text-xs text-white hover:bg-slate-900">{% if o.current_kp %}Заменить{% else %}Загрузить{% endif %}</button>
+            </div>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-white p-3">
+            <p class="text-xs font-medium text-slate-700 mb-2">Счёт на оплату</p>
+            {% if o.current_invoice %}
+            <p class="text-xs text-slate-600 mb-2">Текущая версия: <a href="{{ o.current_invoice.file.url }}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">v{{ o.current_invoice.version }}</a></p>
+            {% endif %}
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="file" name="invoice_file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" class="text-xs max-w-full" />
+              <button type="submit" name="action" value="upload_invoice" class="rounded-md bg-slate-800 px-2 py-1 text-xs text-white hover:bg-slate-900">{% if o.current_invoice %}Заменить{% else %}Загрузить{% endif %}</button>
+            </div>
+          </div>
         </div>
-        <div class="rounded-lg border border-slate-200 bg-white p-3">
-          <p class="text-xs font-medium text-slate-700 mb-2">Счёт на оплату</p>
-          {% if o.current_invoice %}
-          <p class="text-xs text-slate-600 mb-2">Текущая версия: <a href="{{ o.current_invoice.file.url }}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">v{{ o.current_invoice.version }}</a></p>
-          {% endif %}
-          <form method="post" action="{% url 'project_supply_order_upload_document' project.pk o.pk %}" enctype="multipart/form-data" class="flex flex-wrap items-center gap-2">
-            {% csrf_token %}
-            <input type="hidden" name="doc_type" value="invoice" />
-            <input type="file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" required class="text-xs max-w-full" />
-            <button type="submit" class="rounded-md bg-slate-800 px-2 py-1 text-xs text-white hover:bg-slate-900">{% if o.current_invoice %}Заменить{% else %}Загрузить{% endif %}</button>
-          </form>
-        </div>
-      </div>
 
-      {% if o.payment_status == 'draft' or o.payment_status == 'payment_rejected' %}
-      <form method="post" action="{% url 'project_supply_order_submit_payment_approval' project.pk o.pk %}" class="inline" onsubmit="return confirm('Отправить заказ на согласование оплаты?');">
-        {% csrf_token %}
-        <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700">Отправить на согласование оплаты</button>
+        {% if o.payment_status == 'draft' or o.payment_status == 'payment_rejected' %}
+        <button type="submit" name="action" value="submit_approval" class="rounded-md bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700" onclick="return confirm('Отправить заказ на согласование оплаты?');">Отправить на согласование оплаты</button>
+        {% endif %}
       </form>
-      {% endif %}
 
       {% elif o.payment_status == 'pending_payment_approval' %}
       <p class="text-xs text-amber-800">Заказ на согласовании оплаты.{% if can_approve_procurement %} <a href="?tab=procurement_approval" class="text-indigo-600 hover:underline">Перейти к согласованию</a>{% endif %}</p>
