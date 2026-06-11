@@ -1,5 +1,8 @@
 {
   "$schema": "https://schema.railpack.com",
+  "packages": {
+    "python": "3.12"
+  },
   "deploy": {
     "startCommand": "if [ -f manage.py ]; then python manage.py migrate --noinput && python -m gunicorn gectaro_saas.wsgi:application --bind 0.0.0.0:$PORT --timeout 180 --graceful-timeout 60; else cd backend && python manage.py migrate --noinput && python -m gunicorn gectaro_saas.wsgi:application --bind 0.0.0.0:$PORT --timeout 180 --graceful-timeout 60; fi"
   }
