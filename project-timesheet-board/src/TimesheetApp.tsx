@@ -22,6 +22,7 @@ import type {
 
 const ROW_H = 44;
 const LEFT_W = 180;
+const TOTAL_W = 56;
 const MIN_CELL_W = 20;
 const HEAD_H = 40;
 const GRID_LINE = "#cbd5e1";
@@ -45,6 +46,22 @@ function entryKey(employeeId: number, day: number, year: number, month: number) 
   const d = String(day).padStart(2, "0");
   const m = String(month).padStart(2, "0");
   return `${employeeId}:${year}-${m}-${d}`;
+}
+
+function employeeMonthHours(
+  employeeId: number,
+  days: number,
+  year: number,
+  month: number,
+  entries: Record<string, string>,
+): number {
+  let total = 0;
+  for (let day = 1; day <= days; day += 1) {
+    const status = entries[entryKey(employeeId, day, year, month)] || "";
+    if (status === "present") total += 10;
+    else if (status === "half") total += 5;
+  }
+  return total;
 }
 
 function dayIso(year: number, month: number, day: number): string {
@@ -172,7 +189,8 @@ const EmployeeRow = memo(function EmployeeRow({
   todayIso: string;
 }) {
   const timelineW = stretch ? undefined : days * cellW;
-  const paneW = Math.max(0, viewportW - LEFT_W);
+  const paneW = Math.max(0, viewportW - LEFT_W - TOTAL_W);
+  const monthHours = employeeMonthHours(employee.id, days, year, month, entries);
   return (
     <div
       className="flex box-border bg-white w-full"
@@ -270,6 +288,17 @@ const EmployeeRow = memo(function EmployeeRow({
             ),
           )}
         </div>
+      </div>
+      <div
+        className="shrink-0 flex items-center justify-center text-xs font-semibold tabular-nums text-violet-900 bg-violet-50/80 box-border"
+        style={{
+          width: TOTAL_W,
+          height: ROW_H,
+          borderLeft: `1px solid ${GRID_LINE}`,
+        }}
+        title="Я — 10 ч, П — 5 ч"
+      >
+        {monthHours}
       </div>
     </div>
   );
@@ -499,7 +528,7 @@ export function TimesheetApp({
     if (showLogs) loadLogs();
   }, [showLogs, loadLogs]);
 
-  const paneW = Math.max(0, viewportW - LEFT_W);
+  const paneW = Math.max(0, viewportW - LEFT_W - TOTAL_W);
   const cellW = fitCellWidth(paneW, days);
   const stretch = paneW > 0 && paneW / days >= MIN_CELL_W;
   const timelineW = days * cellW;
@@ -1048,6 +1077,17 @@ export function TimesheetApp({
                     );
                   })}
                 </div>
+              </div>
+              <div
+                className="shrink-0 flex flex-col items-center justify-center text-[10px] font-semibold text-violet-800 bg-violet-50/80 box-border"
+                style={{
+                  width: TOTAL_W,
+                  height: HEAD_H,
+                  borderLeft: `1px solid ${GRID_LINE}`,
+                }}
+                title="Я — 10 ч, П — 5 ч"
+              >
+                <span>Часы</span>
               </div>
             </div>
             <div className="flex-1 min-h-0 w-full">

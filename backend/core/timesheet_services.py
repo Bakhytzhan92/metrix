@@ -46,6 +46,25 @@ STATUS_META: list[dict[str, str]] = [
 STATUS_SHORT_BY_CODE = {m["code"]: m["short"] for m in STATUS_META}
 STATUS_LABEL_BY_CODE = {m["code"]: m["label"] for m in STATUS_META}
 VALID_STATUS_CODES = set(STATUS_SHORT_BY_CODE)
+STATUS_HOURS_BY_CODE = {
+    TimesheetEntry.STATUS_PRESENT: 10,
+    TimesheetEntry.STATUS_HALF: 5,
+}
+
+
+def employee_month_hours(
+    employee_id: int,
+    year: int,
+    month: int,
+    days: int,
+    entries: dict[str, str],
+) -> int:
+    """Сумма часов за месяц: Я — 10, П — 5, остальное — 0."""
+    total = 0
+    for d in range(1, days + 1):
+        key = f"{employee_id}:{date(year, month, d).isoformat()}"
+        total += STATUS_HOURS_BY_CODE.get(entries.get(key, ""), 0)
+    return total
 
 
 def month_bounds(year: int, month: int) -> tuple[date, date, int]:
@@ -423,11 +442,11 @@ def export_timesheet_xlsx(
         f"ТАБЕЛЬ учёта рабочего времени ({place_label}) — "
         f"{company.name} — {month:02d}.{year}"
     )
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=days + 2)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=days + 3)
     ws["A1"] = title
     ws["A1"].font = Font(bold=True, size=12)
 
-    headers = ["№", "ФИО", "Должность"] + [str(d) for d in range(1, days + 1)]
+    headers = ["№", "ФИО", "Должность"] + [str(d) for d in range(1, days + 1)] + ["Часы"]
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=3, column=col, value=h)
         cell.font = Font(bold=True)
@@ -459,6 +478,11 @@ def export_timesheet_xlsx(
             cell.alignment = Alignment(horizontal="center")
             if st in fill_map:
                 cell.fill = fill_map[st]
+        hours = employee_month_hours(emp.pk, year, month, days, entries)
+        hours_col = 3 + days + 1
+        hours_cell = ws.cell(row=row, column=hours_col, value=hours)
+        hours_cell.alignment = Alignment(horizontal="center")
+        hours_cell.font = Font(bold=True)
 
     legend_row = 3 + len(employees) + 2
     ws.cell(row=legend_row, column=1, value="Условные обозначения:")
@@ -468,6 +492,11 @@ def export_timesheet_xlsx(
             column=2 + j,
             value=f"{m['short']} — {m['label']}",
         )
+    ws.cell(
+        row=legend_row + 1,
+        column=1,
+        value="Часы: Я — 10, П — 5, остальное — 0",
+    )
 
     buf = BytesIO()
     wb.save(buf)
