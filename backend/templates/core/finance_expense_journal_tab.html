@@ -1,0 +1,624 @@
+{% load static %}
+<div id="expense-journal-app" class="space-y-4" data-can-edit="{% if can_edit_expense_journal %}1{% else %}0{% endif %}">
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="rounded-xl border border-line bg-white p-4 shadow-mx-sm">
+      <p class="text-xs font-medium text-ink-muted">Расход сегодня</p>
+      <p id="ej-kpi-today" class="mt-1 text-lg font-semibold tabular-nums text-red-700">0,00 ₸</p>
+    </div>
+    <div class="rounded-xl border border-line bg-white p-4 shadow-mx-sm">
+      <p class="text-xs font-medium text-ink-muted">Расход за неделю</p>
+      <p id="ej-kpi-week" class="mt-1 text-lg font-semibold tabular-nums text-red-700">0,00 ₸</p>
+    </div>
+    <div class="rounded-xl border border-line bg-white p-4 shadow-mx-sm">
+      <p class="text-xs font-medium text-ink-muted">Расход за месяц</p>
+      <p id="ej-kpi-month" class="mt-1 text-lg font-semibold tabular-nums text-red-700">0,00 ₸</p>
+    </div>
+    <div class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 shadow-mx-sm">
+      <p class="text-xs font-medium text-indigo-800">Расход по проекту</p>
+      <p id="ej-kpi-project" class="mt-1 text-lg font-semibold tabular-nums text-indigo-900">0,00 ₸</p>
+      <p id="ej-kpi-project-hint" class="text-[10px] text-indigo-700/80 mt-0.5">Выберите проект в фильтре</p>
+    </div>
+  </div>
+
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <form id="ej-filters" class="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-white p-4 shadow-mx-sm text-sm flex-1">
+      <div>
+        <label class="block text-xs text-ink-muted mb-1">Период с</label>
+        <input type="date" name="date_from" id="ej-date-from" class="rounded-md border border-line px-2 py-1.5 text-sm" />
+      </div>
+      <div>
+        <label class="block text-xs text-ink-muted mb-1">По</label>
+        <input type="date" name="date_to" id="ej-date-to" class="rounded-md border border-line px-2 py-1.5 text-sm" />
+      </div>
+      <div>
+        <label class="block text-xs text-ink-muted mb-1">Проект</label>
+        <select name="project" id="ej-filter-project" class="rounded-md border border-line px-2 py-1.5 text-sm min-w-[10rem]">
+          <option value="">Все</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-ink-muted mb-1">Ответственное лицо</label>
+        <select name="responsible" id="ej-filter-responsible" class="rounded-md border border-line px-2 py-1.5 text-sm min-w-[10rem]">
+          <option value="">Все</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-ink-muted mb-1">Способ оплаты</label>
+        <select name="payment_method" id="ej-filter-payment" class="rounded-md border border-line px-2 py-1.5 text-sm">
+          <option value="">Все</option>
+        </select>
+      </div>
+      <button type="button" id="ej-apply-filters" class="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-white hover:bg-slate-900">Применить</button>
+    </form>
+    <div class="flex flex-wrap gap-2 shrink-0">
+      {% if can_edit_expense_journal %}
+      <button type="button" id="ej-add-row" class="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white shadow-sm hover:opacity-95">+ Добавить расход</button>
+      {% endif %}
+      <a href="#" id="ej-export-xlsx" class="rounded-lg border border-line bg-white px-3 py-2 text-xs font-medium text-ink hover:bg-slate-50">Экспорт Excel</a>
+      <a href="#" id="ej-export-pdf" class="rounded-lg border border-line bg-white px-3 py-2 text-xs font-medium text-ink hover:bg-slate-50">Экспорт PDF</a>
+    </div>
+  </div>
+
+  <p id="ej-status" class="text-xs text-ink-muted min-h-[1rem]"></p>
+
+  <div class="overflow-x-auto rounded-xl border border-line bg-white shadow-mx-sm">
+    <table class="min-w-full text-sm ej-sheet-table">
+      <thead>
+        <tr class="bg-[#5B4CF0] text-white text-xs">
+          <th class="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Дата</th>
+          <th class="px-3 py-2.5 text-right font-semibold whitespace-nowrap">Сумма расхода</th>
+          <th class="px-3 py-2.5 text-left font-semibold min-w-[12rem]">Назначение платежа</th>
+          <th class="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Ответственное лицо</th>
+          <th class="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Способ оплаты</th>
+          <th class="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Проект</th>
+          <th class="px-3 py-2.5 text-center font-semibold whitespace-nowrap w-24">Чек</th>
+          {% if can_edit_expense_journal %}<th class="px-2 py-2.5 w-10"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody id="ej-tbody"></tbody>
+    </table>
+    <div id="ej-empty" class="hidden py-12 text-center text-sm text-ink-muted">Нет записей за выбранный период.</div>
+  </div>
+</div>
+
+<style>
+  .ej-sheet-table tbody tr:nth-child(even) { background: #f8fafc; }
+  .ej-sheet-table tbody tr:hover { background: #f1f5f9; }
+  .ej-sheet-table input, .ej-sheet-table select, .ej-sheet-table textarea {
+    width: 100%;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.35rem;
+    font-size: 0.8125rem;
+  }
+  .ej-sheet-table input:focus, .ej-sheet-table select:focus, .ej-sheet-table textarea:focus {
+    outline: none;
+    border-color: #c7d2fe;
+    background: #fff;
+    box-shadow: 0 0 0 2px rgba(91, 76, 240, 0.15);
+  }
+  .ej-pill-select {
+    border-radius: 9999px !important;
+    font-weight: 600;
+    padding-left: 0.65rem !important;
+    padding-right: 1.5rem !important;
+    cursor: pointer;
+  }
+  .ej-receipt-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    line-height: 1.2;
+  }
+  .ej-pdf-preview {
+    position: fixed;
+    z-index: 120;
+    width: 220px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+    overflow: hidden;
+    pointer-events: auto;
+  }
+  .ej-pdf-preview.hidden { display: none; }
+  .ej-pdf-preview-body {
+    position: relative;
+    width: 220px;
+    min-height: 120px;
+    max-height: 320px;
+    overflow: auto;
+    background: #fff;
+  }
+  .ej-pdf-preview img {
+    display: block;
+    width: 220px;
+    height: auto;
+    max-width: none;
+  }
+  .ej-pdf-preview-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    font-size: 11px;
+    color: #94a3b8;
+    text-align: center;
+    background: #f8fafc;
+    z-index: 1;
+  }
+  .ej-pdf-preview-caption {
+    padding: 0.35rem 0.5rem;
+    font-size: 10px;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-top: 1px solid #f1f5f9;
+    background: #fafafa;
+  }
+</style>
+
+<script>
+(function () {
+  const root = document.getElementById("expense-journal-app");
+  if (!root) return;
+  const canEdit = root.dataset.canEdit === "1";
+  const tbody = document.getElementById("ej-tbody");
+  const emptyEl = document.getElementById("ej-empty");
+  const statusEl = document.getElementById("ej-status");
+  let employees = [];
+  let projects = [];
+  let paymentMethods = [];
+  let saveTimers = {};
+  let pdfPreviewEl = null;
+  let pdfPreviewHideTimer = null;
+  let pdfPreviewBlobUrl = null;
+  let pdfPreviewFetchToken = 0;
+
+  function csrf() {
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+
+  function fmtMoney(v) {
+    const n = parseFloat(String(v || 0).replace(/\s/g, "").replace(",", "."));
+    if (!Number.isFinite(n)) return "0,00 ₸";
+    const parts = n.toFixed(2).split(".");
+    const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    return `${intPart},${parts[1]} ₸`;
+  }
+
+  function fmtAmountInput(v) {
+    const n = parseFloat(String(v || 0).replace(/\s/g, "").replace(",", "."));
+    if (!Number.isFinite(n)) return "";
+    const parts = n.toFixed(2).split(".");
+    const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    return `${intPart},${parts[1]}`;
+  }
+
+  function parseAmountInput(raw) {
+    return String(raw || "").replace(/\s/g, "").replace(",", ".");
+  }
+
+  function employeeStyle(id) {
+    const e = employees.find((x) => x.id === Number(id));
+    return e ? e.pill : { bg: "#f1f5f9", text: "#475569" };
+  }
+
+  function paymentStyle(code) {
+    const map = {
+      kaspi: ["#ef4444", "#fff"],
+      cash: ["#22c55e", "#fff"],
+      halyk: ["#16a34a", "#fff"],
+      accountable: ["#f59e0b", "#1f2937"],
+    };
+    const s = map[code] || ["#f1f5f9", "#475569"];
+    return { bg: s[0], text: s[1] };
+  }
+
+  function applyPillStyle(sel, style) {
+    sel.style.backgroundColor = style.bg;
+    sel.style.color = style.text;
+    sel.style.borderColor = style.bg;
+  }
+
+  function filterParams() {
+    const p = new URLSearchParams();
+    const df = document.getElementById("ej-date-from").value;
+    const dt = document.getElementById("ej-date-to").value;
+    const pr = document.getElementById("ej-filter-project").value;
+    const resp = document.getElementById("ej-filter-responsible").value;
+    const pay = document.getElementById("ej-filter-payment").value;
+    if (df) p.set("date_from", df);
+    if (dt) p.set("date_to", dt);
+    if (pr) p.set("project", pr);
+    if (resp) p.set("responsible", resp);
+    if (pay) p.set("payment_method", pay);
+    return p;
+  }
+
+  function setStatus(msg, ok) {
+    statusEl.textContent = msg || "";
+    statusEl.className = "text-xs min-h-[1rem] " + (ok === false ? "text-red-600" : ok ? "text-emerald-700" : "text-ink-muted");
+  }
+
+  function ensurePdfPreviewEl() {
+    if (pdfPreviewEl) return pdfPreviewEl;
+    pdfPreviewEl = document.createElement("div");
+    pdfPreviewEl.id = "ej-pdf-preview";
+    pdfPreviewEl.className = "ej-pdf-preview hidden";
+    pdfPreviewEl.innerHTML =
+      '<div class="ej-pdf-preview-body"><div class="ej-pdf-preview-loading">Загрузка…</div><img alt="Предпросмотр чека" style="display:none" /></div><div class="ej-pdf-preview-caption"></div>';
+    pdfPreviewEl.addEventListener("mouseenter", () => clearTimeout(pdfPreviewHideTimer));
+    pdfPreviewEl.addEventListener("mouseleave", hidePdfPreview);
+    document.body.appendChild(pdfPreviewEl);
+    return pdfPreviewEl;
+  }
+
+  function positionPdfPreview(el, anchor) {
+    const rect = anchor.getBoundingClientRect();
+    const w = 220;
+    const h = 340;
+    let left = rect.right + 10;
+    let top = rect.top + rect.height / 2 - h / 2;
+    if (left + w > window.innerWidth - 8) left = rect.left - w - 10;
+    if (left < 8) left = 8;
+    if (top + h > window.innerHeight - 8) top = window.innerHeight - h - 8;
+    if (top < 8) top = 8;
+    el.style.left = left + "px";
+    el.style.top = top + "px";
+  }
+
+  function setPreviewLoading(loading, img, message) {
+    loading.textContent = message || "Загрузка…";
+    loading.style.display = "flex";
+    img.style.display = "none";
+    img.removeAttribute("src");
+  }
+
+  function setPreviewImage(loading, img) {
+    loading.style.display = "none";
+    img.style.display = "block";
+  }
+
+  async function showPdfPreview(link) {
+    const previewUrl = link.dataset.previewUrl || link.getAttribute("href");
+    if (!previewUrl) return;
+    const el = ensurePdfPreviewEl();
+    const loading = el.querySelector(".ej-pdf-preview-loading");
+    const img = el.querySelector("img");
+    const caption = el.querySelector(".ej-pdf-preview-caption");
+    const cacheKey = previewUrl + "|" + (link.getAttribute("title") || "");
+    caption.textContent = link.getAttribute("title") || link.textContent || "PDF";
+    positionPdfPreview(el, link);
+    el.classList.remove("hidden");
+
+    if (el.dataset.loadedUrl === cacheKey && img.getAttribute("src")) {
+      setPreviewImage(loading, img);
+      return;
+    }
+
+    const token = ++pdfPreviewFetchToken;
+    setPreviewLoading(loading, img, "Загрузка…");
+    el.dataset.loadedUrl = "";
+
+    try {
+      const resp = await fetch(previewUrl, {
+        credentials: "same-origin",
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
+      if (!resp.ok) throw new Error("fetch_failed");
+      const blob = await resp.blob();
+      if (token !== pdfPreviewFetchToken) return;
+      if (!blob.size || !blob.type.startsWith("image/")) throw new Error("bad_image");
+
+      if (pdfPreviewBlobUrl) {
+        URL.revokeObjectURL(pdfPreviewBlobUrl);
+        pdfPreviewBlobUrl = null;
+      }
+      pdfPreviewBlobUrl = URL.createObjectURL(blob);
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("img_decode"));
+        img.src = pdfPreviewBlobUrl;
+      });
+      if (typeof img.decode === "function") {
+        try { await img.decode(); } catch (_) { /* ignore */ }
+      }
+      if (token !== pdfPreviewFetchToken) return;
+      el.dataset.loadedUrl = cacheKey;
+      setPreviewImage(loading, img);
+    } catch (e) {
+      if (token !== pdfPreviewFetchToken) return;
+      setPreviewLoading(loading, img, "Не удалось показать PDF");
+    }
+  }
+
+  function hidePdfPreview() {
+    clearTimeout(pdfPreviewHideTimer);
+    pdfPreviewHideTimer = setTimeout(() => {
+      if (pdfPreviewEl) pdfPreviewEl.classList.add("hidden");
+    }, 180);
+  }
+
+  function wireReceiptPreview(link) {
+    if (!link || link.dataset.previewWired === "1") return;
+    link.dataset.previewWired = "1";
+    link.addEventListener("mouseenter", () => {
+      clearTimeout(pdfPreviewHideTimer);
+      showPdfPreview(link);
+    });
+    link.addEventListener("mouseleave", hidePdfPreview);
+  }
+
+  function buildSelectOptions(items, valueKey, labelKey, selected, emptyLabel) {
+    let html = `<option value="">${emptyLabel || "—"}</option>`;
+    for (const it of items) {
+      const v = it[valueKey];
+      const sel = String(v) === String(selected || "") ? " selected" : "";
+      html += `<option value="${v}"${sel}>${it[labelKey]}</option>`;
+    }
+    return html;
+  }
+
+  function renderRow(entry) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = entry.id;
+    const ro = canEdit ? "" : " disabled";
+    const empOpts = buildSelectOptions(employees, "id", "full_name", entry.responsible_id, "—");
+    const payOpts = buildSelectOptions(paymentMethods, "code", "label", entry.payment_method, "—");
+    const projOpts = buildSelectOptions(projects, "id", "name", entry.project_id, "—");
+    tr.innerHTML = `
+      <td class="px-2 py-1"><input type="date" data-f="date" value="${entry.date}"${ro} /></td>
+      <td class="px-2 py-1"><input type="text" data-f="amount" inputmode="decimal" class="text-right tabular-nums" value="${fmtAmountInput(entry.amount)}"${ro} /></td>
+      <td class="px-2 py-1"><input type="text" data-f="purpose" value="${(entry.purpose || "").replace(/"/g, "&quot;")}"${ro} /></td>
+      <td class="px-2 py-1"><select data-f="responsible_id" class="ej-pill-select"${ro}>${empOpts}</select></td>
+      <td class="px-2 py-1"><select data-f="payment_method" class="ej-pill-select"${ro}>${payOpts}</select></td>
+      <td class="px-2 py-1"><select data-f="project_id"${ro}>${projOpts}</select></td>
+      <td class="px-2 py-1 text-center align-middle">
+        <div class="ej-receipt-wrap min-w-[5.5rem]">
+          ${entry.receipt_url
+            ? `<a href="${entry.receipt_url}" data-preview-url="${entry.receipt_preview_url || entry.receipt_url}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline font-medium ej-receipt-link" title="${(entry.receipt_name || "PDF").replace(/"/g, "&quot;")}">PDF</a>`
+            : `<span class="text-slate-400 ej-receipt-empty">—</span>`}
+          ${canEdit ? '<label class="cursor-pointer text-indigo-600 hover:text-indigo-800 ej-receipt-upload-label"><input type="file" accept=".pdf,application/pdf" class="hidden ej-receipt-file" />Загрузить</label>' : ""}
+        </div>
+      </td>
+      ${canEdit ? '<td class="px-1 py-1 text-center"><button type="button" class="ej-del text-red-500 hover:text-red-700 text-xs" title="Удалить">×</button></td>' : ""}
+    `;
+    const empSel = tr.querySelector('[data-f="responsible_id"]');
+    const paySel = tr.querySelector('[data-f="payment_method"]');
+    applyPillStyle(empSel, employeeStyle(entry.responsible_id));
+    applyPillStyle(paySel, paymentStyle(entry.payment_method));
+    wireReceiptPreview(tr.querySelector(".ej-receipt-link"));
+    if (canEdit) {
+      tr.querySelectorAll("[data-f]").forEach((el) => wireFieldEvents(entry.id, tr, el));
+      empSel.addEventListener("change", () => applyPillStyle(empSel, employeeStyle(empSel.value)));
+      paySel.addEventListener("change", () => applyPillStyle(paySel, paymentStyle(paySel.value)));
+      tr.querySelector(".ej-del")?.addEventListener("click", () => deleteRow(entry.id, tr));
+      tr.querySelector(".ej-receipt-file")?.addEventListener("change", (ev) => {
+        const file = ev.target.files?.[0];
+        if (file) uploadReceipt(entry.id, file, tr);
+        ev.target.value = "";
+      });
+    }
+    return tr;
+  }
+
+  function updateReceiptCell(tr, entry) {
+    const link = tr.querySelector(".ej-receipt-link");
+    const empty = tr.querySelector(".ej-receipt-empty");
+    const wrap = tr.querySelector(".ej-receipt-wrap");
+    if (entry.receipt_url) {
+      if (empty) empty.remove();
+      if (link) {
+        link.href = entry.receipt_url;
+        link.dataset.previewUrl = entry.receipt_preview_url || entry.receipt_url;
+        link.title = entry.receipt_name || "PDF";
+        delete link.dataset.previewWired;
+      } else if (wrap) {
+        const a = document.createElement("a");
+        a.href = entry.receipt_url;
+        a.dataset.previewUrl = entry.receipt_preview_url || entry.receipt_url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.className = "text-indigo-600 hover:underline font-medium ej-receipt-link";
+        a.title = entry.receipt_name || "PDF";
+        a.textContent = "PDF";
+        const uploadLabel = wrap.querySelector(".ej-receipt-upload-label");
+        wrap.insertBefore(a, uploadLabel);
+        wireReceiptPreview(a);
+      }
+    } else if (link) {
+      wireReceiptPreview(link);
+    }
+  }
+
+  const TEXT_FIELDS = new Set(["amount", "purpose"]);
+
+  function wireFieldEvents(id, tr, el) {
+    const field = el.dataset.f;
+    if (TEXT_FIELDS.has(field)) {
+      el.addEventListener("input", () => scheduleSave(id, tr, 1500));
+      el.addEventListener("blur", () => {
+        clearTimeout(saveTimers[id]);
+        saveRow(id, tr);
+      });
+      return;
+    }
+    el.addEventListener("change", () => {
+      clearTimeout(saveTimers[id]);
+      saveRow(id, tr);
+    });
+  }
+
+  function scheduleSave(id, tr, delay) {
+    clearTimeout(saveTimers[id]);
+    saveTimers[id] = setTimeout(() => saveRow(id, tr), delay || 1500);
+  }
+
+  async function refreshKpis() {
+    const r = await fetch(`/api/finance/expense-journal/?${filterParams()}`, {
+      credentials: "same-origin",
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+    });
+    const data = await r.json();
+    if (data.ok) updateKpis(data.kpis || {});
+  }
+
+  async function uploadReceipt(id, file, tr) {
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      setStatus("Только PDF", false);
+      return;
+    }
+    setStatus("Загрузка PDF…");
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await fetch(`/api/finance/expense-journal/${id}/receipt/`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRFToken": csrf(), "X-Requested-With": "XMLHttpRequest" },
+        body: fd,
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || "upload failed");
+      updateReceiptCell(tr, data.entry);
+      if (pdfPreviewEl) {
+        pdfPreviewEl.dataset.loadedUrl = "";
+        pdfPreviewFetchToken++;
+      }
+      setStatus("PDF прикреплён", true);
+      setTimeout(() => setStatus(""), 1500);
+    } catch (e) {
+      const msg = e.message === "bad_extension" ? "Только PDF" : "Ошибка загрузки";
+      setStatus(msg, false);
+    }
+  }
+
+  async function saveRow(id, tr) {
+    const payload = {};
+    tr.querySelectorAll("[data-f]").forEach((el) => {
+      const raw = el.dataset.f === "amount" ? parseAmountInput(el.value) : el.value;
+      payload[el.dataset.f] = raw;
+    });
+    setStatus("Сохранение…");
+    try {
+      const r = await fetch(`/api/finance/expense-journal/${id}/`, {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrf(),
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || "save failed");
+      setStatus("Сохранено", true);
+      setTimeout(() => setStatus(""), 1500);
+      await refreshKpis();
+    } catch (e) {
+      setStatus("Ошибка сохранения", false);
+    }
+  }
+
+  async function deleteRow(id, tr) {
+    if (!confirm("Удалить строку?")) return;
+    await fetch(`/api/finance/expense-journal/${id}/delete/`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "X-CSRFToken": csrf(), "X-Requested-With": "XMLHttpRequest" },
+    });
+    tr?.remove();
+    if (!tbody.children.length) emptyEl.classList.remove("hidden");
+    await refreshKpis();
+  }
+
+  function fillFilterSelects() {
+    const fp = document.getElementById("ej-filter-project");
+    const fr = document.getElementById("ej-filter-responsible");
+    const fpay = document.getElementById("ej-filter-payment");
+    const pv = fp.value;
+    const rv = fr.value;
+    const payv = fpay.value;
+    fp.innerHTML = '<option value="">Все</option>' + projects.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+    fr.innerHTML = '<option value="">Все</option>' + employees.map((e) => `<option value="${e.id}">${e.full_name}</option>`).join("");
+    fpay.innerHTML = '<option value="">Все</option>' + paymentMethods.map((m) => `<option value="${m.code}">${m.label}</option>`).join("");
+    fp.value = pv;
+    fr.value = rv;
+    fpay.value = payv;
+  }
+
+  function updateKpis(kpis) {
+    document.getElementById("ej-kpi-today").textContent = fmtMoney(kpis.today);
+    document.getElementById("ej-kpi-week").textContent = fmtMoney(kpis.week);
+    document.getElementById("ej-kpi-month").textContent = fmtMoney(kpis.month);
+    document.getElementById("ej-kpi-project").textContent = fmtMoney(kpis.project);
+    const pr = document.getElementById("ej-filter-project").value;
+    document.getElementById("ej-kpi-project-hint").textContent = pr
+      ? projects.find((p) => String(p.id) === pr)?.name || ""
+      : "Выберите проект в фильтре";
+  }
+
+  async function loadData(scrollTop) {
+    const r = await fetch(`/api/finance/expense-journal/?${filterParams()}`, {
+      credentials: "same-origin",
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+    });
+    const data = await r.json();
+    if (!data.ok) return;
+    employees = data.employees || [];
+    projects = data.projects || [];
+    paymentMethods = data.payment_methods || [];
+    fillFilterSelects();
+    updateKpis(data.kpis || {});
+    tbody.innerHTML = "";
+    const entries = data.entries || [];
+    emptyEl.classList.toggle("hidden", entries.length > 0);
+    entries.forEach((e) => tbody.appendChild(renderRow(e)));
+    if (scrollTop !== false) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function addRow() {
+    const r = await fetch("/api/finance/expense-journal/create/", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrf(),
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: JSON.stringify({ date: new Date().toISOString().slice(0, 10) }),
+    });
+    const data = await r.json();
+    if (data.ok && data.entry) {
+      emptyEl.classList.add("hidden");
+      tbody.prepend(renderRow(data.entry));
+      await refreshKpis();
+    }
+  }
+
+  document.getElementById("ej-apply-filters")?.addEventListener("click", () => loadData());
+  document.getElementById("ej-add-row")?.addEventListener("click", addRow);
+  document.getElementById("ej-export-xlsx")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    window.location.href = `/api/finance/expense-journal/export.xlsx?${filterParams()}`;
+  });
+  document.getElementById("ej-export-pdf")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    window.location.href = `/api/finance/expense-journal/export.pdf?${filterParams()}`;
+  });
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  document.getElementById("ej-date-from").value = monthStart;
+  document.getElementById("ej-date-to").value = now.toISOString().slice(0, 10);
+  loadData();
+})();
+</script>

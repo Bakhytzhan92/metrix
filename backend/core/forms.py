@@ -1031,7 +1031,9 @@ class EquipmentForm(forms.ModelForm):
                 attrs={"class": _input_class(), "step": "0.001", "min": "0"}
             ),
             "consumption_norm_mode": forms.Select(attrs={"class": _input_class()}),
-            "photo": forms.FileInput(attrs={"class": _input_class()}),
+            "photo": forms.ClearableFileInput(
+                attrs={"class": _input_class(), "accept": "image/*"}
+            ),
             "odometer_km": forms.NumberInput(
                 attrs={"class": _input_class(), "step": "0.01", "min": "0"}
             ),

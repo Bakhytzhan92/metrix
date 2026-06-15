@@ -14,6 +14,7 @@ from .supply_workflow_services import log_supply_event, mark_order_fully_purchas
 ALLOWED_DOC_EXTENSIONS = frozenset(
     {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".jpg", ".jpeg", ".png"}
 )
+ALLOWED_POA_EXTENSIONS = frozenset({".pdf", ".doc", ".docx", ".xls", ".xlsx"})
 
 
 def _parse_decimal(raw) -> Decimal:
@@ -31,6 +32,14 @@ def _validate_upload(file) -> None:
         raise ValueError("no_file")
     ext = os.path.splitext(file.name or "")[1].lower()
     if ext not in ALLOWED_DOC_EXTENSIONS:
+        raise ValueError("bad_extension")
+
+
+def _validate_poa_upload(file) -> None:
+    if not file:
+        raise ValueError("no_file")
+    ext = os.path.splitext(file.name or "")[1].lower()
+    if ext not in ALLOWED_POA_EXTENSIONS:
         raise ValueError("bad_extension")
 
 
@@ -74,6 +83,44 @@ def upload_payment_proof(
         action=SupplyWorkflowLog.ACTION_TRANSFERRED_TO_FINANCE,
         user=user,
         comment=f"Платёжка v{doc.version} загружена в финансах",
+    )
+    return doc
+
+
+@transaction.atomic
+def upload_power_of_attorney(
+    order: SupplyOrder,
+    *,
+    user,
+    uploaded_file,
+) -> SupplyOrderDocument:
+    if order.payment_status not in (
+        SupplyOrder.PAYMENT_AWAITING,
+        SupplyOrder.PAYMENT_PARTIAL,
+        SupplyOrder.PAYMENT_PAID,
+    ):
+        raise ValueError("not_in_payment_queue")
+    _validate_poa_upload(uploaded_file)
+    last = (
+        order.documents.filter(doc_type=SupplyOrderDocument.DOC_POA)
+        .aggregate(m=Max("version"))
+        .get("m")
+        or 0
+    )
+    doc = SupplyOrderDocument.objects.create(
+        order=order,
+        doc_type=SupplyOrderDocument.DOC_POA,
+        file=uploaded_file,
+        version=last + 1,
+        uploaded_by=user,
+    )
+    log_supply_event(
+        company=order.company,
+        project=order.project,
+        supply_order=order,
+        action=SupplyWorkflowLog.ACTION_TRANSFERRED_TO_FINANCE,
+        user=user,
+        comment=f"Доверенность v{doc.version} загружена в финансах",
     )
     return doc
 

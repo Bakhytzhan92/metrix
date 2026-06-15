@@ -12,6 +12,12 @@
       {% for err in field.errors %}<p class="text-xs text-red-600 mt-1">{{ err }}</p>{% endfor %}
     </div>
     {% endfor %}
+    {% if is_edit and equipment.photo %}
+    <div class="text-sm">
+      <p class="text-slate-700 mb-1">Текущее фото</p>
+      <img src="{{ equipment.photo.url }}" alt="{{ equipment.name }}" class="max-h-40 rounded-lg border border-slate-200 object-contain bg-slate-50" />
+    </div>
+    {% endif %}
     <div class="flex gap-2 pt-2">
       <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Сохранить</button>
       <a href="{% if is_edit %}{% url 'company_equipment_detail' equipment.pk %}{% else %}{% url 'company_equipment_list' %}{% endif %}" class="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Отмена</a>

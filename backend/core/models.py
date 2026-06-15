@@ -1223,6 +1223,125 @@ class FinanceOperation(models.Model):
             super().delete(*args, **kwargs)
 
 
+class ExpenseJournalEntry(models.Model):
+    """Журнал расходов компании (таблица как в Google Sheets)."""
+
+    PAY_KASPI = "kaspi"
+    PAY_CASH = "cash"
+    PAY_HALYK = "halyk"
+    PAY_ACCOUNTABLE = "accountable"
+    PAYMENT_METHOD_CHOICES = [
+        (PAY_KASPI, "Каспи"),
+        (PAY_CASH, "Наличные"),
+        (PAY_HALYK, "Halyk"),
+        (PAY_ACCOUNTABLE, "Подотчет"),
+    ]
+
+    CAT_GSM = "gsm"
+    CAT_MATERIALS = "materials"
+    CAT_FOOD = "food"
+    CAT_SALARY = "salary"
+    CAT_EQUIPMENT_RENT = "equipment_rent"
+    CAT_PARTS = "parts"
+    CAT_TOOLS = "tools"
+    CAT_TELECOM = "telecom"
+    CAT_OFFICE = "office"
+    CAT_BUSINESS_TRIP = "business_trip"
+    CAT_OTHER = "other"
+    CATEGORY_CHOICES = [
+        (CAT_GSM, "ГСМ"),
+        (CAT_MATERIALS, "Материалы"),
+        (CAT_FOOD, "Продукты"),
+        (CAT_SALARY, "Зарплата"),
+        (CAT_EQUIPMENT_RENT, "Аренда техники"),
+        (CAT_PARTS, "Запчасти"),
+        (CAT_TOOLS, "Инструмент"),
+        (CAT_TELECOM, "Связь"),
+        (CAT_OFFICE, "Офис"),
+        (CAT_BUSINESS_TRIP, "Командировка"),
+        (CAT_OTHER, "Прочее"),
+    ]
+
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="expense_journal_entries"
+    )
+    date = models.DateField("Дата")
+    amount = models.DecimalField(
+        "Сумма расхода", max_digits=16, decimal_places=2, default=0
+    )
+    purpose = models.CharField("Назначение платежа", max_length=500, blank=True, default="")
+    responsible = models.ForeignKey(
+        "Employee",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="expense_journal_entries",
+        verbose_name="Ответственное лицо",
+    )
+    payment_method = models.CharField(
+        "Способ оплаты",
+        max_length=32,
+        choices=PAYMENT_METHOD_CHOICES,
+        blank=True,
+        default="",
+    )
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="expense_journal_entries",
+        verbose_name="Проект",
+    )
+    comment = models.TextField("Комментарий", blank=True, default="")
+    checked = models.BooleanField("Чек", default=False)
+    receipt_pdf = models.FileField(
+        "PDF чека",
+        upload_to="expense_journal/receipts/%Y/%m/",
+        blank=True,
+        null=True,
+    )
+    category = models.CharField(
+        "Категория расхода",
+        max_length=32,
+        choices=CATEGORY_CHOICES,
+        default=CAT_OTHER,
+    )
+    supply_order = models.ForeignKey(
+        "SupplyOrder",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="expense_journal_entries",
+        verbose_name="Заказ снабжения",
+    )
+    finance_operation = models.ForeignKey(
+        FinanceOperation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="expense_journal_entries",
+        verbose_name="Операция в журнале",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="expense_journal_entries_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-date", "-id"]
+        verbose_name = "Запись журнала расходов"
+        verbose_name_plural = "Журнал расходов"
+
+    def __str__(self) -> str:
+        return f"{self.date} — {self.amount} ₸"
+
+
 class WorkAct(models.Model):
     """
     Акт выполненных работ (подрядчик).
@@ -1758,6 +1877,10 @@ class SupplyOrder(models.Model):
             doc_type=SupplyOrderDocument.DOC_PAYMENT_PROOF
         ).order_by("-version", "-id")
 
+    @property
+    def current_poa(self):
+        return self.current_document(SupplyOrderDocument.DOC_POA)
+
     def can_edit_payment_info(self) -> bool:
         return self.payment_status in (
             self.PAYMENT_DRAFT,
@@ -1771,10 +1894,12 @@ class SupplyOrderDocument(models.Model):
     DOC_KP = "kp"
     DOC_INVOICE = "invoice"
     DOC_PAYMENT_PROOF = "payment_proof"
+    DOC_POA = "poa"
     DOC_TYPE_CHOICES = [
         (DOC_KP, "Коммерческое предложение"),
         (DOC_INVOICE, "Счёт на оплату"),
         (DOC_PAYMENT_PROOF, "Платёжное поручение"),
+        (DOC_POA, "Доверенность"),
     ]
 
     order = models.ForeignKey(

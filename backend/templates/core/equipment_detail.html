@@ -32,12 +32,14 @@
         {% endif %}
       </dl>
     </div>
-    {% if equipment.photo %}
     <div class="rounded-xl border border-slate-200 bg-white p-4">
       <h2 class="text-sm font-semibold text-slate-800 mb-2">Фото</h2>
-      <img src="{{ equipment.photo.url }}" alt="" class="max-h-56 rounded-lg object-contain" />
+      {% if equipment.photo %}
+      <img src="{{ equipment.photo.url }}" alt="{{ equipment.name }}" class="max-h-56 w-full rounded-lg object-contain bg-slate-50" loading="lazy" />
+      {% else %}
+      <p class="text-sm text-slate-500 py-8 text-center bg-slate-50 rounded-lg">Фото не добавлено. Загрузите через «Изменить».</p>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
 
   {% if equipment.notes %}

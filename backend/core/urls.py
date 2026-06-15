@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 from . import ai_api
+from . import expense_journal_api
 from . import construction_docs_api
 from . import estimate_pdf_views
 from . import fuel_project_api
@@ -200,6 +201,11 @@ urlpatterns = [
         "projects/<int:pk>/finance/pay-supply/<int:order_id>/",
         views.project_finance_pay_supply_order,
         name="project_finance_pay_supply_order",
+    ),
+    path(
+        "projects/<int:pk>/finance/pay-supply/<int:order_id>/poa/",
+        views.project_finance_upload_power_of_attorney,
+        name="project_finance_upload_power_of_attorney",
     ),
     path(
         "projects/<int:pk>/finance/pay-act/<int:act_id>/",
@@ -469,6 +475,14 @@ urlpatterns = [
     path("finance/expense/", views.finance_expense, name="finance_expense"),
     path("finance/transfer/", views.finance_transfer, name="finance_transfer"),
     path("finance/operation/<int:pk>/delete/", views.finance_operation_delete, name="finance_operation_delete"),
+    path("api/finance/expense-journal/", expense_journal_api.api_expense_journal_list, name="api_expense_journal_list"),
+    path("api/finance/expense-journal/create/", expense_journal_api.api_expense_journal_create, name="api_expense_journal_create"),
+    path("api/finance/expense-journal/<int:entry_id>/", expense_journal_api.api_expense_journal_update, name="api_expense_journal_update"),
+    path("api/finance/expense-journal/<int:entry_id>/receipt/", expense_journal_api.api_expense_journal_upload_receipt, name="api_expense_journal_upload_receipt"),
+    path("api/finance/expense-journal/<int:entry_id>/receipt/preview/", expense_journal_api.api_expense_journal_receipt_preview, name="api_expense_journal_receipt_preview"),
+    path("api/finance/expense-journal/<int:entry_id>/delete/", expense_journal_api.api_expense_journal_delete, name="api_expense_journal_delete"),
+    path("api/finance/expense-journal/export.xlsx", expense_journal_api.api_expense_journal_export_xlsx, name="api_expense_journal_export_xlsx"),
+    path("api/finance/expense-journal/export.pdf", expense_journal_api.api_expense_journal_export_pdf, name="api_expense_journal_export_pdf"),
     # Модуль «Снабжение»
     path("supply/", views.supply_dashboard, name="supply_dashboard"),
     path("supply/request/create/", views.supply_request_create, name="supply_request_create"),

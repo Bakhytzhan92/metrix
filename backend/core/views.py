@@ -2128,41 +2128,7 @@ def project_finance_section(request: HttpRequest, pk: int) -> HttpResponse:
         journal_qs = journal_qs.filter(contractor__icontains=contractor_f)
     journal_qs = journal_qs.order_by("-date", "-created_at")
 
-    from django.db.models import Case, IntegerField, Prefetch, When
-
-    from .models import SupplyOrderDocument
-
-    supply_for_payment = (
-        SupplyOrder.objects.filter(project=project)
-        .filter(payment_approved_at__isnull=False)
-        .filter(
-            payment_status__in=(
-                SupplyOrder.PAYMENT_AWAITING,
-                SupplyOrder.PAYMENT_PARTIAL,
-                SupplyOrder.PAYMENT_PAID,
-            )
-        )
-        .prefetch_related(
-            Prefetch(
-                "documents",
-                queryset=SupplyOrderDocument.objects.select_related(
-                    "uploaded_by"
-                ).order_by("doc_type", "-version", "-id"),
-            ),
-            "items__request__resource",
-            "items__off_estimate_item",
-        )
-        .annotate(
-            _pay_sort=Case(
-                When(payment_status=SupplyOrder.PAYMENT_AWAITING, then=0),
-                When(payment_status=SupplyOrder.PAYMENT_PARTIAL, then=1),
-                When(payment_status=SupplyOrder.PAYMENT_PAID, then=2),
-                default=3,
-                output_field=IntegerField(),
-            )
-        )
-        .order_by("_pay_sort", "-payment_approved_at", "-created_at")
-    )
+    supply_for_payment = _supply_orders_for_payment(company=company, project=project)
 
     works_for_payment = (
         WorkAct.objects.filter(project=project)
@@ -2428,31 +2394,26 @@ def project_finance_pay_supply_order(
     company = project.company
     _ensure_finance_defaults(company)
     order = get_object_or_404(SupplyOrder, pk=order_id, project=project)
+    return_url = _finance_payment_orders_return_url(request, project_id=project.pk)
     if order.payment_status not in (
         SupplyOrder.PAYMENT_AWAITING,
         SupplyOrder.PAYMENT_PARTIAL,
     ):
         messages.error(request, "Этот заказ не в очереди на оплату.")
-        return redirect(
-            f"{reverse('project_finance_section', args=[project.pk])}?tab=payment_orders"
-        )
+        return redirect(return_url)
     form = ProjectPaySupplyOrderForm(request.POST, request.FILES)
     if not form.is_valid():
         for fld, errs in form.errors.items():
             for e in errs:
                 messages.error(request, f"{fld}: {e}")
-        return redirect(
-            f"{reverse('project_finance_section', args=[project.pk])}?tab=payment_orders"
-        )
+        return redirect(return_url)
     amount = form.cleaned_data["amount"]
     pay_date = form.cleaned_data["pay_date"]
     payment_proof = form.cleaned_data["payment_proof"]
     remaining = order.remaining_amount
     if amount > remaining:
         messages.error(request, "Сумма превышает остаток к оплате.")
-        return redirect(
-            f"{reverse('project_finance_section', args=[project.pk])}?tab=payment_orders"
-        )
+        return redirect(return_url)
     account = company.finance_accounts.order_by("id").first()
     category = (
         company.finance_categories.filter(
@@ -2467,9 +2428,7 @@ def project_finance_pay_supply_order(
     )
     if not account or not category:
         messages.error(request, "Настройте счёт и статьи расхода в финансах компании.")
-        return redirect(
-            f"{reverse('project_finance_section', args=[project.pk])}?tab=payment_orders"
-        )
+        return redirect(return_url)
     pay_target = order.payment_amount_display
     try:
         with transaction.atomic():
@@ -2505,6 +2464,15 @@ def project_finance_pay_supply_order(
             else:
                 order.payment_status = SupplyOrder.PAYMENT_PARTIAL
             order.save(update_fields=["paid_amount", "payment_status"])
+            from . import expense_journal_services as ej
+
+            ej.create_from_supply_payment(
+                order=order,
+                finance_operation=op,
+                amount=amount,
+                pay_date=pay_date,
+                user=request.user,
+            )
         messages.success(
             request,
             "Оплата зафиксирована: платёжка сохранена, запись добавлена в журнал.",
@@ -2520,9 +2488,43 @@ def project_finance_pay_supply_order(
             )
         else:
             messages.error(request, err)
-    return redirect(
-        f"{reverse('project_finance_section', args=[project.pk])}?tab=payment_orders"
-    )
+    return redirect(return_url)
+
+
+@login_required
+@require_POST
+def project_finance_upload_power_of_attorney(
+    request: HttpRequest, pk: int, order_id: int
+) -> HttpResponse:
+    from . import supply_payment_services as supply_pay
+
+    project, err = _get_project_or_403(request, pk)
+    if err:
+        return err
+    order = get_object_or_404(SupplyOrder, pk=order_id, project=project)
+    return_url = _finance_payment_orders_return_url(request, project_id=project.pk)
+    uploaded = request.FILES.get("power_of_attorney")
+    try:
+        supply_pay.upload_power_of_attorney(
+            order,
+            user=request.user,
+            uploaded_file=uploaded,
+        )
+        messages.success(request, "Доверенность сохранена.")
+    except ValueError as exc:
+        err = str(exc)
+        if err == "no_file":
+            messages.error(request, "Выберите файл доверенности.")
+        elif err == "bad_extension":
+            messages.error(
+                request,
+                "Допустимые форматы: PDF, Word (.doc, .docx), Excel (.xls, .xlsx).",
+            )
+        elif err == "not_in_payment_queue":
+            messages.error(request, "Заказ не в очереди на оплату.")
+        else:
+            messages.error(request, err)
+    return redirect(return_url)
 
 
 @login_required
@@ -3613,9 +3615,69 @@ def _ensure_finance_defaults(company):
             FinanceCategory.objects.create(company=company, name=name, type=cat_type)
 
 
+def _supply_orders_for_payment(*, company, project=None, project_id=None):
+    """Заказы снабжения, согласованные к оплате (очередь бухгалтерии)."""
+    from django.db.models import Case, IntegerField, Prefetch, When
+
+    from .models import SupplyOrderDocument
+
+    qs = SupplyOrder.objects.filter(company=company)
+    if project is not None:
+        qs = qs.filter(project=project)
+    elif project_id:
+        qs = qs.filter(project_id=project_id)
+    return (
+        qs.filter(payment_approved_at__isnull=False)
+        .filter(
+            payment_status__in=(
+                SupplyOrder.PAYMENT_AWAITING,
+                SupplyOrder.PAYMENT_PARTIAL,
+                SupplyOrder.PAYMENT_PAID,
+            )
+        )
+        .select_related("project", "off_estimate_request")
+        .prefetch_related(
+            Prefetch(
+                "documents",
+                queryset=SupplyOrderDocument.objects.select_related(
+                    "uploaded_by"
+                ).order_by("doc_type", "-version", "-id"),
+            ),
+            "items__request__resource",
+            "items__off_estimate_item",
+        )
+        .annotate(
+            _pay_sort=Case(
+                When(payment_status=SupplyOrder.PAYMENT_AWAITING, then=0),
+                When(payment_status=SupplyOrder.PAYMENT_PARTIAL, then=1),
+                When(payment_status=SupplyOrder.PAYMENT_PAID, then=2),
+                default=3,
+                output_field=IntegerField(),
+            )
+        )
+        .order_by("_pay_sort", "-payment_approved_at", "-created_at")
+    )
+
+
+def _finance_payment_orders_return_url(request, *, project_id=None):
+    """Куда вернуться после оплаты заказа снабжения."""
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    next_url = (request.GET.get("next") or request.POST.get("next") or "").strip()
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}
+    ):
+        return next_url
+    if project_id:
+        return (
+            f"{reverse('project_finance_section', args=[project_id])}?tab=payment_orders"
+        )
+    return f"{reverse('finance_dashboard')}?tab=payment_orders"
+
+
 @login_required
 def finance_dashboard(request: HttpRequest) -> HttpResponse:
-    """Страница Финансы: карточки счетов, вкладки (журнал / заглушки), таблица операций с фильтрами."""
+    """Страница Финансы: карточки счетов, журнал расходов, заказы на оплату."""
     company = _get_finance_company(request)
     if not company:
         messages.warning(request, "Создайте компанию или проект.")
@@ -3623,44 +3685,40 @@ def finance_dashboard(request: HttpRequest) -> HttpResponse:
     _ensure_finance_defaults(company)
 
     accounts = company.finance_accounts.all().order_by("name")
-    active_tab = request.GET.get("tab", "journal")
-
-    # Журнал операций: фильтры и сортировка (новые сверху)
-    operations = company.finance_operations.all().select_related(
-        "account", "account_to", "project", "category"
-    ).order_by("-date", "-created_at")
-
-    date_from = request.GET.get("date_from")
-    date_to = request.GET.get("date_to")
-    project_id = request.GET.get("project")
-    op_type = request.GET.get("type")
-    category_id = request.GET.get("category")
-    if date_from:
-        operations = operations.filter(date__gte=date_from)
-    if date_to:
-        operations = operations.filter(date__lte=date_to)
-    if project_id:
-        operations = operations.filter(project_id=project_id)
-    if op_type:
-        operations = operations.filter(type=op_type)
-    if category_id:
-        operations = operations.filter(category_id=category_id)
+    active_tab = request.GET.get("tab", "expense_journal")
+    if active_tab == "journal":
+        active_tab = "expense_journal"
 
     projects = company.projects.all().order_by("name")
-    categories = company.finance_categories.all().order_by("type", "name")
+
+    payment_project_param = request.GET.get("payment_project", "").strip()
+    filter_payment_project_id = (
+        int(payment_project_param)
+        if payment_project_param.isdigit()
+        else None
+    )
+    supply_for_payment = _supply_orders_for_payment(
+        company=company,
+        project_id=filter_payment_project_id,
+    )
+    pay_return_query = "/finance/?tab=payment_orders"
+    if filter_payment_project_id:
+        pay_return_query += f"&payment_project={filter_payment_project_id}"
+
+    from .access_utils import has_permission
 
     context = {
         "company": company,
         "accounts": accounts,
-        "operations": operations,
         "projects": projects,
-        "categories": categories,
         "active_tab": active_tab,
-        "filter_date_from": date_from or "",
-        "filter_date_to": date_to or "",
-        "filter_project_id": int(project_id) if project_id and project_id.isdigit() else None,
-        "filter_type": op_type or "",
-        "filter_category_id": int(category_id) if category_id and category_id.isdigit() else None,
+        "filter_payment_project_id": filter_payment_project_id,
+        "supply_for_payment": supply_for_payment,
+        "pay_return_query": pay_return_query,
+        "today": date.today(),
+        "can_edit_expense_journal": has_permission(
+            request.user, company, "edit_finance"
+        ),
     }
     return render(request, "core/finance_dashboard.html", context)
 
