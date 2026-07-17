@@ -15,6 +15,7 @@ import {
 import {
   applyItemRecalc,
   fmt2,
+  fmtMoney,
   fmtSell,
   isPartialNumericInput,
   isZeroLikeInput,
@@ -558,7 +559,7 @@ function SectionBlock({
         }
         setSectionCosts((sc) => ({
           ...sc,
-          [sec.id]: { cost: fmt2(sumC), price: fmt2(sumP) },
+          [sec.id]: { cost: fmtMoney(sumC), price: fmtMoney(sumP) },
         }));
         return n2;
       });
@@ -747,11 +748,11 @@ function recalcProjectCardsFromSections(
       el.textContent = text;
     });
   };
-  setAll(".js-project-total-cost", fmt2(sumCost));
-  setAll(".js-project-total-markup", fmt2(sumPrice - sumCost));
-  setAll(".js-project-subtotal-client", fmt2(sumPrice));
-  setAll(".js-project-vat-amount", fmt2(vatAmt));
-  setAll(".js-project-total-price", fmt2(clientTot));
+  setAll(".js-project-total-cost", fmtMoney(sumCost));
+  setAll(".js-project-total-markup", fmtMoney(sumPrice - sumCost));
+  setAll(".js-project-subtotal-client", fmtMoney(sumPrice));
+  setAll(".js-project-vat-amount", fmtMoney(vatAmt));
+  setAll(".js-project-total-price", fmtMoney(clientTot));
   document.querySelectorAll(".js-vat-detail").forEach((el) => {
     el.classList.toggle("hidden", !vatOn);
   });
@@ -782,8 +783,8 @@ export function EstimateVirtualApp({
           cost_price: r.cost_price,
           markup_percent: r.markup_percent,
           sell_price: r.sell_price,
-          total_cost: r.total_cost,
-          total_price: r.total_price,
+          total_cost: fmtMoney(parseNum(r.total_cost)),
+          total_price: fmtMoney(parseNum(r.total_price)),
         };
       }
     }
@@ -798,8 +799,8 @@ export function EstimateVirtualApp({
     const o: Record<number, { cost: string; price: string }> = {};
     for (const s of payload.sections) {
       o[s.id] = {
-        cost: s.section_total_cost,
-        price: s.section_total_price,
+        cost: fmtMoney(parseNum(s.section_total_cost)),
+        price: fmtMoney(parseNum(s.section_total_price)),
       };
     }
     return o;
@@ -887,8 +888,8 @@ export function EstimateVirtualApp({
             ...prev,
             [itemId]: {
               ...cur,
-              total_cost: tcStr || cur.total_cost,
-              total_price: tpStr || cur.total_price,
+              total_cost: tcStr ? fmtMoney(parseNum(tcStr)) : cur.total_cost,
+              total_price: tpStr ? fmtMoney(parseNum(tpStr)) : cur.total_price,
               sell_price: skipSell ? cur.sell_price : spStr || cur.sell_price,
               markup_percent: skipMarkup
                 ? cur.markup_percent
@@ -901,7 +902,10 @@ export function EstimateVirtualApp({
         if (secCost && secPrice) {
           setSectionCosts((sc) => ({
             ...sc,
-            [sectionId]: { cost: secCost, price: secPrice },
+            [sectionId]: {
+              cost: fmtMoney(parseNum(secCost)),
+              price: fmtMoney(parseNum(secPrice)),
+            },
           }));
         }
         return { ok: true };

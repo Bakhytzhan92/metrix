@@ -3,6 +3,22 @@ export function fmt2(n: number): string {
   return (Math.round(n * 100) / 100).toFixed(2);
 }
 
+/** Суммы для отображения: 53881303.68 → «53 881 303,68». */
+export function fmtMoney(n: number, decimals = 2): string {
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  const fixed = abs.toFixed(decimals);
+  const [intPart, fracPart = ""] = fixed.split(".");
+  const chunks: string[] = [];
+  let rest = intPart;
+  while (rest.length > 0) {
+    chunks.push(rest.slice(-3));
+    rest = rest.slice(0, -3);
+  }
+  const grouped = chunks.reverse().join(" ");
+  return decimals > 0 ? `${sign}${grouped},${fracPart}` : `${sign}${grouped}`;
+}
+
 /** Цена заказчика за ед.: до 3 знаков после запятой. */
 export function fmtSell(n: number): string {
   const v = Math.round(n * 1000) / 1000;
@@ -121,8 +137,8 @@ export function applyItemRecalc(
       cost_price: fields.cost_price,
       markup_percent: markupStr,
       sell_price: fields.sell_price,
-      total_cost: fmt2(q * cp),
-      total_price: fmt2(q * sell),
+      total_cost: fmtMoney(q * cp),
+      total_price: fmtMoney(q * sell),
     };
   }
 
@@ -136,8 +152,8 @@ export function applyItemRecalc(
       cost_price: fields.cost_price,
       markup_percent: fields.markup_percent,
       sell_price: fmtSell(sell),
-      total_cost: fmt2(q * cp),
-      total_price: fmt2(q * sell),
+      total_cost: fmtMoney(q * cp),
+      total_price: fmtMoney(q * sell),
     };
   }
 
@@ -153,8 +169,8 @@ export function applyItemRecalc(
         cost_price: fields.cost_price,
         markup_percent: fmt2(markup),
         sell_price: fields.sell_price,
-        total_cost: fmt2(q * cp),
-        total_price: fmt2(q * parseNum(fields.sell_price)),
+        total_cost: fmtMoney(q * cp),
+        total_price: fmtMoney(q * parseNum(fields.sell_price)),
       };
     }
     markup = parseNum(fields.markup_percent);
@@ -171,8 +187,8 @@ export function applyItemRecalc(
       cost_price: fields.cost_price,
       markup_percent: fields.markup_percent,
       sell_price: fields.sell_price,
-      total_cost: fmt2(q * cp),
-      total_price: fmt2(q * sell),
+      total_cost: fmtMoney(q * cp),
+      total_price: fmtMoney(q * sell),
     };
   }
 
@@ -181,7 +197,7 @@ export function applyItemRecalc(
     cost_price: fields.cost_price,
     markup_percent: fmt2(markup),
     sell_price: fmtSell(sell),
-    total_cost: fmt2(q * cp),
-    total_price: fmt2(q * sell),
+    total_cost: fmtMoney(q * cp),
+    total_price: fmtMoney(q * sell),
   };
 }
