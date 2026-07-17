@@ -25,7 +25,7 @@
   <div class="rounded-2xl border border-line bg-white/95 shadow-mx-sm px-4 py-4 md:px-5 md:py-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
     <div class="min-w-0">
       <h2 class="text-lg font-semibold text-ink tracking-tight">График работ</h2>
-      <p class="text-xs text-ink-muted mt-1.5 max-w-3xl leading-relaxed">Планирование по <strong class="text-ink">группам работ</strong> (подзаголовки из сметы): сроки, статус и Gantt — только у групп. Позиции сметы отображаются read-only под группой. Таблица виртуализирована — рендерятся только видимые строки.</p>
+      <p class="text-xs text-ink-muted mt-1.5 max-w-3xl leading-relaxed">Сроки, статус, ответственный и полосы Gantt задаются на <strong class="text-ink">каждой позиции</strong> сметы. Таблица виртуализирована — рендерятся только видимые строки.</p>
     </div>
     <div class="flex flex-wrap gap-2 shrink-0">
       <a href="{% url 'project_estimate' project.pk %}" class="mx-btn-secondary text-sm">Смета</a>
@@ -46,7 +46,7 @@
       <p class="text-sm text-slate-700 mt-2">С <strong>{{ schedule_summary_start|date:"d.m.Y" }}</strong> по <strong>{{ schedule_summary_end|date:"d.m.Y" }}</strong></p>
       <p class="text-sm text-slate-600 mt-1">Длительность: <span class="tabular-nums font-medium">{{ schedule_summary_days }}</span> дн.</p>
       {% else %}
-      <p class="text-sm text-slate-500 mt-2">Задайте даты у групп работ (подзаголовков сметы) или перетащите полосы на графике.</p>
+      <p class="text-sm text-slate-500 mt-2">Задайте даты у позиций сметы или перетащите полосы на графике.</p>
       {% endif %}
     </div>
   </div>
@@ -106,16 +106,15 @@
     <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-emerald-500 shadow-sm shadow-emerald-500/25"></span> Завершено</span>
     <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-red-500"></span> Просрочено</span>
     <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-amber-400"></span> Пауза</span>
-    <span class="inline-flex items-center gap-1"><span class="h-2 w-4 rounded bg-gradient-to-r from-indigo-600 to-violet-500"></span> Группа работ</span>
-    <span class="inline-flex items-center gap-1.5 border-l border-slate-200 pl-4 text-slate-700" title="Зависимость только между группами работ: A → B">
+    <span class="inline-flex items-center gap-1.5 border-l border-slate-200 pl-4 text-slate-700" title="Зависимость между позициями сметы: A → B">
       <span class="text-slate-500 font-medium tabular-nums" aria-hidden="true">A → B</span>
-      «После»: группа B следует за группой A
+      «После»: позиция B следует за позицией A
     </span>
   </div>
 
   {% if not schedule_rows %}
   <div class="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
-    Нет групп работ по фильтру. Импортируйте локальную смету — подзаголовки разделов (ДЕМОНТАЖНЫЕ РАБОТЫ, ЗЕМЛЯНЫЕ РАБОТЫ и т.д.) станут задачами графика.
+    Нет позиций по фильтру. Импортируйте смету — строки появятся в графике работ.
   </div>
   {% else %}
   <div id="schedule-virtual-root"></div>
@@ -123,7 +122,7 @@
 </div>
 
 {% if schedule_rows %}
-<script src="{% static 'core/schedule/virtual-gantt.js' %}?v=20260529b"></script>
+<script src="{% static 'core/schedule/virtual-gantt.js' %}?v=20260529e"></script>
 <script>
 (function () {
   var mt = document.querySelector(".js-sched-materials-toggle");

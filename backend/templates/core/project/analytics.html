@@ -1,4 +1,5 @@
 {% extends "core/project/project_layout.html" %}
+{% load finance_extras %}
 
 {% block project_content %}
 <section class="space-y-6">
@@ -6,19 +7,54 @@
   <div class="rounded-2xl border border-line bg-gradient-to-br from-white via-white to-primary/[0.03] p-5 md:p-6 shadow-mx-sm">
     <p class="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Обзор</p>
     <p class="text-lg font-semibold text-ink mt-1">Аналитика объекта</p>
-    <p class="text-sm text-ink-muted mt-1 max-w-2xl">Показатели экономики и прогноза подключатся к живым данным сметы и финансов (раздел в развитии).</p>
+    <p class="text-sm text-ink-muted mt-1 max-w-2xl">
+      План — по смете; факт и прогноз — по финансам и неоплаченным заказам/актам; экономия закупок — из снабжения.
+      {% if analytics.vat_enabled %}Сумма для заказчика с НДС 16%.{% endif %}
+    </p>
   </div>
+
+  <div class="grid gap-4 lg:grid-cols-3">
+    <div class="rounded-2xl border border-line bg-white p-5 shadow-mx-sm">
+      <h3 class="text-sm font-semibold text-ink mb-1">Структура сметы</h3>
+      <p class="text-xs text-ink-muted mb-4">Доля типов позиций по сумме для заказчика</p>
+      <div class="relative mx-auto max-w-[240px] aspect-square">
+        <canvas id="analytics-chart-estimate-types" aria-label="Структура сметы по типам"></canvas>
+        <p id="analytics-chart-estimate-types-empty" class="hidden absolute inset-0 flex items-center justify-center text-center text-xs text-slate-500 px-4">Нет данных сметы</p>
+      </div>
+    </div>
+    <div class="rounded-2xl border border-line bg-white p-5 shadow-mx-sm">
+      <h3 class="text-sm font-semibold text-ink mb-1">План: экономика</h3>
+      <p class="text-xs text-ink-muted mb-4">Себестоимость и прибыль по смете</p>
+      <div class="relative mx-auto max-w-[240px] aspect-square">
+        <canvas id="analytics-chart-plan" aria-label="Себестоимость и прибыль"></canvas>
+        <p id="analytics-chart-plan-empty" class="hidden absolute inset-0 flex items-center justify-center text-center text-xs text-slate-500 px-4">Нет данных сметы</p>
+      </div>
+    </div>
+    <div class="rounded-2xl border border-line bg-white p-5 shadow-mx-sm">
+      <h3 class="text-sm font-semibold text-ink mb-1">Затраты</h3>
+      <p class="text-xs text-ink-muted mb-4">Фактические и предстоящие расходы</p>
+      <div class="relative mx-auto max-w-[240px] aspect-square">
+        <canvas id="analytics-chart-costs" aria-label="Структура затрат"></canvas>
+        <p id="analytics-chart-costs-empty" class="hidden absolute inset-0 flex items-center justify-center text-center text-xs text-slate-500 px-4">Расходов пока нет</p>
+      </div>
+    </div>
+  </div>
+
+  {{ analytics.charts.estimate_types|json_script:"analytics-chart-estimate-types-data" }}
+  {{ analytics.charts.plan_structure|json_script:"analytics-chart-plan-data" }}
+  {{ analytics.charts.costs|json_script:"analytics-chart-costs-data" }}
+
   <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
     <div class="rounded-2xl border border-line bg-white p-5 shadow-mx-sm hover:shadow-mx transition-shadow duration-200">
       <h3 class="text-sm font-semibold text-ink mb-3 flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-primary"></span> Экономика проекта</h3>
       <dl class="space-y-2 text-sm">
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Всего по смете</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold text-ink tabular-nums">{{ analytics.estimate_total|money }} ₸</dd>
         </div>
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Себестоимость</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold text-ink tabular-nums">{{ analytics.cost_plan|money }} ₸</dd>
         </div>
       </dl>
     </div>
@@ -27,11 +63,11 @@
       <dl class="space-y-2 text-sm">
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Прибыль без НДС</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold text-ink tabular-nums">{{ analytics.plan_profit|money }} ₸</dd>
         </div>
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Рентабельность</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold text-ink tabular-nums">{% if analytics.plan_margin_pct != None %}{{ analytics.plan_margin_pct|floatformat:1 }}%{% else %}—{% endif %}</dd>
         </div>
       </dl>
     </div>
@@ -40,11 +76,11 @@
       <dl class="space-y-2 text-sm">
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Прибыль без НДС</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold tabular-nums {% if analytics.forecast_profit >= 0 %}text-emerald-700{% else %}text-red-700{% endif %}">{{ analytics.forecast_profit|money }} ₸</dd>
         </div>
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Рентабельность</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold text-ink tabular-nums">{% if analytics.forecast_margin_pct != None %}{{ analytics.forecast_margin_pct|floatformat:1 }}%{% else %}—{% endif %}</dd>
         </div>
       </dl>
     </div>
@@ -52,12 +88,12 @@
       <h3 class="text-sm font-semibold text-ink mb-3">Финансовый баланс</h3>
       <dl class="grid gap-2 sm:grid-cols-2 text-sm">
         <div class="flex justify-between sm:block gap-2">
-          <dt class="text-ink-muted">Экономия</dt>
-          <dd class="font-semibold text-ink tabular-nums sm:mt-1">—</dd>
+          <dt class="text-ink-muted">Экономия (закупки)</dt>
+          <dd class="font-semibold text-emerald-700 tabular-nums sm:mt-1">{{ analytics.balance_savings|money }} ₸</dd>
         </div>
         <div class="flex justify-between sm:block gap-2">
           <dt class="text-ink-muted">Баланс доходов и расходов</dt>
-          <dd class="font-semibold text-ink tabular-nums sm:mt-1">—</dd>
+          <dd class="font-semibold tabular-nums sm:mt-1 {% if analytics.balance_income_expense >= 0 %}text-emerald-700{% else %}text-red-700{% endif %}">{{ analytics.balance_income_expense|money }} ₸</dd>
         </div>
       </dl>
     </div>
@@ -65,16 +101,16 @@
       <h3 class="text-sm font-semibold text-ink mb-3">Выручка</h3>
       <dl class="space-y-2 text-sm">
         <div class="flex justify-between gap-2">
-          <dt class="text-ink-muted">Разница</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dt class="text-ink-muted">Разница (к плану)</dt>
+          <dd class="font-semibold text-ink tabular-nums">{{ analytics.revenue_diff|money }} ₸</dd>
         </div>
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Текущая</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold text-ink tabular-nums">{{ analytics.revenue_current|money }} ₸</dd>
         </div>
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Предстоящая</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold text-ink tabular-nums">{{ analytics.revenue_upcoming|money }} ₸</dd>
         </div>
       </dl>
     </div>
@@ -82,19 +118,92 @@
       <h3 class="text-sm font-semibold text-ink mb-3">Затраты</h3>
       <dl class="space-y-2 text-sm">
         <div class="flex justify-between gap-2">
-          <dt class="text-ink-muted">Экономия</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dt class="text-ink-muted">Экономия (закупки)</dt>
+          <dd class="font-semibold text-emerald-700 tabular-nums">{{ analytics.cost_savings|money }} ₸</dd>
         </div>
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Текущие</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold text-ink tabular-nums">{{ analytics.cost_current|money }} ₸</dd>
         </div>
         <div class="flex justify-between gap-2">
           <dt class="text-ink-muted">Предстоящие</dt>
-          <dd class="font-semibold text-ink tabular-nums">—</dd>
+          <dd class="font-semibold text-ink tabular-nums">{{ analytics.cost_upcoming|money }} ₸</dd>
         </div>
       </dl>
     </div>
   </div>
 </section>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script>
+(function () {
+  function readChartData(id) {
+    var el = document.getElementById(id);
+    if (!el || !el.textContent) return [];
+    try { return JSON.parse(el.textContent); } catch (e) { return []; }
+  }
+
+  function renderDoughnut(canvasId, emptyId, segments) {
+    var canvas = document.getElementById(canvasId);
+    var empty = document.getElementById(emptyId);
+    if (!canvas || typeof Chart === "undefined") return;
+    if (!segments || !segments.length) {
+      canvas.classList.add("hidden");
+      if (empty) empty.classList.remove("hidden");
+      return;
+    }
+    if (empty) empty.classList.add("hidden");
+    new Chart(canvas, {
+      type: "doughnut",
+      data: {
+        labels: segments.map(function (s) { return s.label; }),
+        datasets: [{
+          data: segments.map(function (s) { return s.value; }),
+          backgroundColor: segments.map(function (s) { return s.color; }),
+          borderWidth: 2,
+          borderColor: "#ffffff",
+          hoverOffset: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        cutout: "58%",
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: { boxWidth: 10, padding: 10, font: { size: 11 } },
+          },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                var v = ctx.parsed || 0;
+                var total = ctx.dataset.data.reduce(function (a, b) { return a + b; }, 0);
+                var pct = total ? (v / total * 100).toFixed(1) : "0";
+                return " " + ctx.label + ": " + v.toLocaleString("ru-RU") + " \u20B8 (" + pct + "%)";
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  renderDoughnut(
+    "analytics-chart-estimate-types",
+    "analytics-chart-estimate-types-empty",
+    readChartData("analytics-chart-estimate-types-data")
+  );
+  renderDoughnut(
+    "analytics-chart-plan",
+    "analytics-chart-plan-empty",
+    readChartData("analytics-chart-plan-data")
+  );
+  renderDoughnut(
+    "analytics-chart-costs",
+    "analytics-chart-costs-empty",
+    readChartData("analytics-chart-costs-data")
+  );
+})();
+</script>
 {% endblock %}

@@ -18,12 +18,11 @@ def _as_decimal(v) -> Decimal:
 
 
 def supply_eligible_estimate_items(project):
-    """Позиции сметы, доступные для заявок снабжения (только тип «Материалы»)."""
+    """Позиции сметы, доступные для заявок снабжения (все типы, кроме заголовков групп)."""
     return (
         EstimateItem.objects.filter(
             section__project=project,
             is_subsection_header=False,
-            type=EstimateItem.TYPE_MATERIAL,
         )
         .select_related("section")
         .order_by("section__order", "order", "id")

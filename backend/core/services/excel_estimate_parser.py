@@ -1,7 +1,10 @@
 """
 Парсер импорта сметы из Excel.
-Колонки: 1 — № п/п, 3 — наименование, 4 — ед. изм., 5 — количество.
-Логика разделов/позиций — по правилам локальной сметы АВС; PDF не затрагивается.
+
+Поддерживаемые форматы:
+1. Таблица работ: № позиции | Наименование работ | Ед. изм. | Кол-во (по заголовкам).
+2. BOQ ABC: колонки 1, 3, 4, 5 (разделы и позиции по правилам локальной сметы).
+3. Экспорт Metrix: Раздел | Наименование | Тип | Ед | Кол-во | Цена.
 """
 from __future__ import annotations
 
@@ -61,6 +64,42 @@ _TOTALS_SKIP = frozenset(
 )
 
 _PLACEHOLDER_UNITS = frozenset({"", "/", "*", "—", "-", "–", "/ "})
+
+DEFAULT_IMPORT_SECTION = "Смета"
+
+_PLACEHOLDER_SECTION_PREFIXES = ("импорт из",)
+
+
+def _is_placeholder_section_title(name: str) -> bool:
+    low = (name or "").strip().lower()
+    if not low:
+        return True
+    if low in ("импорт из excel", "импорт из"):
+        return True
+    return any(low.startswith(p) for p in _PLACEHOLDER_SECTION_PREFIXES)
+
+
+def _collect_section_title_xlsx(ws: Any, header_row: int, *, max_col: int = 12) -> str:
+    """Самая длинная строка над шапкой таблицы — название раздела."""
+    candidates: list[str] = []
+    for row_idx in range(1, header_row):
+        parts: list[str] = []
+        for col in range(1, max_col + 1):
+            val = cell_name_text(ws.cell(row_idx, col).value)
+            if val and not _header_cell_kind(val) and not is_junk_name(val):
+                parts.append(val)
+        if parts:
+            line = " ".join(parts).strip()
+            if line and not _is_placeholder_section_title(line):
+                candidates.append(line)
+    if candidates:
+        return max(candidates, key=len)[:255]
+    return ""
+
+_HEADER_POS = re.compile(r"№|п/п|позици", re.IGNORECASE)
+_HEADER_NAME = re.compile(r"наименован", re.IGNORECASE)
+_HEADER_UNIT = re.compile(r"ед\.?\s*изм", re.IGNORECASE)
+_HEADER_QTY = re.compile(r"кол-?во|количество", re.IGNORECASE)
 
 # ARGB из Excel → стиль заголовка раздела в UI
 _FILL_TO_ACCENT: dict[str, str] = {}
@@ -320,11 +359,15 @@ def _collapse_duplicate_unit_tokens(text: str) -> str:
     return s
 
 
-def normalize_excel_unit(text: str) -> str:
+def normalize_excel_unit(text: Any) -> str:
     """Ед. изм. без английского дубляжа; т/т → т."""
+    if text is None or text is False:
+        return ""
+    if isinstance(text, (int, float)):
+        return clean_cell_text(text)
     cleaned = keep_cyrillic_text(text)
     if not cleaned:
-        return (text or "").strip()
+        return clean_cell_text(text)
     return _collapse_duplicate_unit_tokens(cleaned)
 
 
@@ -480,6 +523,40 @@ def parse_quantity(value: Any) -> Decimal | None:
     return d if d > 0 else None
 
 
+def cell_name_text(value: Any) -> str:
+    """Наименование: кириллица без дубляжа, иначе очищенный исходный текст."""
+    cyr = keep_cyrillic_text(value)
+    if cyr:
+        return cyr
+    return clean_cell_text(value)
+
+
+def _header_cell_kind(text: str) -> str | None:
+    raw = clean_cell_text(text)
+    if not raw or len(raw) > 48:
+        return None
+    low = raw.lower()
+    if _HEADER_NAME.search(low):
+        return "name"
+    if _HEADER_UNIT.search(low):
+        return "unit"
+    if _HEADER_QTY.search(low):
+        return "qty"
+    if _HEADER_POS.search(low) and "наименован" not in low:
+        return "pos"
+    return None
+
+
+@dataclass
+class _WorkTableColumns:
+    header_row: int = 0
+    pos_col: int = 1
+    name_col: int = 2
+    unit_col: int = 3
+    qty_col: int = 4
+    section_title: str = DEFAULT_IMPORT_SECTION
+
+
 def classify_row(
     name: str,
     unit: str,
@@ -513,6 +590,287 @@ def _seekable_copy(file: BinaryIO) -> BinaryIO:
     return BytesIO(data)
 
 
+def _detect_work_table_xlsx(ws: Any, *, max_scan: int = 25, max_col: int = 12) -> _WorkTableColumns | None:
+    for row_idx in range(1, min(max_scan, ws.max_row or 0) + 1):
+        mapping: dict[str, int] = {}
+        for col in range(1, max_col + 1):
+            kind = _header_cell_kind(ws.cell(row_idx, col).value)
+            if kind:
+                mapping[kind] = col
+        if "name" not in mapping:
+            continue
+        if "qty" not in mapping and "unit" not in mapping:
+            continue
+        cols = _WorkTableColumns(header_row=row_idx)
+        cols.name_col = mapping["name"]
+        cols.pos_col = mapping.get("pos", max(1, cols.name_col - 1))
+        cols.unit_col = mapping.get("unit", cols.name_col + 1)
+        cols.qty_col = mapping.get("qty", cols.unit_col + 1)
+        title = _collect_section_title_xlsx(ws, row_idx)
+        if title:
+            cols.section_title = title
+        return cols
+    return None
+
+
+def _parse_simple_work_table_xlsx(file: BinaryIO) -> ExcelParseResult | None:
+    wb = load_workbook(_seekable_copy(file), data_only=True, read_only=False)
+    try:
+        ws = wb.active
+        if not ws:
+            return None
+        cols = _detect_work_table_xlsx(ws)
+        if not cols:
+            return None
+        result = ExcelParseResult()
+        result.rows.append(
+            ParsedExcelRow(
+                kind="section",
+                name=cols.section_title,
+                source_row=max(1, cols.header_row - 1),
+            )
+        )
+        for row_idx in range(cols.header_row + 1, (ws.max_row or 0) + 1):
+            name = cell_name_text(ws.cell(row_idx, cols.name_col).value)
+            if not name or is_junk_name(name) or _header_cell_kind(name):
+                continue
+            if is_totals_line(name):
+                result.skipped += 1
+                continue
+            unit = normalize_excel_unit(ws.cell(row_idx, cols.unit_col).value) or "шт"
+            qty = parse_quantity(ws.cell(row_idx, cols.qty_col).value)
+            if qty is None:
+                result.skipped += 1
+                continue
+            pos_no = parse_excel_list_no(ws.cell(row_idx, cols.pos_col).value)
+            result.rows.append(
+                ParsedExcelRow(
+                    kind="position",
+                    name=name,
+                    list_no=pos_no,
+                    unit=unit,
+                    quantity=qty,
+                    source_row=row_idx,
+                )
+            )
+        return result if len(result.rows) > 1 else None
+    finally:
+        wb.close()
+
+
+def _parse_simple_work_table_xls(file: BinaryIO) -> ExcelParseResult | None:
+    import xlrd
+
+    book = xlrd.open_workbook(file_contents=_seekable_copy(file).read())
+    sheet = book.sheet_by_index(0)
+    cols = _detect_work_table_xls(sheet)
+    if not cols:
+        return None
+    result = ExcelParseResult()
+    result.rows.append(
+        ParsedExcelRow(
+            kind="section",
+            name=cols.section_title,
+            source_row=max(1, cols.header_row - 1),
+        )
+    )
+    for row_idx in range(cols.header_row, sheet.nrows):
+        name = cell_name_text(
+            sheet.cell_value(row_idx, cols.name_col - 1)
+            if cols.name_col - 1 < sheet.ncols
+            else ""
+        )
+        if not name or is_junk_name(name) or _header_cell_kind(name):
+            continue
+        if is_totals_line(name):
+            result.skipped += 1
+            continue
+        unit = (
+            normalize_excel_unit(
+                sheet.cell_value(row_idx, cols.unit_col - 1)
+                if cols.unit_col - 1 < sheet.ncols
+                else ""
+            )
+            or "шт"
+        )
+        qty = parse_quantity(
+            sheet.cell_value(row_idx, cols.qty_col - 1)
+            if cols.qty_col - 1 < sheet.ncols
+            else ""
+        )
+        if qty is None:
+            result.skipped += 1
+            continue
+        pos_no = parse_excel_list_no(
+            sheet.cell_value(row_idx, cols.pos_col - 1)
+            if cols.pos_col - 1 < sheet.ncols
+            else ""
+        )
+        result.rows.append(
+            ParsedExcelRow(
+                kind="position",
+                name=name,
+                list_no=pos_no,
+                unit=unit,
+                quantity=qty,
+                source_row=row_idx + 1,
+            )
+        )
+    return result if len(result.rows) > 1 else None
+
+
+def _collect_section_title_xls(sheet: Any, header_row: int, *, max_col: int = 12) -> str:
+    candidates: list[str] = []
+    for row_idx in range(header_row - 1):
+        parts: list[str] = []
+        for col in range(min(max_col, sheet.ncols)):
+            val = cell_name_text(sheet.cell_value(row_idx, col))
+            if val and not _header_cell_kind(val) and not is_junk_name(val):
+                parts.append(val)
+        if parts:
+            line = " ".join(parts).strip()
+            if line and not _is_placeholder_section_title(line):
+                candidates.append(line)
+    if candidates:
+        return max(candidates, key=len)[:255]
+    return ""
+
+
+def _detect_work_table_xls(sheet: Any, *, max_scan: int = 25, max_col: int = 12) -> _WorkTableColumns | None:
+    for row_idx in range(min(max_scan, sheet.nrows)):
+        mapping: dict[str, int] = {}
+        for col in range(min(max_col, sheet.ncols)):
+            kind = _header_cell_kind(sheet.cell_value(row_idx, col))
+            if kind:
+                mapping[kind] = col + 1
+        if "name" not in mapping:
+            continue
+        if "qty" not in mapping and "unit" not in mapping:
+            continue
+        cols = _WorkTableColumns(header_row=row_idx + 1)
+        cols.name_col = mapping["name"]
+        cols.pos_col = mapping.get("pos", max(1, cols.name_col - 1))
+        cols.unit_col = mapping.get("unit", cols.name_col + 1)
+        cols.qty_col = mapping.get("qty", cols.unit_col + 1)
+        title = _collect_section_title_xls(sheet, row_idx + 1)
+        if title:
+            cols.section_title = title
+        return cols
+    return None
+
+
+def _parse_gectaro_export_format(file: BinaryIO) -> ExcelParseResult:
+    """Старый формат экспорта Metrix: Раздел | Наименование | Тип | Ед | Кол-во | Цена."""
+    result = ExcelParseResult()
+    wb = load_workbook(_seekable_copy(file), data_only=True, read_only=True)
+    try:
+        ws = wb.active
+        if not ws:
+            result.errors.append("Нет листа в файле")
+            return result
+        rows = list(ws.iter_rows(values_only=True))
+    finally:
+        wb.close()
+    if not rows:
+        return result
+
+    header = [clean_cell_text(c).lower() for c in rows[0]]
+    if not header or "раздел" not in header[0]:
+        return result
+    if len(header) < 2 or "наименование" not in header[1]:
+        return result
+
+    current_section = ""
+    last_section_added = ""
+    for row_idx, row in enumerate(rows[1:], start=2):
+        parts = [clean_cell_text(c) for c in (list(row)[:6] or [])]
+        while len(parts) < 6:
+            parts.append("")
+        section_name = cell_name_text(parts[0])
+        name = cell_name_text(parts[1])
+        unit = normalize_excel_unit(parts[3]) or "шт"
+        qty = parse_quantity(parts[4])
+        if section_name:
+            current_section = section_name
+        if not name:
+            result.skipped += 1
+            continue
+        if not current_section:
+            result.skipped += 1
+            continue
+        if qty is None:
+            result.skipped += 1
+            continue
+        if current_section != last_section_added:
+            result.rows.append(
+                ParsedExcelRow(
+                    kind="section",
+                    name=current_section,
+                    source_row=row_idx,
+                )
+            )
+            last_section_added = current_section
+        result.rows.append(
+            ParsedExcelRow(
+                kind="position",
+                name=name,
+                unit=unit,
+                quantity=qty,
+                source_row=row_idx,
+            )
+        )
+    return result
+
+
+def _consume_boq_rows(
+    row_iter: Iterator[tuple[int, str, str, str, str, Decimal | None, str]],
+) -> ExcelParseResult:
+    result = ExcelParseResult()
+    header_like = 0
+    for row_idx, list_no, name, unit, _c5_raw, qty, accent in row_iter:
+        if not name and not unit and qty is None:
+            continue
+        name = name or cell_name_text(_c5_raw)
+        if not name:
+            result.skipped += 1
+            continue
+        if row_idx <= 6 and is_english_only_line(name):
+            header_like += 1
+            result.skipped += 1
+            continue
+
+        kind = classify_row(name, unit, qty, fill_accent=accent)
+        if kind is None:
+            result.skipped += 1
+            continue
+
+        if kind == "section":
+            result.rows.append(
+                ParsedExcelRow(
+                    kind="section",
+                    name=name,
+                    list_no=list_no,
+                    header_accent=accent or "",
+                    source_row=row_idx,
+                )
+            )
+        else:
+            result.rows.append(
+                ParsedExcelRow(
+                    kind="position",
+                    name=name,
+                    list_no=list_no,
+                    unit=unit or "шт",
+                    quantity=qty,
+                    source_row=row_idx,
+                )
+            )
+
+    if not result.rows and header_like:
+        result.errors.append("Не найдено строк для импорта — проверьте формат файла.")
+    return result
+
+
 def _iter_xlsx_rows(
     file: BinaryIO,
 ) -> Iterator[tuple[int, str, str, str, str, Decimal | None, str]]:
@@ -523,12 +881,20 @@ def _iter_xlsx_rows(
             return
         for row_idx in range(1, (ws.max_row or 0) + 1):
             c1 = parse_excel_list_no(ws.cell(row_idx, 1).value)
-            c3 = keep_cyrillic_text(ws.cell(row_idx, 3).value)
+            c2 = cell_name_text(ws.cell(row_idx, 2).value)
+            c3 = cell_name_text(ws.cell(row_idx, 3).value)
+            name = c3 or c2
             c4 = normalize_excel_unit(ws.cell(row_idx, 4).value)
             c5_raw = ws.cell(row_idx, 5).value
+            c6_raw = ws.cell(row_idx, 6).value
             qty = parse_quantity(c5_raw)
-            accent = cell_fill_accent(ws.cell(row_idx, 3))
-            yield row_idx, c1, c3, c4, c5_raw if c5_raw is not None else "", qty, accent
+            if qty is None:
+                qty = parse_quantity(c6_raw)
+            unit = c4 or normalize_excel_unit(ws.cell(row_idx, 3).value)
+            accent = cell_fill_accent(ws.cell(row_idx, 3)) or cell_fill_accent(
+                ws.cell(row_idx, 2)
+            )
+            yield row_idx, c1, name, unit, c5_raw if c5_raw is not None else "", qty, accent
     finally:
         wb.close()
 
@@ -545,12 +911,18 @@ def _iter_xls_rows(
         c1 = parse_excel_list_no(
             sheet.cell_value(row_idx, 0) if sheet.ncols > 0 else ""
         )
-        c3 = keep_cyrillic_text(sheet.cell_value(row_idx, 2) if sheet.ncols > 2 else "")
+        c3 = cell_name_text(sheet.cell_value(row_idx, 2) if sheet.ncols > 2 else "")
+        c2 = cell_name_text(sheet.cell_value(row_idx, 1) if sheet.ncols > 1 else "")
+        name = c3 or c2
         c4 = normalize_excel_unit(
             sheet.cell_value(row_idx, 3) if sheet.ncols > 3 else ""
         )
         c5_raw = sheet.cell_value(row_idx, 4) if sheet.ncols > 4 else ""
+        c6_raw = sheet.cell_value(row_idx, 5) if sheet.ncols > 5 else ""
         qty = parse_quantity(c5_raw)
+        if qty is None:
+            qty = parse_quantity(c6_raw)
+        unit = c4
         accent = ""
         try:
             xf = sheet.cell_xf_index(row_idx, 2) if sheet.ncols > 2 else 0
@@ -564,64 +936,50 @@ def _iter_xls_rows(
                     accent = "gold"
         except Exception:
             pass
-        yield r, c1, c3, c4, c5_raw, qty, accent
+        yield r, c1, name, unit, c5_raw, qty, accent
 
 
 def parse_excel_estimate(file) -> ExcelParseResult:
     """
     Читает .xlsx / .xls и возвращает упорядоченные строки разделов и позиций.
     """
-    result = ExcelParseResult()
     name = (getattr(file, "name", "") or "").lower()
-    if name.endswith(".xls") and not name.endswith(".xlsx"):
-        row_iter = _iter_xls_rows(file)
-    elif name.endswith(".xlsx"):
-        row_iter = _iter_xlsx_rows(file)
-    else:
+    if not name.endswith(".xlsx") and not (
+        name.endswith(".xls") and not name.endswith(".xlsx")
+    ):
+        result = ExcelParseResult()
         result.errors.append("Поддерживаются только файлы .xlsx и .xls")
         return result
 
-    header_like = 0
-    for row_idx, list_no, c3, c4, _c5_raw, qty, accent in row_iter:
-        if not c3 and not c4 and qty is None:
-            continue
-        if not c3:
-            result.skipped += 1
-            continue
-        # пропуск шапки таблицы (первые ~6 строк с «описание/unit/quantity» на латинице)
-        if row_idx <= 6 and is_english_only_line(c3):
-            header_like += 1
-            result.skipped += 1
-            continue
+    if hasattr(file, "seek"):
+        try:
+            file.seek(0)
+        except (OSError, AttributeError, TypeError):
+            pass
 
-        kind = classify_row(c3, c4, qty, fill_accent=accent)
-        if kind is None:
-            result.skipped += 1
-            continue
+    if name.endswith(".xlsx"):
+        simple = _parse_simple_work_table_xlsx(file)
+    else:
+        simple = _parse_simple_work_table_xls(file)
+    if simple and simple.rows:
+        return simple
 
-        if kind == "section":
-            result.rows.append(
-                ParsedExcelRow(
-                    kind="section",
-                    name=c3,
-                    list_no=list_no,
-                    header_accent=accent or "",
-                    source_row=row_idx,
-                )
-            )
-        else:
-            unit = c4
-            result.rows.append(
-                ParsedExcelRow(
-                    kind="position",
-                    name=c3,
-                    list_no=list_no,
-                    unit=unit,
-                    quantity=qty,
-                    source_row=row_idx,
-                )
-            )
+    if hasattr(file, "seek"):
+        try:
+            file.seek(0)
+        except (OSError, AttributeError, TypeError):
+            pass
+    if name.endswith(".xlsx"):
+        legacy = _parse_gectaro_export_format(file)
+        if legacy.rows:
+            return legacy
 
-    if not result.rows and header_like:
-        result.errors.append("Не найдено строк для импорта — проверьте формат файла.")
-    return result
+    if hasattr(file, "seek"):
+        try:
+            file.seek(0)
+        except (OSError, AttributeError, TypeError):
+            pass
+
+    if name.endswith(".xlsx"):
+        return _consume_boq_rows(_iter_xlsx_rows(file))
+    return _consume_boq_rows(_iter_xls_rows(file))

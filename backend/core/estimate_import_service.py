@@ -1,7 +1,7 @@
 """
 Импорт сметы из Excel (.xlsx, .xls).
-Колонки: 1 — № п/п, 3 — наименование, 4 — ед. изм., 5 — количество.
-Разделы и позиции — как в локальной смете АВС; PDF-импорт не затрагивается.
+Формат таблицы: № позиции | Наименование работ | Ед. изм. | Кол-во (по заголовкам).
+Также поддерживаются BOQ ABC и экспорт Metrix.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from .models import (
     Project,
 )
 from .services.excel_estimate_parser import (
+    DEFAULT_IMPORT_SECTION,
     normalize_estimate_name,
     normalize_excel_unit,
     parse_excel_estimate,
@@ -29,6 +30,14 @@ def _section_order_from_list_no(list_no: str, fallback: int) -> int:
     if n.isdigit():
         return int(n)
     return fallback
+
+
+def _section_name_for_import(raw: str) -> str:
+    name = (normalize_estimate_name(raw) or (raw or "")).strip()[:255]
+    low = name.lower()
+    if not name or low.startswith("импорт из"):
+        return DEFAULT_IMPORT_SECTION
+    return name
 
 
 def import_estimate_from_excel(project: Project, file) -> dict[str, Any]:
@@ -64,7 +73,7 @@ def import_estimate_from_excel(project: Project, file) -> dict[str, Any]:
                 )
                 active_section = EstimateSection.objects.create(
                     project=project,
-                    name=normalize_estimate_name(row.name)[:255],
+                    name=_section_name_for_import(row.name),
                     order=sec_order,
                     header_style=(row.header_accent or "")[:16],
                 )
@@ -72,29 +81,18 @@ def import_estimate_from_excel(project: Project, file) -> dict[str, Any]:
                     next_section_order = sec_order + 1
                 sections_created += 1
                 section_row_fallback = 0
-                EstimateItem.objects.create(
-                    section=active_section,
-                    name=active_section.name[:ESTIMATE_ITEM_NAME_MAX_LENGTH],
-                    type=EstimateItem.TYPE_LABOR,
-                    unit="—",
-                    quantity=Decimal("0"),
-                    cost_price=Decimal("0"),
-                    markup_percent=Decimal("0"),
-                    order=0,
-                    is_subsection_header=True,
-                )
                 continue
 
             if active_section is None:
                 parsed.skipped += 1
                 continue
 
-            unit = normalize_excel_unit(row.unit)[:128]
+            unit = normalize_excel_unit(row.unit)[:128] or "шт"
             qty = row.quantity
             name = normalize_estimate_name(row.name)[
                 :ESTIMATE_ITEM_NAME_MAX_LENGTH
             ]
-            if not name or not unit or qty is None:
+            if not name or qty is None:
                 parsed.skipped += 1
                 continue
 

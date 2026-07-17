@@ -1,8 +1,8 @@
 import type { ScheduleRow, SuccChoice, ZoomMode } from "./types";
 
 export const ESTIMATE_SECTION_H = 38;
-export const TASK_ROW_H = 58;
-export const ITEM_ROW_H = 30;
+export const TASK_ROW_H = 40;
+export const ITEM_ROW_H = 52;
 export const HEAD_H = 36;
 export const HSCROLL_H = 14;
 
@@ -30,7 +30,7 @@ export function buildSuccCatalog(
   return rows
     .filter(
       (r): r is ScheduleRow & { item_id: number } =>
-        r.kind === "task" && r.item_id != null,
+        r.kind === "item" && r.item_id != null,
     )
     .map((r) => ({
       id: r.item_id,
@@ -120,7 +120,7 @@ export function computeRange(rows: ScheduleRow[], today: string): DateRange {
   let maxD: Date | null = null;
   const t = parseYMD(today);
   rows.forEach((r) => {
-    if (r.kind !== "task") return;
+    if (r.kind !== "item") return;
     const s = r.schedule_start ? parseYMD(r.schedule_start) : null;
     const e = r.schedule_end ? parseYMD(r.schedule_end) : null;
     if (s) minD = minD ? (cmpTime(s, minD) < 0 ? s : minD) : s;
@@ -155,13 +155,13 @@ export function pxPerDay(zoom: ZoomMode): number {
 export function recomputeSuccessorIds(rows: ScheduleRow[]): void {
   const firstByPred: Record<number, number> = {};
   rows.forEach((r) => {
-    if (r.kind === "task" && r.predecessor_id && r.item_id) {
+    if (r.kind === "item" && r.predecessor_id && r.item_id) {
       const p = r.predecessor_id;
       if (firstByPred[p] == null) firstByPred[p] = r.item_id;
     }
   });
   rows.forEach((r) => {
-    if (r.kind === "task" && r.item_id) {
+    if (r.kind === "item" && r.item_id) {
       const sid = firstByPred[r.item_id];
       r.successor_id = sid != null ? sid : null;
     }
@@ -257,9 +257,6 @@ export function formatMoneyRub(val: string | number | undefined): string {
   );
 }
 
-export function taskSummaryLine(row: ScheduleRow): string {
-  if (row.item_count != null && row.item_count > 0) {
-    return `${row.item_count} поз.`;
-  }
+export function taskSummaryLine(_row: ScheduleRow): string {
   return "";
 }

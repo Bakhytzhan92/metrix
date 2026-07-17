@@ -19,7 +19,6 @@ import {
   ITEM_ROW_H,
   LEFT_COL_DEFAULTS,
   LEFT_COL_MINS,
-  TASK_ROW_H,
   addDays,
   barGeometry,
   buildHeadCells,
@@ -34,7 +33,6 @@ import {
   pxPerDay,
   recomputeSuccessorIds,
   rowHeight,
-  taskSummaryLine,
   timelineWidth,
 } from "./gantt";
 import type {
@@ -45,7 +43,7 @@ import type {
 
 const LEFT_HEADERS = [
   "№",
-  "Этап / группа работ",
+  "Наименование",
   "Кол-во",
   "Начало",
   "Дни",
@@ -198,62 +196,12 @@ const ItemRow = memo(function ItemRow({
   viewportW,
   timelineW,
   scrollLeft,
-}: {
-  row: ScheduleRow;
-  colWidths: number[];
-  leftW: number;
-  viewportW: number;
-  timelineW: number;
-  scrollLeft: number;
-}) {
-  const qty =
-    row.quantity != null && String(row.quantity) !== ""
-      ? `${row.quantity}${row.unit ? ` ${row.unit}` : ""}`
-      : "";
-  return (
-    <SplitRowShell
-      viewportW={viewportW}
-      leftW={leftW}
-      timelineW={timelineW}
-      scrollLeft={scrollLeft}
-      height={ITEM_ROW_H}
-      className="border-b border-slate-100 bg-slate-50/90 text-[11px] text-slate-600"
-      left={
-        <div className="flex items-center h-full bg-inherit">
-          <Cell w={colWidths[0]} />
-          <Cell w={colWidths[1]} className="pl-6 truncate" title={row.name}>
-            {row.name}
-          </Cell>
-          <Cell w={colWidths[2]} className="truncate tabular-nums">
-            {qty}
-          </Cell>
-          <Cell w={colWidths[3]} />
-          <Cell w={colWidths[4]} />
-          <Cell w={colWidths[5]} />
-          <Cell w={colWidths[6]} />
-          <Cell w={colWidths[7]} />
-        </div>
-      }
-      gantt={<div className="h-full bg-slate-50/60" />}
-    />
-  );
-});
-
-const TaskRow = memo(function TaskRow({
-  row,
-  colWidths,
-  leftW,
-  viewportW,
-  timelineW,
-  scrollLeft,
   range,
   zoom,
   statusChoices,
   assignees,
   succCatalog,
-  collapsed,
   onSave,
-  onToggle,
 }: {
   row: ScheduleRow;
   colWidths: number[];
@@ -266,20 +214,21 @@ const TaskRow = memo(function TaskRow({
   statusChoices: ScheduleVirtualPayload["status_choices"];
   assignees: ScheduleVirtualPayload["assignees"];
   succCatalog: ScheduleVirtualPayload["succ_catalog"];
-  collapsed: boolean;
   onSave: (itemId: number, body: Record<string, unknown>) => void;
-  onToggle: (taskId: number) => void;
 }) {
-  const taskId = row.item_id!;
+  const itemId = row.item_id!;
+  const qty =
+    row.quantity != null && String(row.quantity) !== ""
+      ? `${row.quantity}${row.unit ? ` ${row.unit}` : ""}`
+      : "";
   const bar =
     row.schedule_start && row.schedule_end
       ? barGeometry(range, zoom, row.schedule_start, row.schedule_end)
       : null;
-  const summary = taskSummaryLine(row);
   const succGroups = useMemo(() => {
-    const choices = succCatalog.filter((c) => c.id !== taskId);
+    const choices = succCatalog.filter((c) => c.id !== itemId);
     return groupSuccChoices(choices);
-  }, [succCatalog, taskId]);
+  }, [succCatalog, itemId]);
   const dragRef = useRef<{
     mode: "drag" | "resize";
     startX: number;
@@ -302,21 +251,13 @@ const TaskRow = memo(function TaskRow({
         return;
       }
       const dur =
-        row.duration_days && row.duration_days >= 1
-          ? row.duration_days
-          : row.suggested_days || 1;
-      onSave(taskId, {
+        row.duration_days && row.duration_days >= 1 ? row.duration_days : 1;
+      onSave(itemId, {
         schedule_start: v || null,
         ...(v ? { duration_days: dur } : { schedule_end: null }),
       });
     },
-    [
-      onSave,
-      row.duration_days,
-      row.schedule_start,
-      row.suggested_days,
-      taskId,
-    ],
+    [onSave, row.duration_days, row.schedule_start, itemId],
   );
 
   useEffect(() => {
@@ -326,7 +267,7 @@ const TaskRow = memo(function TaskRow({
       const dx = ev.clientX - st.startX;
       const dd = Math.round(dx / pxPerDay(zoom));
       const barEl = document.querySelector(
-        `.sched-vbar[data-item-id="${taskId}"]`,
+        `.sched-vbar[data-item-id="${itemId}"]`,
       ) as HTMLElement | null;
       if (!barEl) return;
       if (st.mode === "drag") {
@@ -353,7 +294,7 @@ const TaskRow = memo(function TaskRow({
       const dx = ev.clientX - st.startX;
       const dd = Math.round(dx / pxPerDay(zoom));
       if (st.mode === "drag") {
-        onSave(taskId, {
+        onSave(itemId, {
           schedule_start: formatYMD(addDays(st.origStart, dd)),
           schedule_end: formatYMD(addDays(st.origEnd, dd)),
         });
@@ -361,7 +302,7 @@ const TaskRow = memo(function TaskRow({
         let ne3 = addDays(st.origEnd, dd);
         if (cmpTime(ne3, st.origStart) < 0)
           ne3 = new Date(st.origStart.getTime());
-        onSave(taskId, { schedule_end: formatYMD(ne3) });
+        onSave(itemId, { schedule_end: formatYMD(ne3) });
       }
       dragRef.current = null;
     }
@@ -371,7 +312,7 @@ const TaskRow = memo(function TaskRow({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [onSave, range, taskId, zoom]);
+  }, [onSave, range, itemId, zoom]);
 
   const onBarMouseDown = (ev: React.MouseEvent) => {
     const rz = (ev.target as HTMLElement).closest(".sched-bar-resize");
@@ -380,10 +321,9 @@ const TaskRow = memo(function TaskRow({
     if (!s || !e) {
       if (!rz) {
         const t = parseYMD(new Date().toISOString().slice(0, 10));
-        const days = row.suggested_days || 1;
-        onSave(taskId, {
+        onSave(itemId, {
           schedule_start: formatYMD(t),
-          duration_days: days,
+          duration_days: 1,
         });
       }
       return;
@@ -400,47 +340,32 @@ const TaskRow = memo(function TaskRow({
       leftW={leftW}
       timelineW={timelineW}
       scrollLeft={scrollLeft}
-      height={TASK_ROW_H}
-      className="border-b border-violet-100 bg-violet-50/90 font-semibold text-slate-900"
+      height={ITEM_ROW_H}
+      className="border-b border-slate-100 bg-white text-[11px] text-slate-800"
       left={
-        <div className="flex items-stretch h-full bg-[rgba(245,243,255,0.95)]">
-          <Cell w={colWidths[0]} />
-          <Cell w={colWidths[1]} className="flex flex-col justify-center min-w-0">
-            <div className="flex items-start gap-0.5 min-w-0">
-              <button
-                type="button"
-                className="sched-sec-toggle shrink-0 inline-flex items-center justify-center w-5 border-0 bg-transparent cursor-pointer text-slate-600"
-                onClick={() => onToggle(taskId)}
-                aria-expanded={!collapsed}
-              >
-                {collapsed ? "▶" : "▼"}
-              </button>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-bold" title={row.name}>
-                  {row.name}
-                </div>
-                {summary && (
-                  <div className="truncate text-[10px] font-normal text-slate-600 mt-0.5">
-                    {summary}
-                  </div>
-                )}
-              </div>
+        <div className="flex items-stretch h-full bg-white">
+          <Cell w={colWidths[0]} className="flex items-center justify-center tabular-nums text-slate-500">
+            {row.number || ""}
+          </Cell>
+          <Cell w={colWidths[1]} className="flex items-center pl-1 min-w-0">
+            <div className="truncate" title={row.name}>
+              {row.name}
             </div>
           </Cell>
-          <Cell w={colWidths[2]} />
+          <Cell w={colWidths[2]} className="flex items-center truncate tabular-nums text-slate-600">
+            {qty}
+          </Cell>
           <Cell w={colWidths[3]} className="flex items-center">
             <input
               type="date"
-              className="sched-input-xs w-full min-w-0 box-border text-[11px] px-1 py-0.5 border border-slate-300 rounded bg-white font-normal"
+              className="sched-input-xs w-full min-w-0 box-border text-[11px] px-1 py-0.5 border border-slate-300 rounded bg-white"
               value={startDraft}
               min="1990-01-01"
               max="2100-12-31"
               onChange={(e) => setStartDraft(e.target.value)}
               onBlur={(e) => commitStartDate(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.currentTarget.blur();
-                }
+                if (e.key === "Enter") e.currentTarget.blur();
               }}
             />
           </Cell>
@@ -448,34 +373,27 @@ const TaskRow = memo(function TaskRow({
             <input
               type="number"
               min={1}
-              className="sched-input-xs w-full min-w-0 box-border text-[11px] px-1 py-0.5 border border-slate-300 rounded text-right bg-white font-normal"
+              className="sched-input-xs w-full min-w-0 box-border text-[11px] px-1 py-0.5 border border-slate-300 rounded text-right bg-white"
               defaultValue={
                 row.duration_days != null && row.duration_days >= 1
                   ? String(row.duration_days)
-                  : row.suggested_days != null
-                    ? String(row.suggested_days)
-                    : ""
+                  : ""
               }
               placeholder="—"
-              title={
-                row.suggested_days
-                  ? `Ориентир: ${row.suggested_days} дн.`
-                  : undefined
-              }
               onChange={(e) => {
                 let d = parseInt(e.target.value, 10);
                 if (!d || d < 1) d = 1;
                 e.target.value = String(d);
-                onSave(taskId, { duration_days: d });
+                onSave(itemId, { duration_days: d });
               }}
             />
           </Cell>
           <Cell w={colWidths[5]} className="flex items-center">
             <select
-              className="sched-input-xs w-full min-w-0 box-border text-[10px] px-0.5 py-0.5 border border-slate-300 rounded bg-white font-normal"
+              className="sched-input-xs w-full min-w-0 box-border text-[10px] px-0.5 py-0.5 border border-slate-300 rounded bg-white"
               defaultValue={row.status || "planned"}
               onChange={(e) =>
-                onSave(taskId, { schedule_status: e.target.value })
+                onSave(itemId, { schedule_status: e.target.value })
               }
             >
               {statusChoices.map(([val, label]) => (
@@ -487,12 +405,12 @@ const TaskRow = memo(function TaskRow({
           </Cell>
           <Cell w={colWidths[6]} className="flex items-center">
             <select
-              className="sched-input-xs w-full min-w-0 box-border text-[10px] px-0.5 py-0.5 border border-slate-300 rounded bg-white font-normal"
+              className="sched-input-xs w-full min-w-0 box-border text-[10px] px-0.5 py-0.5 border border-slate-300 rounded bg-white"
               defaultValue={
                 row.assignee_id != null ? String(row.assignee_id) : ""
               }
               onChange={(e) =>
-                onSave(taskId, {
+                onSave(itemId, {
                   schedule_assignee_id:
                     e.target.value === "" ? null : Number(e.target.value),
                 })
@@ -508,13 +426,13 @@ const TaskRow = memo(function TaskRow({
           </Cell>
           <Cell w={colWidths[7]} className="flex items-center">
             <select
-              className="sched-input-xs w-full min-w-0 box-border text-[10px] px-0.5 py-0.5 border border-slate-300 rounded bg-white font-normal"
+              className="sched-input-xs w-full min-w-0 box-border text-[10px] px-0.5 py-0.5 border border-slate-300 rounded bg-white"
               defaultValue={
                 row.successor_id != null ? String(row.successor_id) : ""
               }
-              title="Зависимость только между группами работ"
+              title="Позиция начнётся после выбранной"
               onChange={(e) =>
-                onSave(taskId, {
+                onSave(itemId, {
                   schedule_successor_id:
                     e.target.value === "" ? null : Number(e.target.value),
                 })
@@ -541,12 +459,12 @@ const TaskRow = memo(function TaskRow({
         <>
           {bar && (
             <div
-              className={`sched-vbar sched-bar absolute top-1/2 -translate-y-1/2 h-[30px] rounded-md flex items-center px-1.5 text-[10px] overflow-hidden whitespace-nowrap cursor-grab active:cursor-grabbing box-border border-2 ${statusBarClass(row.status)}`}
+              className={`sched-vbar sched-bar absolute top-1/2 -translate-y-1/2 h-[26px] rounded-md flex items-center px-1.5 text-[10px] overflow-hidden whitespace-nowrap cursor-grab active:cursor-grabbing box-border border-2 ${statusBarClass(row.status)}`}
               style={{ left: bar.left, width: bar.width, minWidth: 8 }}
-              data-item-id={taskId}
+              data-item-id={itemId}
               onMouseDown={onBarMouseDown}
             >
-              <span className="truncate font-normal">{row.name}</span>
+              <span className="truncate">{row.name}</span>
               <div className="sched-bar-resize absolute right-[-4px] top-0 w-2.5 h-full cursor-ew-resize z-[3]" />
             </div>
           )}
@@ -587,15 +505,6 @@ export function ScheduleVirtualApp({
     JSON.parse(JSON.stringify(payload.rows)),
   );
   const [zoom, setZoom] = useState<ZoomMode>("day");
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem(`sched-collapse-${payload.project_id}`) || "{}",
-      );
-    } catch {
-      return {};
-    }
-  });
   const [colWidths] = useState<number[]>(() => {
     try {
       const saved = JSON.parse(
@@ -629,16 +538,10 @@ export function ScheduleVirtualApp({
     [payload.rows, payload.succ_catalog],
   );
 
-  const visibleRows = useMemo(() => {
-    const out: ScheduleRow[] = [];
-    for (const row of rows) {
-      if (row.kind === "item" && row.task_id) {
-        if (collapsed[String(row.task_id)]) continue;
-      }
-      out.push(row);
-    }
-    return out;
-  }, [rows, collapsed]);
+  const visibleRows = useMemo(
+    () => rows.filter((row) => row.kind !== "task"),
+    [rows],
+  );
 
   const range = useMemo(
     () => computeRange(rows, payload.today),
@@ -731,7 +634,7 @@ export function ScheduleVirtualApp({
             };
             const merge = (p: P) => {
               next.forEach((row) => {
-                if (row.kind === "task" && row.item_id === p.id) {
+                if (row.kind === "item" && row.item_id === p.id) {
                   if (p.schedule_start !== undefined)
                     row.schedule_start = p.schedule_start;
                   if (p.schedule_end !== undefined)
@@ -759,26 +662,10 @@ export function ScheduleVirtualApp({
     [payload.api_url_template, payload.csrf_token],
   );
 
-  const toggleTask = useCallback(
-    (taskId: number) => {
-      setCollapsed((prev) => {
-        const key = String(taskId);
-        const next = { ...prev, [key]: !prev[key] };
-        localStorage.setItem(
-          `sched-collapse-${payload.project_id}`,
-          JSON.stringify(next),
-        );
-        return next;
-      });
-    },
-    [payload.project_id],
-  );
-
-  const taskRowIndex = useMemo(() => {
+  const positionRowIndex = useMemo(() => {
     const m: Record<number, number> = {};
-    let y = 0;
     visibleRows.forEach((r, i) => {
-      if (r.kind === "task" && r.item_id) {
+      if (r.kind === "item" && r.item_id) {
         m[r.item_id] = i;
       }
     });
@@ -790,7 +677,7 @@ export function ScheduleVirtualApp({
     let offsetY = 0;
     visibleRows.forEach((r, index) => {
       const h = rowHeight(r);
-      if (r.kind !== "task" || !r.predecessor_id || !r.item_id) {
+      if (r.kind !== "item" || !r.predecessor_id || !r.item_id) {
         offsetY += h;
         return;
       }
@@ -798,14 +685,14 @@ export function ScheduleVirtualApp({
         offsetY += h;
         return;
       }
-      const pi = taskRowIndex[r.predecessor_id];
+      const pi = positionRowIndex[r.predecessor_id];
       if (pi === undefined) {
         offsetY += h;
         return;
       }
       const pred = visibleRows[pi];
       if (
-        pred.kind !== "task" ||
+        pred.kind !== "item" ||
         !pred.schedule_start ||
         !pred.schedule_end
       ) {
@@ -845,7 +732,7 @@ export function ScheduleVirtualApp({
       offsetY += h;
     });
     return paths;
-  }, [visibleRows, taskRowIndex, range, zoom]);
+  }, [visibleRows, positionRowIndex, range, zoom]);
 
   const totalContentHeight = useMemo(
     () => visibleRows.reduce((acc, r) => acc + rowHeight(r), 0),
@@ -902,9 +789,9 @@ export function ScheduleVirtualApp({
     ({ index, style }: ListChildComponentProps) => {
       const row = visibleRows[index];
       const key =
-        row.kind === "task"
-          ? `t-${row.item_id}-${row.schedule_start}-${row.duration_days}-${row.status}`
-          : `${row.kind}-${row.item_id ?? row.section_id}-${index}`;
+        row.kind === "item"
+          ? `i-${row.item_id}-${row.schedule_start}-${row.duration_days}-${row.status}`
+          : `${row.kind}-${row.section_id}-${index}`;
       return (
         <div style={style} key={key}>
           {row.kind === "estimate_section" && (
@@ -917,8 +804,8 @@ export function ScheduleVirtualApp({
               scrollLeft={scrollLeft}
             />
           )}
-          {row.kind === "task" && (
-            <TaskRow
+          {row.kind === "item" && (
+            <ItemRow
               row={row}
               colWidths={colWidths}
               leftW={leftW}
@@ -930,19 +817,7 @@ export function ScheduleVirtualApp({
               statusChoices={payload.status_choices}
               assignees={payload.assignees}
               succCatalog={succCatalog}
-              collapsed={!!collapsed[String(row.item_id)]}
               onSave={saveItem}
-              onToggle={toggleTask}
-            />
-          )}
-          {row.kind === "item" && (
-            <ItemRow
-              row={row}
-              colWidths={colWidths}
-              leftW={leftW}
-              viewportW={viewportW}
-              timelineW={timelineW}
-              scrollLeft={scrollLeft}
             />
           )}
         </div>
@@ -960,9 +835,7 @@ export function ScheduleVirtualApp({
       payload.status_choices,
       payload.assignees,
       succCatalog,
-      collapsed,
       saveItem,
-      toggleTask,
     ],
   );
 
@@ -1028,7 +901,7 @@ export function ScheduleVirtualApp({
           width={viewportW}
           itemCount={visibleRows.length}
           itemSize={getItemSize}
-          estimatedItemSize={TASK_ROW_H}
+          estimatedItemSize={ITEM_ROW_H}
           outerElementType={OuterElement}
           innerElementType={InnerElement}
         >

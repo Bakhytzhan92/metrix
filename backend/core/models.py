@@ -597,10 +597,16 @@ class EstimateItem(models.Model):
                 raise ValidationError(
                     {"schedule_predecessor": "Позиция не может зависеть от самой себя."}
                 )
-            if self.is_subsection_header and not pred.is_subsection_header:
+            if pred.is_subsection_header:
                 raise ValidationError(
                     {
-                        "schedule_predecessor": "Зависимость «После» допустима только между группами работ (подзаголовками раздела)."
+                        "schedule_predecessor": "Группа работ не может быть предшественником — выберите позицию сметы."
+                    }
+                )
+            if self.is_subsection_header:
+                raise ValidationError(
+                    {
+                        "schedule_predecessor": "Зависимости задаются для позиций сметы, не для групп."
                     }
                 )
             pend = pred.schedule_end
