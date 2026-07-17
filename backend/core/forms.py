@@ -1106,6 +1106,13 @@ class EstimateItemForm(forms.ModelForm):
 class EstimateItemInlineForm(forms.ModelForm):
     """Редактирование позиции прямо в таблице сметы (без перехода на отдельную страницу)."""
 
+    sell_price = forms.DecimalField(
+        required=False,
+        max_digits=14,
+        decimal_places=3,
+        widget=forms.HiddenInput(),
+    )
+
     class Meta:
         model = EstimateItem
         fields = ("name", "type", "unit", "quantity", "cost_price", "markup_percent")
@@ -1119,6 +1126,17 @@ class EstimateItemInlineForm(forms.ModelForm):
                 attrs={"class": _inline_input(), "step": "0.01", "min": "0"},
             ),
         }
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        sell = self.cleaned_data.get("sell_price")
+        if sell is not None and self.data.get("sell_price") not in (None, ""):
+            instance.sell_price = sell
+            instance._price_from_sell = True
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 
 class ProjectSchedulePhaseForm(forms.ModelForm):

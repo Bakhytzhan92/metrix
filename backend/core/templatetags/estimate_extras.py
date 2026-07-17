@@ -3,6 +3,8 @@ from decimal import Decimal, InvalidOperation
 
 from django import template
 
+from core.estimate_format import format_sell_price
+
 register = template.Library()
 
 # Шифр норм в начале: 1101-0104-0201, 1137-0401-0203, иногда с хвостом '12'… из PDF
@@ -47,6 +49,14 @@ def qty_plain(value):
     if "." in s:
         s = s.rstrip("0").rstrip(".")
     return s if s not in ("", "-") else "0"
+
+
+@register.filter
+def sell_price_plain(value):
+    """Цена заказчика за ед.: до 3 знаков после запятой."""
+    if value is None or value == "":
+        return ""
+    return format_sell_price(value)
 
 
 @register.simple_tag

@@ -13,11 +13,14 @@ import {
 } from "react-window";
 
 import {
+  applyItemRecalc,
   fmt2,
+  fmtSell,
+  isPartialNumericInput,
   isZeroLikeInput,
   normalizeNumField,
   parseNum,
-  recalcSellAndTotals,
+  type ItemRecalcField,
 } from "./math";
 import type { BootstrapItem, BootstrapSection, EstimateVirtualPayload } from "./types";
 
@@ -77,7 +80,25 @@ function buildFormData(csrf: string, _id: number, st: ItemState): FormData {
     "markup_percent",
     normalizeNumField("markup_percent", st.markup_percent),
   );
+  fd.append("sell_price", normalizeNumField("sell_price", st.sell_price));
   return fd;
+}
+
+function mergeItemRecalc(
+  cur: ItemState,
+  patch: Partial<ItemState>,
+  changed: ItemRecalcField,
+): ItemState {
+  const merged = { ...cur, ...patch };
+  const rec = applyItemRecalc(merged, changed);
+  return { ...cur, ...patch, ...rec };
+}
+
+function isEditingItemField(itemId: number, fieldName: string): boolean {
+  if (typeof document === "undefined") return false;
+  const el = document.activeElement;
+  if (!(el instanceof HTMLInputElement)) return false;
+  return el.name === fieldName && el.form?.id === `estimate-row-${itemId}`;
 }
 
 const ItemRowInner = memo(
@@ -94,8 +115,8 @@ const ItemRowInner = memo(
     sectionId: number;
     state: ItemState;
     supplyHref: string;
-    onChange: (id: number, patch: Partial<ItemState>) => void;
-    onBlurCommit: (id: number) => void;
+    onChange: (id: number, patch: Partial<ItemState>, changed: ItemRecalcField) => void;
+    onBlurCommit: (id: number, snapshot?: ItemState) => void;
     scheduleDebouncedSave: (id: number) => void;
   }) {
     const formId = `estimate-row-${itemId}`;
@@ -119,7 +140,7 @@ const ItemRowInner = memo(
             className="w-full min-w-0 max-w-full h-8 max-h-8 shrink-0 rounded border border-slate-200 px-0.5 py-0 text-[11px] leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 box-border"
             value={state.type}
             onChange={(e) => {
-              onChange(itemId, { type: e.target.value });
+              onChange(itemId, { type: e.target.value }, "type");
               scheduleDebouncedSave(itemId);
             }}
             onBlur={() => onBlurCommit(itemId)}
@@ -149,12 +170,12 @@ const ItemRowInner = memo(
               if (taRef.current && taRef.current.value !== flat) {
                 taRef.current.value = flat;
               }
-              onChange(itemId, { name: flat });
+              onChange(itemId, { name: flat }, "name");
               scheduleDebouncedSave(itemId);
             }}
             onChange={(e) => {
               const flat = flattenEstimateName(e.target.value);
-              onChange(itemId, { name: flat });
+              onChange(itemId, { name: flat }, "name");
               scheduleDebouncedSave(itemId);
             }}
             onBlur={() => onBlurCommit(itemId)}
@@ -172,7 +193,7 @@ const ItemRowInner = memo(
             className="w-full min-h-0 flex-1 basis-0 resize-none overflow-y-auto break-words rounded border border-slate-200 px-1 py-0.5 text-xs leading-snug focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 box-border"
             value={state.unit}
             onChange={(e) => {
-              onChange(itemId, { unit: e.target.value });
+              onChange(itemId, { unit: e.target.value }, "unit");
               scheduleDebouncedSave(itemId);
             }}
             onBlur={() => onBlurCommit(itemId)}
@@ -193,12 +214,12 @@ const ItemRowInner = memo(
               if (isZeroLikeInput(e.target.value)) e.target.value = "";
             }}
             onChange={(e) => {
-              onChange(itemId, { quantity: e.target.value });
+              onChange(itemId, { quantity: e.target.value }, "quantity");
               scheduleDebouncedSave(itemId);
             }}
             onBlur={(e) => {
               if (String(e.target.value).trim() === "")
-                onChange(itemId, { quantity: "0" });
+                onChange(itemId, { quantity: "0" }, "quantity");
               onBlurCommit(itemId);
             }}
           />
@@ -218,12 +239,12 @@ const ItemRowInner = memo(
               if (isZeroLikeInput(e.target.value)) e.target.value = "";
             }}
             onChange={(e) => {
-              onChange(itemId, { cost_price: e.target.value });
+              onChange(itemId, { cost_price: e.target.value }, "cost_price");
               scheduleDebouncedSave(itemId);
             }}
             onBlur={(e) => {
               if (String(e.target.value).trim() === "")
-                onChange(itemId, { cost_price: "0" });
+                onChange(itemId, { cost_price: "0" }, "cost_price");
               onBlurCommit(itemId);
             }}
           />
@@ -251,21 +272,56 @@ const ItemRowInner = memo(
               if (isZeroLikeInput(e.target.value)) e.target.value = "";
             }}
             onChange={(e) => {
-              onChange(itemId, { markup_percent: e.target.value });
-              scheduleDebouncedSave(itemId);
+              onChange(itemId, { markup_percent: e.target.value }, "markup_percent");
             }}
             onBlur={(e) => {
-              if (String(e.target.value).trim() === "")
-                onChange(itemId, { markup_percent: "0" });
-              onBlurCommit(itemId);
+              const raw = e.target.value.trim();
+              if (isPartialNumericInput(raw)) {
+                onBlurCommit(itemId, mergeItemRecalc(state, { markup_percent: raw }, "markup_percent"));
+                return;
+              }
+              const patch =
+                raw === ""
+                  ? { markup_percent: "0" }
+                  : { markup_percent: fmt2(parseNum(raw)) };
+              const next = mergeItemRecalc(state, patch, "markup_percent");
+              onChange(itemId, patch, "markup_percent");
+              onBlurCommit(itemId, next);
             }}
           />
         </div>
         <div
-          className="py-0 px-1 box-border flex items-center justify-end text-right tabular-nums text-slate-700 text-xs leading-none whitespace-nowrap border-b border-slate-100 js-item-sell-price min-h-0 min-w-0 overflow-hidden"
+          className="py-0 px-0 box-border flex items-center justify-end min-h-0 min-w-0 overflow-hidden border-b border-slate-100"
           style={{ height: ROW_H }}
         >
-          {state.sell_price}
+          <input
+            form={formId}
+            type="text"
+            name="sell_price"
+            inputMode="decimal"
+            className="w-full min-w-0 max-w-[5rem] h-8 max-h-8 shrink-0 rounded border border-slate-200 px-1 py-0 text-xs text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 box-border js-item-sell-price"
+            value={state.sell_price}
+            onFocus={(e) => {
+              if (isZeroLikeInput(e.target.value)) e.target.value = "";
+            }}
+            onChange={(e) => {
+              onChange(itemId, { sell_price: e.target.value }, "sell_price");
+            }}
+            onBlur={(e) => {
+              const raw = e.target.value.trim();
+              if (isPartialNumericInput(raw)) {
+                onBlurCommit(itemId, mergeItemRecalc(state, { sell_price: raw }, "sell_price"));
+                return;
+              }
+              const patch =
+                raw === ""
+                  ? { sell_price: "0" }
+                  : { sell_price: fmtSell(parseNum(raw)) };
+              const next = mergeItemRecalc(state, patch, "sell_price");
+              onChange(itemId, patch, "sell_price");
+              onBlurCommit(itemId, next);
+            }}
+          />
         </div>
         <div
           className="py-0 px-1 box-border flex items-center justify-end tabular-nums font-medium text-slate-900 text-xs leading-none whitespace-nowrap border-b border-slate-100 js-item-total-price min-h-0 min-w-0 overflow-hidden"
@@ -343,8 +399,8 @@ type ListRowData = {
   sec: BootstrapSection;
   items: Record<number, ItemState>;
   csrf: string;
-  onChange: (id: number, patch: Partial<ItemState>) => void;
-  onBlurCommit: (id: number) => void;
+  onChange: (id: number, patch: Partial<ItemState>, changed: ItemRecalcField) => void;
+  onBlurCommit: (id: number, snapshot?: ItemState) => void;
   scheduleDebouncedSave: (id: number) => void;
 };
 
@@ -438,6 +494,7 @@ function SectionBlock({
   sec,
   payload,
   items,
+  itemsRef,
   setItems,
   sectionCosts,
   setSectionCosts,
@@ -452,6 +509,7 @@ function SectionBlock({
   sec: BootstrapSection;
   payload: EstimateVirtualPayload;
   items: Record<number, ItemState>;
+  itemsRef: React.MutableRefObject<Record<number, ItemState>>;
   setItems: React.Dispatch<React.SetStateAction<Record<number, ItemState>>>;
   sectionCosts: { cost: string; price: string };
   setSectionCosts: React.Dispatch<
@@ -464,7 +522,7 @@ function SectionBlock({
   saveRowPromise: (
     itemId: number,
     sectionId: number,
-    opts?: { silent?: boolean; force?: boolean },
+    opts?: { silent?: boolean; force?: boolean; itemSnapshot?: ItemState },
   ) => Promise<{ ok: boolean }>;
   listHeights: Record<number, number>;
   contentWidth: number;
@@ -479,21 +537,16 @@ function SectionBlock({
   );
 
   const onChange = useCallback(
-    (id: number, patch: Partial<ItemState>) => {
+    (id: number, patch: Partial<ItemState>, changed: ItemRecalcField) => {
       markDirty(id);
       setItems((prev) => {
         const cur = prev[id];
         if (!cur) return prev;
-        const next = { ...cur, ...patch };
-        const r = recalcSellAndTotals({
-          quantity: next.quantity,
-          cost_price: next.cost_price,
-          markup_percent: next.markup_percent,
-        });
-        next.sell_price = fmt2(r.sell);
-        next.total_cost = fmt2(r.tCost);
-        next.total_price = fmt2(r.tPrice);
+        const merged = { ...cur, ...patch };
+        const rec = applyItemRecalc(merged, changed);
+        const next = { ...cur, ...patch, ...rec };
         const n2 = { ...prev, [id]: next };
+        itemsRef.current = n2;
         let sumC = 0;
         let sumP = 0;
         for (const fr of sec.rows) {
@@ -510,7 +563,7 @@ function SectionBlock({
         return n2;
       });
     },
-    [markDirty, sec.id, sec.rows, setItems, setSectionCosts],
+    [markDirty, sec.id, sec.rows, setItems, setSectionCosts, itemsRef],
   );
 
   const scheduleDebouncedSave = useCallback(
@@ -528,11 +581,20 @@ function SectionBlock({
   );
 
   const onBlurCommit = useCallback(
-    (id: number) => {
+    (id: number, snapshot?: ItemState) => {
       clearTimer(id);
-      if (isDirty(id)) void saveRowPromise(id, sec.id, { silent: false });
+      const item = snapshot ?? itemsRef.current[id];
+      if (
+        item &&
+        (isPartialNumericInput(item.sell_price) ||
+          isPartialNumericInput(item.markup_percent))
+      ) {
+        return;
+      }
+      if (isDirty(id))
+        void saveRowPromise(id, sec.id, { silent: false, itemSnapshot: item });
     },
-    [clearTimer, isDirty, saveRowPromise, sec.id],
+    [clearTimer, isDirty, itemsRef, saveRowPromise, sec.id],
   );
 
   const listData = useMemo<ListRowData>(
@@ -770,11 +832,11 @@ export function EstimateVirtualApp({
     async (
       itemId: number,
       sectionId: number,
-      opts?: { silent?: boolean; force?: boolean },
+      opts?: { silent?: boolean; force?: boolean; itemSnapshot?: ItemState },
     ) => {
       const silent = opts?.silent === true;
       const force = opts?.force === true;
-      const item = itemsRef.current[itemId];
+      const item = opts?.itemSnapshot ?? itemsRef.current[itemId];
       if (!item) return { ok: true };
       if (!force && !dirtyRef.current.has(itemId))
         return { ok: true, skipped: true as const };
@@ -813,20 +875,28 @@ export function EstimateVirtualApp({
         const tcStr = String(data.total_cost ?? "");
         const tpStr = String(data.total_price ?? "");
         const spStr = String(data.sell_price ?? "");
+        const mpStr = String(data.markup_percent ?? "");
         const secCost = String(data.section_total_cost ?? "");
         const secPrice = String(data.section_total_price ?? "");
         setItems((prev) => {
           const cur = prev[itemId];
           if (!cur) return prev;
-          return {
+          const skipSell = isEditingItemField(itemId, "sell_price");
+          const skipMarkup = isEditingItemField(itemId, "markup_percent");
+          const nextItems = {
             ...prev,
             [itemId]: {
               ...cur,
               total_cost: tcStr || cur.total_cost,
               total_price: tpStr || cur.total_price,
-              sell_price: spStr || cur.sell_price,
+              sell_price: skipSell ? cur.sell_price : spStr || cur.sell_price,
+              markup_percent: skipMarkup
+                ? cur.markup_percent
+                : mpStr || cur.markup_percent,
             },
           };
+          itemsRef.current = nextItems;
+          return nextItems;
         });
         if (secCost && secPrice) {
           setSectionCosts((sc) => ({
@@ -953,6 +1023,7 @@ export function EstimateVirtualApp({
           sec={sec}
           payload={payload}
           items={items}
+          itemsRef={itemsRef}
           setItems={setItems}
           sectionCosts={sectionCosts[sec.id]!}
           setSectionCosts={setSectionCosts}

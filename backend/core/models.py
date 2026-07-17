@@ -486,7 +486,7 @@ class EstimateItem(models.Model):
     sell_price = models.DecimalField(
         "Цена для заказчика за ед.",
         max_digits=14,
-        decimal_places=2,
+        decimal_places=3,
         default=0,
         editable=False,
     )
@@ -638,10 +638,20 @@ class EstimateItem(models.Model):
 
         q = self.quantity or Decimal("0")
         cp = self.cost_price or Decimal("0")
-        m = (self.markup_percent or Decimal("0")) / Decimal("100")
-        self.sell_price = (cp * (Decimal("1") + m)).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
+        if getattr(self, "_price_from_sell", False):
+            sp = (self.sell_price or Decimal("0")).quantize(
+                Decimal("0.001"), rounding=ROUND_HALF_UP
+            )
+            self.sell_price = sp
+            if cp > 0:
+                self.markup_percent = (
+                    (sp / cp - Decimal("1")) * Decimal("100")
+                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        else:
+            m = (self.markup_percent or Decimal("0")) / Decimal("100")
+            self.sell_price = (cp * (Decimal("1") + m)).quantize(
+                Decimal("0.001"), rounding=ROUND_HALF_UP
+            )
         self.total_cost = (cp * q).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         self.total_price = (self.sell_price * q).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP

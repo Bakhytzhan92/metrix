@@ -75,7 +75,7 @@
             </button>
             {% endif %}
           </div>
-          <p class="text-xs text-ink-muted mt-1 max-w-3xl">{% if use_estimate_virtual %}Большая смета: таблица виртуализирована (рендерятся только видимые строки). {% endif %}Прокрутка всего списка одной полосой. Пересчёт строк при количестве, цене и наценке. Наименование и ресурсы сохраняются при смене поля и кнопкой «Сохранить» (все строки сразу).</p>
+          <p class="text-xs text-ink-muted mt-1 max-w-3xl">{% if use_estimate_virtual %}Большая смета: таблица виртуализирована (рендерятся только видимые строки). {% endif %}Прокрутка всего списка одной полосой. Пересчёт строк при количестве, цене, наценке и цене для заказчика. Наименование и ресурсы сохраняются при смене поля и кнопкой «Сохранить» (все строки сразу).</p>
         </div>
       </div>
     </div>
@@ -155,7 +155,9 @@
                   <td class="px-1.5 py-1 align-top min-w-[2.75rem] max-w-[3.5rem]">
                     <input form="estimate-row-{{ item.pk }}" type="text" name="markup_percent" value="{{ item.markup_percent }}" inputmode="decimal" class="w-full max-w-[3.5rem] ml-auto block rounded border border-slate-200 px-1 py-1 text-xs sm:text-sm text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </td>
-                  <td class="px-1.5 py-1 text-right tabular-nums text-slate-700 align-top text-xs sm:text-sm leading-tight js-item-sell-price whitespace-nowrap">{{ item.sell_price|floatformat:2 }}</td>
+                  <td class="px-1.5 py-1 align-top min-w-[4.25rem] max-w-[5rem]">
+                    <input form="estimate-row-{{ item.pk }}" type="text" name="sell_price" value="{{ item.sell_price|sell_price_plain }}" inputmode="decimal" class="js-item-sell-price w-full max-w-[5rem] ml-auto block rounded border border-slate-200 px-1 py-1 text-xs sm:text-sm text-right tabular-nums leading-tight focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+                  </td>
                   <td class="px-1.5 py-1 text-right tabular-nums font-medium text-slate-900 align-top text-xs sm:text-sm leading-tight js-item-total-price whitespace-nowrap">{{ item.total_price|floatformat:2 }}</td>
                   <td class="px-1 py-1 text-center align-top">
                     <div class="inline-flex items-center justify-center gap-0.5">
@@ -426,9 +428,15 @@
     ta.style.height = "auto";
     ta.style.height = ta.scrollHeight + "px";
   }
+  function isPartialNumericInput(val) {
+    if (val === null || val === undefined) return true;
+    var t = String(val).trim().replace(/\s/g, "").replace(",", ".");
+    if (t === "" || t === "-" || t === "." || t === "-." || t.slice(-1) === ".") return true;
+    return false;
+  }
   function wireEstimateNumericZeroUX(input) {
     var n = input.name;
-    if (n !== "quantity" && n !== "cost_price" && n !== "markup_percent") return;
+    if (n !== "quantity" && n !== "cost_price" && n !== "markup_percent" && n !== "sell_price") return;
     input.addEventListener("focus", function () {
       if (isZeroLikeInput(input.value)) input.value = "";
     });
@@ -439,28 +447,55 @@
   function fmt2(n) {
     return (Math.round(n * 100) / 100).toFixed(2);
   }
-  function recalcRow(row) {
+  function fmtSell(n) {
+    var v = Math.round(n * 1000) / 1000;
+    var s = v.toFixed(3);
+    if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
+    return s;
+  }
+  function recalcRow(row, changedField) {
     if (!row || !row.classList.contains("estimate-row")) return;
     var qi = row.querySelector('input[name="quantity"]');
     var ci = row.querySelector('input[name="cost_price"]');
     var mi = row.querySelector('input[name="markup_percent"]');
+    var si = row.querySelector('input[name="sell_price"]');
     var q = parseNum(qi && qi.value);
     var cp = parseNum(ci && ci.value);
-    var m = parseNum(mi && mi.value);
-    var sell = cp * (1 + m / 100);
+    var sell;
+    var m;
+    var siActive = si && si === document.activeElement;
+    var miActive = mi && mi === document.activeElement;
+    if (changedField === "sell_price") {
+      sell = parseNum(si && si.value);
+      if (!isPartialNumericInput(si && si.value) && cp > 0 && mi && !miActive) {
+        mi.value = fmt2(((sell / cp) - 1) * 100);
+      }
+    } else if (changedField === "cost_price" && si && !isPartialNumericInput(si.value) && parseNum(si.value) > 0 && cp > 0) {
+      sell = parseNum(si.value);
+      if (mi && !miActive) mi.value = fmt2(((sell / cp) - 1) * 100);
+    } else if (changedField === "markup_percent") {
+      m = parseNum(mi && mi.value);
+      if (!isPartialNumericInput(mi && mi.value)) {
+        sell = cp * (1 + m / 100);
+        if (si && !siActive) si.value = fmtSell(sell);
+      } else {
+        sell = parseNum(si && si.value);
+      }
+    } else {
+      sell = parseNum(si && si.value);
+    }
+    if (sell === undefined) sell = parseNum(si && si.value);
     var tCost = q * cp;
     var tPrice = q * sell;
     var tc = row.querySelector(".js-item-total-cost");
-    var sp = row.querySelector(".js-item-sell-price");
     var tp = row.querySelector(".js-item-total-price");
     if (tc) tc.textContent = fmt2(tCost);
-    if (sp) sp.textContent = fmt2(sell);
     if (tp) tp.textContent = fmt2(tPrice);
   }
   function recalcSection(section) {
     if (!section) return;
     section.querySelectorAll("tr.estimate-row").forEach(function (row) {
-      recalcRow(row);
+      recalcRow(row, "refresh");
     });
   }
   function setTextAll(selector, text) {
@@ -530,7 +565,7 @@
     flushSectionRecalc(formEl.closest(".estimate-section"));
   }
   function normalizeNumField(name, val) {
-    if (name !== "quantity" && name !== "cost_price" && name !== "markup_percent") return val;
+    if (name !== "quantity" && name !== "cost_price" && name !== "markup_percent" && name !== "sell_price") return val;
     var s = String(val == null ? "" : val).trim().replace(/\s/g, "").replace(",", ".");
     if (s === "" || s === "-" || s === "." || s === "-.") return "0";
     return s;
@@ -553,9 +588,16 @@
     var tc = row.querySelector(".js-item-total-cost");
     var tp = row.querySelector(".js-item-total-price");
     var sp = row.querySelector(".js-item-sell-price");
+    var mi = row.querySelector('input[name="markup_percent"]');
     if (tc) tc.textContent = data.total_cost;
     if (tp) tp.textContent = data.total_price;
-    if (sp && data.sell_price) sp.textContent = data.sell_price;
+    if (sp && document.activeElement !== sp) {
+      if (sp.tagName === "INPUT") sp.value = data.sell_price;
+      else sp.textContent = data.sell_price;
+    }
+    if (mi && data.markup_percent && document.activeElement !== mi) {
+      mi.value = data.markup_percent;
+    }
     recalcProjectCards();
   }
   function saveRowPromise(formEl, useKeepalive, options) {
@@ -671,11 +713,13 @@
           fitEstimateNameTa(input);
         } else {
           var row = getRowForForm(formEl);
-          if (row) recalcRow(row);
+          if (row) recalcRow(row, input.name || "");
           var section = formEl.closest(".estimate-section");
           if (section) scheduleSectionAndProjectRecalc(section);
         }
-        scheduleSave(formEl);
+        if (input.name !== "sell_price" && input.name !== "markup_percent") {
+          scheduleSave(formEl);
+        }
       });
       input.addEventListener("change", function () {
         formEl.dataset.estimateDirty = "1";
@@ -683,13 +727,39 @@
           var flatName = flattenEstimateName(input.value);
           if (input.value !== flatName) input.value = flatName;
           fitEstimateNameTa(input);
+        } else {
+          var rowCh = getRowForForm(formEl);
+          if (rowCh) recalcRow(rowCh, input.name || "markup_percent");
+          var sectionCh = formEl.closest(".estimate-section");
+          if (sectionCh) scheduleSectionAndProjectRecalc(sectionCh);
         }
-        recalcFromForm(formEl);
-        scheduleSave(formEl);
+        if (input.name !== "sell_price" && input.name !== "markup_percent") {
+          scheduleSave(formEl);
+        }
       });
       input.addEventListener("blur", function () {
+        var rowBl = getRowForForm(formEl);
+        if (rowBl && input.name !== "name") {
+          if (input.name === "sell_price" || input.name === "markup_percent") {
+            var raw = String(input.value).trim();
+            if (raw === "") {
+              input.value = "0";
+            } else if (!isPartialNumericInput(raw)) {
+              input.value = input.name === "sell_price" ? fmtSell(parseNum(raw)) : fmt2(parseNum(raw));
+            }
+            recalcRow(rowBl, input.name || "markup_percent");
+          } else {
+            recalcRow(rowBl, input.name || "markup_percent");
+          }
+        }
         flushSectionRecalc(formEl.closest(".estimate-section"));
         if (formEl.dataset.estimateDirty === "1") {
+          if (
+            (input.name === "sell_price" || input.name === "markup_percent") &&
+            isPartialNumericInput(input.value)
+          ) {
+            return;
+          }
           saveRowNow(formEl);
         }
       });
@@ -1202,7 +1272,7 @@
 })();
 </script>
 {% if use_estimate_virtual %}
-<script defer src="{% static 'core/estimate/virtual-table.js' %}"></script>
+<script defer src="{% static 'core/estimate/virtual-table.js' %}?v=20260717d"></script>
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   if (window.MetrixEstimateVirtualMount) {

@@ -117,6 +117,7 @@ from .inventory_services import (
 from .inventory_numbering import allocate_inventory_number
 from .inventory_qr import ensure_qr_image_file
 from .rbac import permission_required
+from .estimate_format import format_sell_price
 
 User = get_user_model()
 
@@ -345,7 +346,7 @@ def _estimate_virtual_payload(request: HttpRequest, project, sections):
                     "quantity": qty_plain(item.quantity),
                     "cost_price": str(item.cost_price),
                     "markup_percent": str(item.markup_percent),
-                    "sell_price": f"{item.sell_price:.2f}",
+                    "sell_price": format_sell_price(item.sell_price),
                     "total_cost": f"{item.total_cost:.2f}",
                     "total_price": f"{item.total_price:.2f}",
                     "urls": {
@@ -614,7 +615,7 @@ def estimate_item_quick_add(request: HttpRequest, pk: int, section_id: int) -> H
 def _normalize_estimate_inline_post(post):
     """Копия POST для сметы: запятая → точка, пустые числа → 0 (как у полей по умолчанию в модели)."""
     data = post.copy()
-    for key in ("quantity", "cost_price", "markup_percent"):
+    for key in ("quantity", "cost_price", "markup_percent", "sell_price"):
         if key not in data:
             continue
         raw = data.get(key)
@@ -655,7 +656,8 @@ def estimate_item_inline(request: HttpRequest, pk: int, section_id: int, item_id
                     "ok": True,
                     "total_cost": f"{saved.total_cost:.2f}",
                     "total_price": f"{saved.total_price:.2f}",
-                    "sell_price": f"{saved.sell_price:.2f}",
+                    "sell_price": format_sell_price(saved.sell_price),
+                    "markup_percent": f"{saved.markup_percent:.2f}",
                     "section_total_cost": f"{sc:.2f}",
                     "section_total_price": f"{sp:.2f}",
                 }
